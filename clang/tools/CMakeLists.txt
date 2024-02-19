@@ -14,6 +14,8 @@ add_clang_subdirectory(clang-offload-bundler)
 add_clang_subdirectory(clang-scan-deps)
 add_clang_subdirectory(clang-sycl-linker)
 add_clang_subdirectory(clang-installapi)
+add_clang_subdirectory(clang-tools-extra)
+
 if(HAVE_CLANG_REPL_SUPPORT)
   add_clang_subdirectory(clang-repl)
 endif()
