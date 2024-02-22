@@ -16,6 +16,9 @@
 
 #include <iostream>
 
+#include "llvm/Support/raw_ostream.h"
+#include <string>
+
 using namespace clang::tooling;
 using namespace llvm;
 
@@ -23,8 +26,11 @@ using namespace clang;
 using namespace clang::ast_matchers;
 using namespace clang::ento;
 
-//StatementMatcher CastMatcher = castExpr(hasCastKind(CK_BitCast)).bind("cast");
-StatementMatcher CastMatcher = castExpr().bind("cast");
+// TODO: use TypeInfo from context to detect incompatible size casts.
+
+// TODO: include expressions that contain castexprs, to get the source type of cast. Current match only gives destination type.
+StatementMatcher CastMatcher = castExpr(hasCastKind(CK_BitCast)).bind("cast");
+//StatementMatcher CastMatcher = castExpr().bind("cast");
 
 // Apply a custom category to all cli options so that they are the only ones displayed
 static llvm::cl::OptionCategory MyToolCategory("my-tool options");
@@ -36,6 +42,29 @@ static cl::extrahelp CommonHelp(CommonOptionsParser::HelpMessage);
 // Help message for this specific tool.
 static cl::extrahelp Morehelp("\nMore help text...\n");
 
+std::string toString(ASTContext *context, Stmt const *stmt) {
+    assert(context);
+    assert(stmt);
+    clang::LangOptions defaultOps;
+    std::string oStr;
+    llvm::raw_string_ostream stream(oStr);
+    //stmt->printPretty(stream, NULL, PrintingPolicy(defaultOps));
+    auto policy = context->getLangOpts();
+    stmt->printPretty(stream, NULL, policy);
+    return oStr;
+}
+
+std::string prettyType(ASTContext *context, Expr const *expr) {
+    assert(context);
+    assert(expr);
+    std::string type;
+    llvm::raw_string_ostream stream(type);
+    auto qtype = expr->getType();
+    auto policy = context->getLangOpts();
+    qtype.print(stream, policy);
+    return type;
+}
+
 class CastMatchCallback: public MatchFinder::MatchCallback {
     //BugReporter &BR_;
     //AnalysisDeclContext *ADC_;
@@ -46,19 +75,77 @@ public:
 
     void run(MatchFinder::MatchResult const &result) override {
         auto *context = result.Context;
-        if(CastExpr const * expr = result.Nodes.getNodeAs<clang::CastExpr>("cast"))
-          //auto sr = expr->getSourceRange();
-            std::cout << expr->getExprLoc().printToString(*result.SourceManager);
-            std::cout << "\n";
-            CastExpr const * expr2 = result.Nodes.getNodeAs<clang::CastExpr>("cast");
-            expr2->dumpPretty(*context);
-            //std::cout << expr->getExprLoc()->printToString(BR_.getSourceManager());
-            std::cout << "\n";
-            CastExpr const * expr3 = result.Nodes.getNodeAs<clang::CastExpr>("cast");
-            expr3->dumpColor();
-            std::cout << "\n";
-            //e->getSubExprAsWritten();
+        assert(context);
+        auto policy = context->getLangOpts();
+
+        auto const *expr = result.Nodes.getNodeAs<clang::CastExpr>("cast");
+        assert(expr);
+
+        /* Dumps the whole AST!
+        std::cout << "TUD:\n";
+        auto *tud = context->getTranslationUnitDecl();
+        tud->dumpAsDecl();
+        */
+
+        std::cout << "Cast site: "
+                  << expr->getExprLoc().printToString(*result.SourceManager)
+                  << "\n";
+        std::cout << "Cast expression: "
+                  << toString(context, expr)
+                  << "\n";
+        //expr->dumpPretty(*context);
+        //std::cout << "\n";
+
+        if(auto const *subExpr = expr->getSubExprAsWritten())
+        {
+            std::cout << "    Subexpr:\n"
+                      << toString(context, expr)
+                      << "\n";
+            //->dumpPretty(*context);
+            //std::cout << "]\n";
         }
+
+        std::string typeStr;
+        llvm::raw_string_ostream stream(typeStr);
+
+        auto qtype = expr->getType();
+        qtype.print(stream, policy);
+        //stream.flush();
+
+        auto const * type = qtype.getTypePtr();
+        assert(type);
+
+        std::cout << "Cast Expression type: ["
+                  << type->getTypeClassName()
+                  << "] "
+                  <<  prettyType(context, expr) << "\n";
+        //type->dump();
+        //std::cout << "\n";
+
+        //auto qtt = ty->getPointeeType();
+        auto qtt = type->getPointeeType();
+        auto const *pointeeType = qtt.getTypePtr();
+        //auto const *tyy = ty->getPointeeOrArrayElementType();
+        if(pointeeType) {
+            std::string pointeeTypeStr;
+            llvm::raw_string_ostream pointeeStream(typeStr);
+            /*
+            std::cout << "    Pointee type: ["
+                      << pointeeType->getTypeClassName()
+                      << "] "
+                      << prettyType(context, pointeeType) << "\n";// Dump:";
+            */
+            //pointeeType->dump();
+            //std::cout << "\n";
+        }
+
+
+        /*
+        std::cout << "AST node:\n";
+        expr->dumpColor();
+        std::cout << "\n";
+        */
+    }
 };
 
 /*
