@@ -14,9 +14,13 @@
 #include "clang/StaticAnalyzer/Core/BugReporter/BugReporter.h"
 #include "clang/Analysis/AnalysisDeclContext.h"
 
-#include <iostream>
+#include "clang/AST/Type.h"
 
-#include "llvm/Support/raw_ostream.h"
+#include <iostream>
+#include <sstream>
+
+#include "llvm/Support/raw_os_ostream.h"
+//#include "llvm/Support/raw_ostream.h"
 #include <string>
 
 using namespace clang::tooling;
@@ -54,25 +58,45 @@ std::string toString(ASTContext *context, Stmt const *stmt) {
     return oStr;
 }
 
+std::string prettyType(ASTContext *context, QualType qtype);
+std::string prettyType(ASTContext *context, Expr const *expr);
+
 std::string prettyType(ASTContext *context, Expr const *expr) {
     assert(context);
     assert(expr);
-    std::string type;
-    llvm::raw_string_ostream stream(type);
     auto qtype = expr->getType();
+    return prettyType(context, qtype);
+}
+std::string prettyType(ASTContext *context, QualType qtype) {
+    assert(context);
+
     auto policy = context->getLangOpts();
-    qtype.print(stream, policy);
-    return type;
+    return qtype.getAsString(policy);
+}
+
+std::string prettyType(ASTContext *context, clang::Type const *type) {
+    assert(context);
+    assert(type);
+
+    std::string oStr;
+    llvm::raw_string_ostream stream(oStr);
+
+    type->dump(stream, *context);
+    return oStr; 
+}
+
+std::string getTypeClassName(ASTContext *context, Expr const *expr) {
+    assert(context);
+    assert(expr);
+    auto qtype = expr->getType();
+    auto const * type = qtype.getTypePtr();
+    assert(type);
+    return type->getTypeClassName();
 }
 
 class CastMatchCallback: public MatchFinder::MatchCallback {
-    //BugReporter &BR_;
-    //AnalysisDeclContext *ADC_;
 
 public:
-    //CastMatchCallback(BugReporter &Reporter, AnalysisDeclContext *Context)
-    //    : BR_(Reporter), ADC_(Context) {}
-
     void run(MatchFinder::MatchResult const &result) override {
         auto *context = result.Context;
         assert(context);
@@ -93,52 +117,30 @@ public:
         std::cout << "Cast expression: "
                   << toString(context, expr)
                   << "\n";
-        //expr->dumpPretty(*context);
-        //std::cout << "\n";
 
         if(auto const *subExpr = expr->getSubExprAsWritten())
         {
-            std::cout << "    Subexpr:\n"
-                      << toString(context, expr)
+            std::cout << "    Subexpr:"
+                      << toString(context, subExpr)
                       << "\n";
-            //->dumpPretty(*context);
-            //std::cout << "]\n";
         }
-
-        std::string typeStr;
-        llvm::raw_string_ostream stream(typeStr);
-
-        auto qtype = expr->getType();
-        qtype.print(stream, policy);
-        //stream.flush();
-
-        auto const * type = qtype.getTypePtr();
-        assert(type);
 
         std::cout << "Cast Expression type: ["
-                  << type->getTypeClassName()
+                  << getTypeClassName(context, expr)
                   << "] "
                   <<  prettyType(context, expr) << "\n";
-        //type->dump();
-        //std::cout << "\n";
 
-        //auto qtt = ty->getPointeeType();
+        auto qtype = expr->getType();
+        auto const * type = qtype.getTypePtr();
+        assert(type);
         auto qtt = type->getPointeeType();
-        auto const *pointeeType = qtt.getTypePtr();
-        //auto const *tyy = ty->getPointeeOrArrayElementType();
-        if(pointeeType) {
-            std::string pointeeTypeStr;
-            llvm::raw_string_ostream pointeeStream(typeStr);
-            /*
-            std::cout << "    Pointee type: ["
-                      << pointeeType->getTypeClassName()
-                      << "] "
-                      << prettyType(context, pointeeType) << "\n";// Dump:";
-            */
-            //pointeeType->dump();
-            //std::cout << "\n";
-        }
 
+        auto const * pointeeType = qtt.getTypePtr();
+        assert(pointeeType);
+        std::cout << "Pointee type: ["
+                  << pointeeType->getTypeClassName()
+                  << "] "
+                  << prettyType(context, qtt) << "\n";
 
         /*
         std::cout << "AST node:\n";
@@ -163,6 +165,8 @@ void CastCheckerMatcher::check() const {
     F.matchAST(AM.getASTContext());
 }
 */
+
+///////////////////////////////////////////////////////////////////////////////////////////
 
 int main(int argc, const char **argv) {
     auto ExpectedParser = CommonOptionsParser::create(argc, argv, MyToolCategory);
