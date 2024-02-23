@@ -118,20 +118,21 @@ public:
         std::cout << "Cast site: "
                   << castExpr->getExprLoc().printToString(*result.SourceManager)
                   << "\n";
-        std::cout << "Casting:  "
-                  << toString(context, castSource)
-                  << "\n    ["
+        //std::cout << "Casting:  "
+        //          << toString(context, castSource)
+        //          << "\n    ["
+        std::cout << "     from ["
                   << getTypeClassName(context, castSource)
                   << "] "
                   << prettyType(context, castSource)
                   << "\n";
 
-        std::cout << "to:  "
-                  << toString(context, castExpr)
-                  << "\n    ["
+        std::cout << "       to ["
                   << getTypeClassName(context, castExpr)
                   << "] "
                   << prettyType(context, castExpr)
+                  << "\n";
+        std::cout << "     in cast expression: " << toString(context, castExpr)
                   << "\n";
 
         /*
