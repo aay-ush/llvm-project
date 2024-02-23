@@ -34,7 +34,6 @@ using namespace clang::ento;
 
 // TODO: include expressions that contain castexprs, to get the source type of cast. Current match only gives destination type.
 StatementMatcher CastMatcher = castExpr(hasCastKind(CK_BitCast)).bind("cast");
-//StatementMatcher CastMatcher = castExpr().bind("cast");
 
 // Apply a custom category to all cli options so that they are the only ones displayed
 static llvm::cl::OptionCategory MyToolCategory("my-tool options");
@@ -98,12 +97,17 @@ class CastMatchCallback: public MatchFinder::MatchCallback {
 
 public:
     void run(MatchFinder::MatchResult const &result) override {
+        assert(result);
         auto *context = result.Context;
         assert(context);
         auto policy = context->getLangOpts();
 
-        auto const *expr = result.Nodes.getNodeAs<clang::CastExpr>("cast");
-        assert(expr);
+        // Cast expression
+        auto const *castExpr = result.Nodes.getNodeAs<clang::CastExpr>("cast");
+        assert(castExpr);
+        // Source operand (i.e. the expression which is being cast)
+        auto const *castSource = castExpr->getSubExprAsWritten();
+        assert(castSource);
 
         /* Dumps the whole AST!
         std::cout << "TUD:\n";
@@ -112,25 +116,39 @@ public:
         */
 
         std::cout << "Cast site: "
-                  << expr->getExprLoc().printToString(*result.SourceManager)
+                  << castExpr->getExprLoc().printToString(*result.SourceManager)
                   << "\n";
-        std::cout << "Cast expression: "
-                  << toString(context, expr)
-                  << "\n";
-
-        if(auto const *subExpr = expr->getSubExprAsWritten())
-        {
-            std::cout << "    Subexpr:"
-                      << toString(context, subExpr)
-                      << "\n";
-        }
-
-        std::cout << "Cast Expression type: ["
-                  << getTypeClassName(context, expr)
+        std::cout << "Casting:  "
+                  << toString(context, castSource)
+                  << "\n    ["
+                  << getTypeClassName(context, castSource)
                   << "] "
-                  <<  prettyType(context, expr) << "\n";
+                  << prettyType(context, castSource)
+                  << "\n";
 
-        auto qtype = expr->getType();
+        std::cout << "to:  "
+                  << toString(context, castExpr)
+                  << "\n    ["
+                  << getTypeClassName(context, castExpr)
+                  << "] "
+                  << prettyType(context, castExpr)
+                  << "\n";
+
+        /*
+        std::cout << "Casting to ["
+                  << getTypeClassName(context, castExpr)
+                  << "] "
+                  <<  prettyType(context, castExpr) << "\n";
+
+        std::cout << "    Subexpression type: ["
+                  << getTypeClassName(context, castSource)
+                  << "] "
+                  <<  prettyType(context, castSource) << "\n";
+        */
+
+        /*
+        // Pointee info
+        auto qtype = castExpr->getType();
         auto const * type = qtype.getTypePtr();
         assert(type);
         auto qtt = type->getPointeeType();
@@ -142,9 +160,9 @@ public:
                   << "] "
                   << prettyType(context, qtt) << "\n";
 
-        /*
+        //
         std::cout << "AST node:\n";
-        expr->dumpColor();
+        castExpr->dumpColor();
         std::cout << "\n";
         */
     }
