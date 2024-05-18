@@ -15,8 +15,11 @@
 #include "clang/Analysis/AnalysisDeclContext.h"
 
 #include "clang/AST/Type.h"
+#include "clang/AST/Expr.h"
+#include "clang/AST/Decl.h"
 
 #include <iostream>
+#include <fstream>
 #include <sstream>
 
 #include "llvm/Support/raw_os_ostream.h"
@@ -33,7 +36,26 @@ using namespace clang::ento;
 // TODO: use TypeInfo from context to detect incompatible size casts.
 
 // TODO: include expressions that contain castexprs, to get the source type of cast. Current match only gives destination type.
-StatementMatcher CastMatcher = castExpr(hasCastKind(CK_BitCast)).bind("cast");
+//   - It maybe unnecessary since parent can be retrieved instead.
+//StatementMatcher CastMatcher = castExpr(hasCastKind(CK_BitCast)).bind("cast");
+
+// TODO TODO
+//  - Add function name in cast site.
+//  - Add match for parameters so their casts can be tagged.
+//  - Add info on cast operation (assignment, parameter passing, etc.)
+//  - Create history tag for cast and function.
+//  - Add missing cast dumps. For example in other cast types.(?).
+StatementMatcher CastMatcher = castExpr(
+                                allOf(
+                                    hasCastKind(CK_BitCast),
+                                    anyOf( // technically just any of expr or decl is needed.
+                                        hasAncestor(varDecl().bind("var")),
+                                        hasAncestor(binaryOperator().bind("binop")),
+                                        hasAncestor(callExpr().bind("call")),
+                                        hasAncestor(expr().bind("gexpr"))),
+                                    hasDescendant(declRefExpr().bind("castee")))
+                                ).bind("cast");
+
 
 // Apply a custom category to all cli options so that they are the only ones displayed
 static llvm::cl::OptionCategory MyToolCategory("my-tool options");
@@ -45,6 +67,9 @@ static cl::extrahelp CommonHelp(CommonOptionsParser::HelpMessage);
 // Help message for this specific tool.
 static cl::extrahelp Morehelp("\nMore help text...\n");
 
+std::ofstream FOUT;
+
+// Stringer to get source statement from Stmt.
 std::string toString(ASTContext *context, Stmt const *stmt) {
     assert(context);
     assert(stmt);
@@ -60,12 +85,15 @@ std::string toString(ASTContext *context, Stmt const *stmt) {
 std::string prettyType(ASTContext *context, QualType qtype);
 std::string prettyType(ASTContext *context, Expr const *expr);
 
+// Stringer to get source statement from Expr.
 std::string prettyType(ASTContext *context, Expr const *expr) {
     assert(context);
     assert(expr);
     auto qtype = expr->getType();
     return prettyType(context, qtype);
 }
+
+// Stringer to get source statement from QualType
 std::string prettyType(ASTContext *context, QualType qtype) {
     assert(context);
 
@@ -106,8 +134,26 @@ public:
         auto const *castExpr = result.Nodes.getNodeAs<clang::CastExpr>("cast");
         assert(castExpr);
         // Source operand (i.e. the expression which is being cast)
-        auto const *castSource = castExpr->getSubExprAsWritten();
+        //auto const *castSource = castExpr->getSubExprAsWritten();
+        auto const *castSource = result.Nodes.getNodeAs<clang::DeclRefExpr>("castee");
         assert(castSource);
+
+        std::string dest;
+        auto const *var = result.Nodes.getNodeAs<clang::VarDecl>("var");
+        auto const *gexpr = result.Nodes.getNodeAs<clang::Expr>("gexpr");
+        auto const *binop = result.Nodes.getNodeAs<clang::BinaryOperator>("binop");
+        auto const *call = result.Nodes.getNodeAs<clang::CallExpr>("call");
+
+        if(!!var) {
+            dest = var->getNameAsString();
+        } else if(!!binop) {
+            dest = toString(context, binop);
+        } else if(!!call) {
+            dest = toString(context, call);
+        } else if(!!gexpr) {
+            dest = toString(context, gexpr);
+        }
+
 
         /* Dumps the whole AST!
         std::cout << "TUD:\n";
@@ -115,10 +161,15 @@ public:
         tud->dumpAsDecl();
         */
 
-        std::cout << "Cast site: "
+        if(!FOUT.is_open()) {
+            std::cout << "File open error.\n";
+            return;
+        }
+
+        FOUT << "Cast site: "
                   << castExpr->getExprLoc().printToString(*result.SourceManager)
                   << "\n";
-        std::cout << "    Casting: "
+        FOUT << "    Casting: "
                   << toString(context, castSource)
                   << "\n       from: ["
                   << getTypeClassName(context, castSource)
@@ -126,15 +177,16 @@ public:
                   << prettyType(context, castSource)
                   << "\n";
 
-        std::cout << "         to: ["
+        FOUT << "         to: ["
                   << getTypeClassName(context, castExpr)
                   << "] "
                   << prettyType(context, castExpr)
                   << "\n";
-        std::cout << "         in: "
+        FOUT << "         in: "
                   << toString(context, castExpr)
                   << "\n";
-        std::cout << "\n";
+        FOUT << " Destination: " << dest << "\n";
+        FOUT << "\n";
 
         /*
         std::cout << "Casting to ["
@@ -187,6 +239,9 @@ void CastCheckerMatcher::check() const {
 */
 
 ///////////////////////////////////////////////////////////////////////////////////////////
+// Steps to execute:
+//  - TODO
+//-----------------------------------------------------------------------------------------
 
 int main(int argc, const char **argv) {
     auto ExpectedParser = CommonOptionsParser::create(argc, argv, MyToolCategory);
@@ -203,6 +258,7 @@ int main(int argc, const char **argv) {
     MatchFinder Finder;
     Finder.addMatcher(CastMatcher, &dumper);
 
+    FOUT.open("census-dump.txt", std::ios::out);
     //return Tool.run(newFrontendActionFactory<clang::SyntaxOnlyAction>().get());
     return Tool.run(newFrontendActionFactory(&Finder).get());
 }
