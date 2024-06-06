@@ -27,6 +27,7 @@
 #include <sstream>
 
 #include "llvm/Support/raw_os_ostream.h"
+#include "llvm/Support/Debug.h"
 //#include "llvm/Support/raw_ostream.h"
 #include <string>
 
@@ -50,6 +51,7 @@ std::string typeof(ASTContext *context, clang::Type const *type);
 // Get type class of Expr (pointer, array)
 std::string getTypeCategoryName(ASTContext *context, Expr const *expr);
 
+clang::FunctionDecl const* getContainerFunctionDecl(ASTContext *context, clang::Stmt const *stmt);
 std::string getContainerFunction(ASTContext *context, clang::Stmt const *stmt);
 
 // Stringer to get source statement from Stmt.
@@ -81,30 +83,66 @@ std::string toString(ASTContext *context, DeclStmt const *decl) {
     return "(Could not find name!)";
 }
 
+clang::Decl const* getParamDecl(ASTContext *context, CallExpr const *call, unsigned parmPos) {
+    assert(context);
+    assert(call);
+    auto const * fn = call->getDirectCallee();
+    assert(fn);
+
+    auto const * parm = fn->getParamDecl(parmPos);
+    assert(parm);   // not needed
+    return parm;
+    //return parm->getCanonicalDecl();
+}
+
 std::string toString(ASTContext *context, CallExpr const *call, unsigned parmPos) {
     assert(context);
     assert(call);
     auto const * fn = call->getDirectCallee();
     if(!fn)
         return "(Could not find function name!)";
+    assert(fn);
 
     std::stringstream ss;
     ss << fn->getNameAsString() << "{$" << parmPos << ": ";
 
-    /*
-    auto const * fnDecl = call->getDirectCallee();
-    if(!fnDecl) {
-        ss << "(Cannot getDirectCallee())";
-        return ss.str();
-    }
-    assert(fnDecl);
-    */
     auto const * parm = fn->getParamDecl(parmPos);
     if(!parm) {
         ss << "(Cannot getParamDecl())";
         return ss.str();
     }
     assert(parm);
+
+    // Get parm type
+    auto const parmType = parm->getOriginalType(); 
+    ss << typeof(context, parmType) << "} ";
+
+    // Get parm id
+    auto const * parmId = parm->getIdentifier();
+    if(!parmId) {
+        ss << "(Cannot get parameter ID)";
+        return ss.str();
+    }
+    assert(parmId);
+    ss << parmId->getName().str();
+
+    return ss.str();
+}
+
+std::string toString(ASTContext *context, FunctionDecl const *fn, unsigned parmPos) {
+    assert(context);
+    assert(fn);
+
+    std::stringstream ss;
+    ss << "{" << fn->getNameAsString() << ".$" << parmPos << ": ";
+
+    auto const * parm = fn->getParamDecl(parmPos);
+    if(!parm) {
+        ss << "(Cannot getParamDecl())";
+        return ss.str();
+    }
+    assert(parm);
+
     // Get parm type
     auto const parmType = parm->getOriginalType(); 
     ss << typeof(context, parmType) << "} ";
@@ -159,23 +197,17 @@ std::string getTypeCategoryName(ASTContext *context, Expr const *expr) {
     return type->getTypeClassName();
 }
 
-// Get containing function for declaration
-std::string getContainerFunction(ASTContext *context, clang::Stmt const *stmt) {
+// Get containing function decl
+clang::FunctionDecl const* getContainerFunctionDecl(ASTContext *context, clang::Stmt const *stmt) {
     assert(context);
     assert(stmt);
 
     auto parents = context->getParents(*stmt);
     if (parents.size() == 0) {
-        return "(0 Parents found)";
+        LLVM_DEBUG(dbgs() << "((getContainerFunctionDecl) 0 Parents found\n");
+        return nullptr;
     }
 
-    /*
-    for(auto const& parent: parents) {
-        auto const * fn = parent.get<clang::FunctionDecl>();
-        if(fn && isa<clang::FunctionDecl>(fn)) {
-            return fn->getNameAsString();
-        }
-    */
     while(parents[0].get<clang::FunctionDecl>() == nullptr) {
         auto const * decl = parents[0].get<clang::Decl>();
         auto const * stmt = parents[0].get<clang::Stmt>();
@@ -185,10 +217,21 @@ std::string getContainerFunction(ASTContext *context, clang::Stmt const *stmt) {
         else if(!stmt && decl) {
             parents = context->getParents(*decl);
         }
-        else
-            return "(Can't loop forever, gfy)";
+        else {
+            LLVM_DEBUG(dbgs() << "(getContainerFunctionDecl) Cannot continue loop due to unknown parent type\n");
+            return nullptr;
+        }
     }
     auto const *fn = parents[0].get<clang::FunctionDecl>();
+    if(!fn) {
+        LLVM_DEBUG(dbgs() << "(getContainerFunctionDecl) Could not find container function\n");
+    }
+    return fn;
+}
+
+// Get containing function for declaration
+std::string getContainerFunction(ASTContext *context, clang::Stmt const *stmt) {
+    auto const *fn = getContainerFunctionDecl(context, stmt);
     if(!fn) {
         return "(Could not find container function)";
     }
@@ -197,3 +240,28 @@ std::string getContainerFunction(ASTContext *context, clang::Stmt const *stmt) {
 }
 
 // Get containing translation unit for declaration
+//
+
+//std::ofstream FOUT;
+
+std::optional<unsigned> getParameterMatch(clang::FunctionDecl const* fn, clang::DeclarationNameInfo const& matchInfo) {
+    assert(fn);
+    int parmPos = -1;
+    std::find_if(fn->param_begin(), fn->param_end(),
+        [&] (auto const& parm) -> bool {
+        parmPos++;
+        auto parmName = parm->getDeclName();
+        //FOUT << "[DEBUG]" << "parmName: " << parmName.getAsString() << "\n";
+        return parmName == matchInfo.getName();
+    });
+    unsigned parmPos_ = parmPos;
+    if (parmPos_ >= fn->getNumParams()) {
+        //FOUT << "[DEBUG](utils.h::getParameterMatch)" << "parmPos > nbParams\n";
+        return std::nullopt;
+    }
+    else {
+        //FOUT << "[DEBUG](utils.h::getParameterMatch)" << "parmPos: " << parmPos_ - 1 << "\n";
+        return parmPos_;
+    }
+}
+        
