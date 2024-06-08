@@ -30,6 +30,7 @@
 #include "llvm/Support/Debug.h"
 //#include "llvm/Support/raw_ostream.h"
 #include <string>
+#include <list>
 
 using namespace clang::tooling;
 using namespace llvm;
@@ -242,26 +243,32 @@ std::string getContainerFunction(ASTContext *context, clang::Stmt const *stmt) {
 // Get containing translation unit for declaration
 //
 
-//std::ofstream FOUT;
+std::ofstream FOUT;
 
 std::optional<unsigned> getParameterMatch(clang::FunctionDecl const* fn, clang::DeclarationNameInfo const& matchInfo) {
     assert(fn);
-    int parmPos = -1;
-    std::find_if(fn->param_begin(), fn->param_end(),
+    //FOUT << "[DEBUG](utils.h::getParameterMatch)" << "matchInfo: " << matchInfo.getAsString() << "\n";
+    unsigned parmPos = 0;
+    auto match = std::find_if(fn->param_begin(), fn->param_end(),
         [&] (auto const& parm) -> bool {
         parmPos++;
         auto parmName = parm->getDeclName();
-        //FOUT << "[DEBUG]" << "parmName: " << parmName.getAsString() << "\n";
+        //FOUT << "[DEBUG](utils.h::getParameterMatch)" << "parmPos: " << parmPos << "; parmName: " << parmName.getAsString() << "\n";
         return parmName == matchInfo.getName();
     });
-    unsigned parmPos_ = parmPos;
-    if (parmPos_ >= fn->getNumParams()) {
+    //FOUT << "[DEBUG](utils.h::getParameterMatch)" << "parmPos: " << parmPos << "\n";
+    //FOUT << "[DEBUG](utils.h::getParameterMatch)" << "nbParms: " << fn->getNumParams() << "\n";
+
+    if (match == fn->param_end() || parmPos > fn->getNumParams()) {
         //FOUT << "[DEBUG](utils.h::getParameterMatch)" << "parmPos > nbParams\n";
         return std::nullopt;
     }
     else {
-        //FOUT << "[DEBUG](utils.h::getParameterMatch)" << "parmPos: " << parmPos_ - 1 << "\n";
-        return parmPos_;
+        //FOUT << "[DEBUG](utils.h::getParameterMatch)" << "parmPos: " << parmPos << "\n";
+        return parmPos - 1;
     }
 }
         
+// get non cast node()
+//{
+// }
