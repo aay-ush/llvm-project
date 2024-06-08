@@ -391,74 +391,39 @@ public:
 
         // TODO TODO Find existing cast where cast.second is cast.first
         //  For every node in census (unord_map),
-        //   - if key.second = source  => Match
-        //   - if key.first = source   => List++
-        //   - if key.second = target  => x
-        //   - if key.first = target   => List++?
+        //   - if key.second = source  => ++LHS -> key.chain.add(cast)
+        //   - if key.first = source   => ??
+        //   - if key.second = target  => ??
+        //   - if key.first = target   => RHS++ -> cast.chain.add(key)
         // Build the cast chain using census map.
-        //std::vector<CastData*> chain;
-        auto isLinkedToCast = [&](auto const& castpair, auto const& castinfo, auto const& match, int n) -> auto {
-            if (n == 1 && !castpair.second)
-                return false;
-            if (n == 2 && !castpair.first)
-                return false;
-            if (!match)
+        auto isLinkedToCast = [&](auto const& castop, auto const& match) -> auto {
+            if (!castop || !match)
                 return false;
 
-            auto const & a = dyn_cast<clang::NamedDecl>(castpair.first);
-            auto const & b = dyn_cast<clang::NamedDecl>(castpair.second);
-            if(n==2 && a) {
-                FOUT << "[DEBUG](isLinkedToCast) isMatch? (castpair.first) = " << a->getNameAsString() << "\n";
-                FOUT << "[DEBUG](isLinkedToCast) match result : " << (castpair.first->getID() == match->getID()) << "\n";
-                return (castpair.first->getID() == match->getID());
-            }
-            if(n==1 && b) {
-                FOUT << "[DEBUG](isLinkedToCast) isMatch? (castpair.second) = " << a->getNameAsString() << "\n";
-                FOUT << "[DEBUG](isLinkedToCast) match result : " << (castpair.second->getID() == match->getID()) << "\n";
-                return (castpair.second->getID() == match->getID());
-            }
-            return false;
+            return (castop->getID() == match->getID());
         };
 
-        auto childLink = std::find_if(census.begin(), census.end(),
+        auto rhsLink = std::find_if(census.begin(), census.end(),
                                 [&](auto const& node) {
-                                    auto const & m = dyn_cast<clang::NamedDecl>(cast.second);
-                                    if(m) {
-                                        FOUT << "[DEBUG](childLink) Matching ID(cast.second) = " << m->getNameAsString() << "\n";
-                                    }
-                                    return isLinkedToCast(node.first, node.second, cast.second, 2);
+                                    auto const& lhsDecl = node.first.first;
+                                    return isLinkedToCast(lhsDecl, cast.second);
                                 });
-        if (childLink != census.end() && childLink->first != cast) {
-            FOUT << "[DEBUG](childLink) Found child.";
-            auto& [_, childData] = *childLink;
-            //census[cast].castChain.push_back(&childData);
-            info.castChain.push_back(&childData);
+        if (rhsLink != census.end() && rhsLink->first != cast) {
+            auto& [_, rhs] = *rhsLink;
+            info.castChain.push_back(&rhs);
         }
-
         
         // Always insert so that further casts are easy to link.
         census.insert({cast, info});
 
-        /*
-        using namespace std::placeholders;
-        std::function<decltype(isLinkedToCast)> castLinker = std::bind(&decltype(isLinkedToCast)::operator(),
-                                                                &isLinkedToCast,
-                                                                _1, _2,
-                                                                cast.first);
-        */
-
-        auto parentLink = std::find_if(census.begin(), census.end(),
+        auto lhsLink = std::find_if(census.begin(), census.end(),
                                 [&](auto const& node) {
-                                    auto const & m = dyn_cast<clang::NamedDecl>(cast.first);
-                                    if(m) {
-                                        FOUT << "[DEBUG](parentLink) Matching ID(cast.first) = " << m->getNameAsString() << "\n";
-                                    }
-                                    return isLinkedToCast(node.first, node.second, cast.first, 1);
+                                    auto const& rhsDecl = node.first.second;
+                                    return isLinkedToCast(rhsDecl, cast.first);
                                 });
-        if (parentLink != census.end()) {
-            auto& [_, parentData] = *parentLink;
-            //chain.push_back(parentLink->second);
-            parentData.castChain.push_back(&census[cast]);
+        if (lhsLink != census.end() && lhsLink->first != cast) {
+            auto& [_, lhs] = *lhsLink;
+            lhs.castChain.push_back(&census[cast]);
         }
 
         /* Dumps the whole AST!
