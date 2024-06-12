@@ -49,10 +49,6 @@ using namespace clang::ento;
 // TODO TODO:
 // &i -> trace to int i;
 
-// todo check annonymous cast expressions.
-using CastOperandDecl = clang::Decl;
-using CastPair = std::pair<CastOperandDecl const*, CastOperandDecl const*>;
-
 struct CastOperand {
     std::string ident;
     std::string type;
@@ -76,6 +72,24 @@ enum class CastExprType{
     FunctionCall,
     BinaryOp
 };
+
+template <CastExprType t>
+std::string getCastExprType() {
+    switch(t) {
+        case CastExprType::Assignment:
+            return "assignment";
+        case CastExprType::FunctionCall:
+            return "call";
+    };
+}
+
+std::string getCastExprType(clang::DeclStmt const&) {
+    return getCastExprType<CastExprType::Assignment>();
+}
+std::string getCastExprType(clang::CallExpr const&) {
+    return getCastExprType<CastExprType::FunctionCall>();
+}
+
 
 std::ostream& operator<<(std::ostream &os, std::vector<CastData*> const & list);
 std::ostream& operator<<(std::ostream &os, CastData const & info);
@@ -146,6 +160,10 @@ int f(void *pv){
 //    There's no point in keeping pointers anyway. Since links may have different node type as parents.
 //  ? It's more robust to use string to match decls and exprs.
 
+// todo check annonymous cast expressions.
+using CastOperandDecl = clang::Decl;
+using CastPair = std::pair<CastOperandDecl const*, CastOperandDecl const*>;
+
 template<>
 struct std::hash<CastPair>
 {
@@ -171,26 +189,12 @@ struct std::hash<CastPair>
 using Census = std::unordered_map<CastPair, CastData>;
 Census census;
 
-/*
-ostream& operator<<(ostream& os, Census const casts) {
-    for(auto const& [cast, data]: casts) {
-        os << cast << "\n    " << data << "\n";
-    }
-}
-ostream& operator<<(ostream& os, CastPair const& cast) {
-    os << "[" + cast.first
-}
-*/
-
-
 // TODO TODO
-//  - Create history tag for cast and function.
 //  - Add missing cast dumps. For example in other cast types.(?).
 StatementMatcher CastMatcher = castExpr(
                                 allOf(
                                     hasCastKind(CK_BitCast),
                                     anyOf( // technically just any of expr or decl is needed.
-                                        //hasAncestor(varDecl().bind("var")),
                                         hasAncestor(declStmt().bind("var")),
                                         hasAncestor(binaryOperator().bind("binop")),
                                         hasAncestor(callExpr().bind("call")),
@@ -211,7 +215,11 @@ static cl::extrahelp Morehelp("\nMore help text...\n");
 
 //std::ofstream FOUT;
 
-std::string functionParameterMatch(clang::ASTContext & context, clang::CastExpr const& castExpr, clang::DeclarationNameInfo const& name) {
+std::string functionParameterMatch(
+        clang::ASTContext & context,
+        clang::CastExpr const& castExpr,
+        clang::DeclarationNameInfo const& name) {
+
     auto const *fn = getContainerFunctionDecl(context, castExpr);
     assert(fn);
 
@@ -223,7 +231,11 @@ std::string functionParameterMatch(clang::ASTContext & context, clang::CastExpr 
     return "(Not a param)";
 }
 
-CastOperand buildCastOperand(clang::ASTContext & context, clang::CastExpr const& castExpr, clang::DeclRefExpr const& e) {
+CastOperand buildCastOperand(
+        clang::ASTContext & context,
+        clang::CastExpr const& castExpr,
+        clang::DeclRefExpr const& e) {
+
     return {
         toString(context, e),                                       // ident
         typeof(context, e),                                         // type
@@ -232,7 +244,11 @@ CastOperand buildCastOperand(clang::ASTContext & context, clang::CastExpr const&
     };
 }
 
-CastOperand buildCastOperand(clang::ASTContext const& context, clang::CastExpr const& castExpr, clang::DeclStmt const& e) {
+CastOperand buildCastOperand(
+        clang::ASTContext const& context,
+        clang::CastExpr const& castExpr,
+        clang::DeclStmt const& e) {
+
     return {
         toString(context, e),
         typeof(context, castExpr),
@@ -241,7 +257,11 @@ CastOperand buildCastOperand(clang::ASTContext const& context, clang::CastExpr c
     };
 }
 
-CastOperand buildCastOperand(clang::ASTContext const& context, clang::CastExpr const& castExpr, clang::CallExpr const& e) {
+CastOperand buildCastOperand(
+        clang::ASTContext const& context,
+        clang::CastExpr const& castExpr,
+        clang::CallExpr const& e) {
+
     // Get cast expressions position in call argument list.
     unsigned argPos = 0;
     auto match = std::find_if(e.arg_begin(), e.arg_end(),
@@ -252,8 +272,19 @@ CastOperand buildCastOperand(clang::ASTContext const& context, clang::CastExpr c
     });
     FOUT << "[DEBUG](getTargetDecl) final argpos: " << argPos << "\n";
 
+    std::string parmId;
+    llvm::raw_string_ostream stream(parmId);
+    if (argPos <= e.getNumArgs()) {
+        auto const& parmd = getParamDecl(context, e, argPos - 1);
+        auto const& parm = dyn_cast<clang::ParmVarDecl>(parmd);
+        if(parm) {
+            parm->printQualifiedName(stream);
+        }
+    }
+
     return {
-        toString(context, e),
+        //toString(context, e),
+        parmId,
         typeof(context, castExpr),
         getTypeCategoryName(context, castExpr),
         (argPos > e.getNumArgs())
@@ -262,36 +293,18 @@ CastOperand buildCastOperand(clang::ASTContext const& context, clang::CastExpr c
     };
 }
 
-/*
-std::string getCastExprType(clang::DeclStmt const& e) {
-    return "assignment";
-}
-std::string getCastExprType(clang::CallExpr const& e) {
-    return "call";
-}
-*/
+std::string getLinkedFunction(
+        clang::ASTContext const& context,
+        clang::CastExpr const& castExpr,
+        clang::DeclStmt const&) {
 
-template <CastExprType t>
-std::string getCastExprType() {
-    switch(t) {
-        case CastExprType::Assignment:
-            return "assignment";
-        case CastExprType::FunctionCall:
-            return "call";
-    };
-}
-
-std::string getCastExprType(clang::DeclStmt const&) {
-    return getCastExprType<CastExprType::Assignment>();
-}
-std::string getCastExprType(clang::CallExpr const&) {
-    return getCastExprType<CastExprType::FunctionCall>();
-}
-
-std::string getLinkedFunction(clang::ASTContext const& context, clang::CastExpr const& castExpr, clang::DeclStmt const&) {
     return "N/A";
 }
-std::string getLinkedFunction(clang::ASTContext & context, clang::CastExpr const& castExpr, clang::CallExpr const& call) {
+std::string getLinkedFunction(
+        clang::ASTContext & context,
+        clang::CastExpr const& castExpr,
+        clang::CallExpr const& call) {
+
     // Get function body and trigger match on function casts.
     // parm->getOriginalType : QualType
     // parm->getFunctionScopeIndex: unsigned parameter index
@@ -309,10 +322,18 @@ std::string getLinkedFunction(clang::ASTContext & context, clang::CastExpr const
     return calledFn->getNameAsString();
 }
 
-CastOperandDecl const*  getTargetDecl(clang::ASTContext const& context, clang::CastExpr const& castExpr, clang::DeclStmt const& t) {
+CastOperandDecl const* getTargetDecl(
+        clang::ASTContext const& context,
+        clang::CastExpr const& castExpr,
+        clang::DeclStmt const& t) {
+
     return t.getSingleDecl();  // TODO examples where decls() or DeclGroup() may be needed.
 }
-CastOperandDecl const*  getTargetDecl(clang::ASTContext const& context, clang::CastExpr const& castExpr, clang::CallExpr const& t) {
+CastOperandDecl const* getTargetDecl(
+        clang::ASTContext const& context,
+        clang::CastExpr const& castExpr,
+        clang::CallExpr const& t) {
+
     // Get cast expressions position in call argument list.
     unsigned argPos = 0;
     auto match = std::find_if(t.arg_begin(), t.arg_end(),
@@ -330,7 +351,12 @@ CastOperandDecl const*  getTargetDecl(clang::ASTContext const& context, clang::C
 using CensusNode = std::pair<CastPair, CastData>;
 
 template<typename T>
-CensusNode buildCastData(clang::ASTContext & context, clang::CastExpr const& castExpr, clang::DeclRefExpr const& castSource, T const* dest, std::string const& location) {
+CensusNode buildCastData(clang::ASTContext & context,
+        clang::CastExpr const& castExpr,
+        clang::DeclRefExpr const& castSource,
+        T const* dest,
+        std::string const& location) {
+
     assert(dest);
     return {
         {
