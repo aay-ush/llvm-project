@@ -86,12 +86,15 @@ clang::Decl const* getParamDecl(ASTContext const& context, CallExpr const& call,
     //return parm->getCanonicalDecl();
 }
 
+std::string toString(ASTContext const& context, FunctionDecl const& fn, unsigned parmPos);
 std::string toString(ASTContext const& context, CallExpr const& call, unsigned parmPos) {
     auto const * fn = call.getDirectCallee();
     if(!fn)
         return "(Could not find function name!)";
     assert(fn);
 
+    return toString(context, *fn, parmPos);
+    /*
     std::stringstream ss;
     ss << fn->getNameAsString() << "{$" << parmPos << ": ";
 
@@ -116,6 +119,7 @@ std::string toString(ASTContext const& context, CallExpr const& call, unsigned p
     ss << parmId->getName().str();
 
     return ss.str();
+    */
 }
 
 std::string toString(ASTContext const& context, FunctionDecl const& fn, unsigned parmPos) {

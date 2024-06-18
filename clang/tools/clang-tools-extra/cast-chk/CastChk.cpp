@@ -82,6 +82,15 @@ struct DeclData {
     std::string linkedParameter;
 };
 
+bool operator==(DeclData const& lhs, DeclData const& rhs) {
+    return lhs.ident == rhs.ident
+        && lhs.type == rhs.type
+        && lhs.linkedParameter == rhs.linkedParameter;
+}
+bool operator!=(DeclData const& lhs, DeclData const& rhs) {
+    return !(lhs == rhs);
+}
+
 // todo check annonymous cast expressions.
 using CensusDecl = clang::Decl;
 
@@ -98,8 +107,6 @@ struct CastData {
     std::string location;
 };
 
-using DeclInfo = std::pair<DeclData, std::optional<CastData>>;
-
 template<>
 struct std::hash<CensusDecl>
 {
@@ -110,9 +117,11 @@ struct std::hash<CensusDecl>
     }
 };
 
+using DeclInfo = std::pair<DeclData, std::optional<CastData>>;
 // Census stores type & cast data for every decl.
 using Census = std::unordered_map<CensusDecl const*, DeclInfo>;
 Census census;
+using CensusNode = decltype(census)::value_type;
 
 std::ostream& dump(std::ostream &os, DeclData const& info) {
     os << "{ident: '" << info.ident << "', type: '" << info.type << "', "
@@ -147,43 +156,47 @@ void dump(std::ostream& os, DeclInfo const& d) {
 
 void censusSummary(std::ostream &os, DeclData const& data, std::optional<CastData const> const& castData) {
     os << "[" << data.category << "] " << data.ident << "(" << data.type << ")"
-       << " {" << data.linkedParameter << "}";
+       << " " << data.linkedParameter;
     if(castData) {
         auto const& c = castData.value();
-        os << "<" << c.containerFunction << ">"; //": " << c.location << ">";
+        os << "<" << c.containerFunction << ">: " << c.location << ">";
     }
-    os << "  ";
 }
 
-void censusSummary(std::ostream &os, CensusDecl const* decl, DeclData const& data, std::optional<CastData const> const& castData) {
+void censusSummary(std::ostream &os, CensusDecl const* decl, DeclData const& data, std::optional<CastData const> const& castData, int indent = 0) {
+
     assert(decl);
+    std::string ws(indent, ' ');
     if(!decl) {
-        os << "x\n";
+        os << "<end>}\n";
         return;
     }
 
-    os << " [";
+    os << "{";
     censusSummary(os, data, castData);
-    os << "-> ";
 
-    auto match = std::find_if(std::begin(census),
-                              std::end(census),
-                              [&decl](auto const& i) {
-                                auto const& [_, data] = i;
-                                auto const& [__, castData] = data;
-                                if(!castData)
-                                    return false;
+    auto isLHS = [&decl](auto const& censusNode) {
+                    auto const& [_, data] = censusNode;
+                    auto const& [__, castData] = data;
+                    if(!castData)
+                        return false;
 
-                                return (decl->getID() == castData.value().from->getID());
-                              });
-    if(match == std::end(census)) {
-        os << "x\n]\n";
+                    return (decl->getID() == castData.value().from->getID());
+    };
+
+    std::vector<CensusNode> rchain;
+    std::copy_if(std::begin(census), std::end(census), std::back_inserter(rchain), isLHS);
+    if(rchain.empty()) {
+        os << "\n" << ws << "-> <end>}\n";
         return;
     }
 
-    auto const& [rdecl, info] = *match;
-    auto const& [rdata, castdata] = info;
-    return censusSummary(os, rdecl, rdata, castdata);
+    for(auto const& [rdecl, info]: rchain) {
+        os << "\n" << ws << "-> ";
+        auto const& [rdata, castdata] = info;
+        censusSummary(os, rdecl, rdata, castdata, indent+2);
+    }
+    os << ws << "}\n";
 }
 
 void censusSummary(std::ostream &os) {
@@ -200,6 +213,7 @@ void censusSummary(std::ostream &os) {
     for(auto const& [decl, info]: census) {
         auto const& [data, cast] = info;
         censusSummary(os, decl, data, cast);
+        os << "\n";
     }
 }
 
@@ -231,32 +245,7 @@ std::ostream& operator<<(std::ostream &os, std::vector<CastData*> const & list) 
 
     return os;
 }
-
-
 */
-/*
-Change DeclData dump from:
-{from: '{ident: 'p', type: 'void *', category: 'Pointer', linkedParameter: '{f.$0: void *} p'},
-to
-{from: '{ident: 'p', type: 'void *', category: 'Pointer', linkedParameter: '{f.$0: void *}'},
-
-making it explicit that linkedParameter identifies parameter function and position of ident.
-*/
-/*
-    ss << "[INFO](censusSummaryDecl) ";
-    // check whether decl matches from or to;
-    ss << census[decl].from.ident << " (" << census[decl].from.type << ")"
-       << " -> " << censusSummary(os, census[decl].rchain);
-    if (!chain.size())
-        return "<< end of chain\n";
-    ss << "[INFO](censusSummaryChain) ";
-    //os << "# Census start:\n";
-    os << "[INFO](censusSummary) ";
-        // check whether decl matches from or to;
-        os << cast.to.ident << " (" << cast.to.type << ")"
-           << " -> " << censusSummary(os, cast.rchain);
-*/
-
 /*
 int f(void *pv){
     void* pv1 = pv;
@@ -325,7 +314,7 @@ DeclData buildDeclData(
         toString(context, e),                                       // ident
         typeof(context, e),                                         // type
         getTypeCategoryName(context, e),                            // category
-        functionParameterMatch(context, castExpr, e.getNameInfo())   // linkedParameter
+        functionParameterMatch(context, castExpr, e.getNameInfo())  // linkedParameter
     };
 }
 
@@ -385,24 +374,39 @@ std::string getLinkedFunction(
 
     return "N/A";
 }
-std::string getLinkedFunction(
+
+
+void preprocess(
         clang::ASTContext & context,
-        clang::CastExpr const& castExpr,
+        clang::DeclStmt const&) {
+}
+
+void preprocess(
+        clang::ASTContext & context,
         clang::CallExpr const& call) {
 
-    // Get function body and trigger match on function casts.
-    // parm->getOriginalType : QualType
-    // parm->getFunctionScopeIndex: unsigned parameter index
+    // Trigger cast check for the called function.
     auto const * calledFn = call.getDirectCallee();
     assert(calledFn);
 
-    // Trigger cast check for the called function.
     if(calledFn->hasBody()) {
         auto const *body = calledFn->getBody();
         assert(body);
         MatchFinder m;
         m.match(*body, context);
     }
+}
+
+std::string getLinkedFunction(
+        clang::ASTContext & context,
+        clang::CastExpr const& castExpr,
+        clang::CallExpr const& call) {
+
+    // Get function body
+    // parm->getOriginalType : QualType
+    // parm->getFunctionScopeIndex: unsigned parameter index
+    auto const * calledFn = call.getDirectCallee();
+    assert(calledFn);
 
     return calledFn->getNameAsString();
 }
@@ -427,13 +431,13 @@ CensusDecl const* getTargetDecl(
             return clang::Expr::isSameComparisonOperand(arg, &castExpr);
     });
 
-    if (match != t.arg_end()) {
+    //if (match != t.arg_end()) {
+    if (argPos <= t.getNumArgs()) {
         return getParamDecl(context, t, argPos - 1);
     }
     return nullptr;
 }
 
-//using CensusNode = decltype(census)::value_type;
 
 /*
  * Cast data should be associated with rhs only. Why?
@@ -451,15 +455,21 @@ void updateCensus(clang::ASTContext & context,
         std::string const& location) {
 
     assert(dest);
+    preprocess(context, *dest);
 
-    auto lhs = castSource.getDecl();
+    clang::Decl const* lhs = castSource.getDecl();
     if(!lhs) {
         FOUT << "[ERROR](updateCensus) LHS Decl == nullptr\n";
+        auto lhs_ = castSource.getFoundDecl();
+        if (!lhs_) {
+            FOUT << "[ERROR](updateCensus) LHS' Decl == nullptr\n";
+        }
+        lhs = lhs_;
     }
     auto lhsData = buildDeclData(context, castExpr, castSource);
     auto rhs = getTargetDecl(context, castExpr, *dest);
     if(!rhs) {
-        FOUT << "[ERROR](updateCensus) LHS Decl == nullptr\n";
+        FOUT << "[ERROR](updateCensus) RHS Decl == nullptr\n";
     }
     auto rhsData = buildDeclData(context, castExpr, *dest);
 
@@ -473,41 +483,50 @@ void updateCensus(clang::ASTContext & context,
         location                                            // CastData.location
     };
 
-    census.insert({lhs, {lhsData, {}}});
-    census.insert({rhs, {rhsData, castInfo}});
-
-    /*
-    auto appendLChain = [](auto castInfo, auto const& decl) -> auto {
-        castInfo.lchain.push_back(decl);
-        return castInfo;
-    };
-    auto appendRChain = [](auto castInfo, auto const& decl) -> auto {
-        castInfo.rchain.push_back(decl);
-        return castInfo;
-    };
-    */
-
-
-    /*
     if (census.find(lhs) == std::end(census)) {
-        census.insert({lhs, appendRChain(castInfo, rhs)});
+        census.insert({lhs, {lhsData, {}}});
     } else {
-        // LHS is already in census => add rhs to RChain.
-        // Assumption: if rhs is in chain, rhs CastData does not need an update (other than lchain update).
-        appendRChain(census[lhs], rhs);
+        // LHS is already in census. 
+        //  - Ensure that lhsdata is same.
+        auto const& [data, _] = census[lhs];
+        if(lhsData != data) {
+            FOUT << "[WARN](updateCensus) LHS in Census with different DeclData\n";
+        }
+        //  - Cast data will be unchanged.
+        // Nothing to do.
     }
-    */
-    /*
-    census.insert({lhs, {buildDeclData(context, castExpr, castSource),{},{},{},{},{},{},{},{}}});
 
     if (census.find(rhs) == std::end(census)) {
-        census.insert({rhs, appendLChain(castInfo, lhs)});
+        census.insert({rhs, {rhsData, castInfo}});
     } else {
-        // RHS is already in census => add lhs to LChain.
-        // Assumption: if lhs is in chain, lhs CastData does not need an update (other than rchain update).
-        appendLChain(census[rhs], lhs);
+        // RHS is already in census.
+        //  - Ensure that rhsdata is same.
+        auto const& [data, cast] = census[rhs];
+        if(rhsData != data) {
+            FOUT << "[WARN](updateCensus) RHS in Census with different DeclData\n";
+            FOUT << "[WARN](updateCensus) Old RHS Data: {";
+            dump(FOUT, data);
+            FOUT << "[WARN](updateCensus) }";
+            FOUT << "[WARN](updateCensus) New RHS Data: {";
+            dump(FOUT, rhsData);
+            FOUT << "[WARN](updateCensus) }";
+        }
+        //  - If castdata is not present, update.
+        if(!cast) {
+            census[rhs] = {data, castInfo};
+        } else {
+            FOUT << "[WARN](updateCensus) RHS in Census with different CastData\n";
+            FOUT << "[WARN](updateCensus) Old RHS CastData: {";
+            dump(FOUT, cast.value());
+            FOUT << "[WARN](updateCensus) }";
+            FOUT << "[WARN](updateCensus) New RHS CastData: {";
+            dump(FOUT, castInfo);
+            FOUT << "[WARN](updateCensus) }";
+        }
+
+        //  - If castdata is present, ??.
+        // Nothing to do. (YET)
     }
-    */
 
     FOUT << "Cast site: " << castInfo.location << "\n"
          << "    Casting: " << castInfo.fromData.ident << " -> " << rhsData.ident << "\n"
@@ -515,45 +534,6 @@ void updateCensus(clang::ASTContext & context,
          << "         to: [" << rhsData.category << "] " << rhsData.type << "\n"
          << "       expr: " << "[" << castInfo.exprType << "] " << castInfo.expr << "\n"
          << "\n";
-
-    /*
-    // TODO TODO Find existing cast where RHS decl is lhs
-    //  For every node in census (unord_map),
-    //   - if key.second = source  => ++LHS -> key.chain.add(cast)
-    //   - if key.first = source   => ??
-    //   - if key.second = target  => ??
-    //   - if key.first = target   => RHS++ -> cast.chain.add(key)
-    // Build the cast chain using census map.
-    auto isLinkedToCast = [&](auto const& castop, auto const& match) -> auto {
-        if (!castop || !match)
-            return false;
-
-        return (castop->getID() == match->getID());
-    };
-
-    auto rhsLink = std::find_if(std::begin(census), std::end(census),
-                            [&](auto const& node) {
-                                auto const& lhsDecl = node.first.first;
-                                return isLinkedToCast(lhsDecl, cast.first.second);
-                            });
-    if (rhsLink != census.end() && rhsLink->first != cast.first) {
-        auto& [_, rhs] = *rhsLink;
-        cast.second.chain.push_back(&rhs);
-    }
-    
-    census.insert(cast);
-
-    auto lhsLink = std::find_if(std::begin(census), std::end(census),
-                            [&](auto const& node) {
-                                auto const& rhsDecl = node.first.second;
-                                return isLinkedToCast(rhsDecl, cast.first.first);
-                            });
-    if (lhsLink != census.end() && lhsLink->first != cast.first) {
-        auto& [_, lhs] = *lhsLink;
-        lhs.chain.push_back(&census[cast.first]);
-    }
-    */
-
 }
 
 
@@ -565,7 +545,6 @@ public:
         assert(result);
         auto *context = result.Context;
         assert(context);
-        //auto policy = context->getLangOpts();
 
         // Cast expression
         auto const *castExpr = result.Nodes.getNodeAs<clang::CastExpr>("cast");
@@ -637,17 +616,13 @@ public:
             return;
         }
 
+        /*
         FOUT << "# Census collection so far:\n";
         for(auto const& [_, data]: census) {
-           
-            /*
-            FOUT //<< "Cast expression: <" << toString(context, cast.first)
-                 //<< " | " << toString(context, cast.second) << ">\n"
-                 << "Data:\n" << data << "\n";
-            */
             dump(FOUT, data);
         }
         FOUT << "# Census end.\n";
+        */
 
         FOUT << "# Census summary so far:\n";
         censusSummary(FOUT);
