@@ -39,25 +39,34 @@ using namespace clang::ast_matchers;
 using namespace clang::ento;
 
 // Stringer to get source statement from Stmt.
+std::string toString(ASTContext const& context, Stmt const& stmt);
 std::string toString(ASTContext const& context, DeclStmt const& decl);
 std::string toString(ASTContext const& context, CallExpr const& call, unsigned parmPos);
-std::string toString(ASTContext const& context, Stmt const& stmt);
 std::string toString(ASTContext const& context, FunctionDecl const& fn, unsigned parmPos);
 std::string toString(ASTContext const& context, VarDecl const& var);
-// Get type name of Expr.
-std::string typeof(ASTContext const& context, QualType qtype);
+
 // Get type name of QualType
+std::string typeof(ASTContext const& context, QualType qtype);
+// Get type name of Expr.
 std::string typeof(ASTContext const& context, Expr const& expr);
 // Get type name of Type
 std::string typeof(ASTContext const& context, clang::Type const *type);
 // Get type name from VarDecl
 std::string typeof(ASTContext const& context, clang::VarDecl const& var);
 // Get type class of Expr (pointer, array)
+
+std::string getTypeCategoryName(QualType const& qtype);
 std::string getTypeCategoryName(ASTContext const& context, Expr const& expr);
 std::string getTypeCategoryName(ASTContext const& context, VarDecl const& var);
 
 clang::FunctionDecl const* getContainerFunctionDecl(ASTContext & context, clang::Stmt const& stmt);
 std::string getContainerFunction(ASTContext & context, clang::Stmt const& stmt);
+
+clang::Decl const* getParamDecl(ASTContext const& context, CallExpr const& call, unsigned parmPos);
+
+std::optional<unsigned> getParameterMatch(clang::FunctionDecl const* fn, clang::DeclarationNameInfo const& matchInfo);
+
+//---//
 
 // Stringer to get source statement from Stmt.
 std::string toString(ASTContext const& context, Stmt const& stmt) {
@@ -79,16 +88,6 @@ std::string toString(ASTContext const& context, DeclStmt const& decl) {
         return nd->getNameAsString();
     }
     return "(Could not find name!)";
-}
-
-clang::Decl const* getParamDecl(ASTContext const& context, CallExpr const& call, unsigned parmPos) {
-    auto const * fn = call.getDirectCallee();
-    assert(fn);
-
-    auto const * parm = fn->getParamDecl(parmPos);
-    assert(parm);   // not needed
-    return parm;
-    //return parm->getCanonicalDecl();
 }
 
 std::string toString(ASTContext const& context, CallExpr const& call, unsigned parmPos) {
@@ -157,15 +156,15 @@ std::string toString(ASTContext const& context, VarDecl const& var) {
     return var.getNameAsString();
 }
 
-// Get type name of Expr.
-std::string typeof(ASTContext const& context, Expr const& expr) {
-    return typeof(context, expr.getType());
-}
-
 // Get type name of QualType
 std::string typeof(ASTContext const& context, QualType qtype) {
     auto policy = context.getLangOpts();
     return qtype.getAsString(policy);
+}
+
+// Get type name of Expr.
+std::string typeof(ASTContext const& context, Expr const& expr) {
+    return typeof(context, expr.getType());
 }
 
 // Get type name of Type
@@ -244,7 +243,15 @@ std::string getContainerFunction(ASTContext & context, clang::Stmt const& stmt) 
 // Get containing translation unit for declaration
 //
 
-std::ofstream FOUT;
+clang::Decl const* getParamDecl(ASTContext const& context, CallExpr const& call, unsigned parmPos) {
+    auto const * fn = call.getDirectCallee();
+    assert(fn);
+
+    auto const * parm = fn->getParamDecl(parmPos);
+    assert(parm);   // not needed
+    return parm;
+    //return parm->getCanonicalDecl();
+}
 
 std::optional<unsigned> getParameterMatch(clang::FunctionDecl const* fn, clang::DeclarationNameInfo const& matchInfo) {
     assert(fn);
