@@ -42,14 +42,19 @@ using namespace clang::ento;
 std::string toString(ASTContext const& context, DeclStmt const& decl);
 std::string toString(ASTContext const& context, CallExpr const& call, unsigned parmPos);
 std::string toString(ASTContext const& context, Stmt const& stmt);
+std::string toString(ASTContext const& context, FunctionDecl const& fn, unsigned parmPos);
+std::string toString(ASTContext const& context, VarDecl const& var);
 // Get type name of Expr.
 std::string typeof(ASTContext const& context, QualType qtype);
 // Get type name of QualType
 std::string typeof(ASTContext const& context, Expr const& expr);
 // Get type name of Type
 std::string typeof(ASTContext const& context, clang::Type const *type);
+// Get type name from VarDecl
+std::string typeof(ASTContext const& context, clang::VarDecl const& var);
 // Get type class of Expr (pointer, array)
 std::string getTypeCategoryName(ASTContext const& context, Expr const& expr);
+std::string getTypeCategoryName(ASTContext const& context, VarDecl const& var);
 
 clang::FunctionDecl const* getContainerFunctionDecl(ASTContext & context, clang::Stmt const& stmt);
 std::string getContainerFunction(ASTContext & context, clang::Stmt const& stmt);
@@ -86,7 +91,6 @@ clang::Decl const* getParamDecl(ASTContext const& context, CallExpr const& call,
     //return parm->getCanonicalDecl();
 }
 
-std::string toString(ASTContext const& context, FunctionDecl const& fn, unsigned parmPos);
 std::string toString(ASTContext const& context, CallExpr const& call, unsigned parmPos) {
     auto const * fn = call.getDirectCallee();
     if(!fn)
@@ -149,6 +153,10 @@ std::string toString(ASTContext const& context, FunctionDecl const& fn, unsigned
     return ss.str();
 }
 
+std::string toString(ASTContext const& context, VarDecl const& var) {
+    return var.getNameAsString();
+}
+
 // Get type name of Expr.
 std::string typeof(ASTContext const& context, Expr const& expr) {
     return typeof(context, expr.getType());
@@ -171,12 +179,27 @@ std::string typeof(ASTContext const& context, clang::Type const *type) {
     return oStr; 
 }
 
-// Get type class of Expr (pointer, array)
-std::string getTypeCategoryName(ASTContext const& context, Expr const& expr) {
-    auto qtype = expr.getType();
+// Get type name from VarDecl
+std::string typeof(ASTContext const& context, clang::VarDecl const& var) {
+    auto const qtype = var.getType();
+    return typeof(context, qtype);
+}
+
+std::string getTypeCategoryName(QualType const& qtype) {
     auto const * type = qtype.getTypePtr();
     assert(type);
     return type->getTypeClassName();
+}
+
+// Get type class of Expr (pointer, array)
+std::string getTypeCategoryName(ASTContext const& context, Expr const& expr) {
+    auto qtype = expr.getType();
+    return getTypeCategoryName(qtype);
+}
+
+std::string getTypeCategoryName(ASTContext const& context, VarDecl const& var) {
+    auto qtype = var.getType();
+    return getTypeCategoryName(qtype);
 }
 
 // Get containing function decl

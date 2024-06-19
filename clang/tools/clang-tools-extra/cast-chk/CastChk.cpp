@@ -107,6 +107,8 @@ struct CastData {
     std::string location;
 };
 
+using Dominator = std::variant<CastData>;
+
 template<>
 struct std::hash<CensusDecl>
 {
@@ -117,7 +119,7 @@ struct std::hash<CensusDecl>
     }
 };
 
-using DeclInfo = std::pair<DeclData, std::optional<CastData>>;
+using DeclInfo = std::pair<DeclData, std::optional<Dominator>>;
 // Census stores type & cast data for every decl.
 using Census = std::unordered_map<CensusDecl const*, DeclInfo>;
 Census census;
@@ -141,30 +143,54 @@ std::ostream& dump(std::ostream &os, CastData const& info) {
     return os;
 }
 
+bool isCastData(Dominator const& d) {
+    return std::holds_alternative<CastData>(d);
+}
+
+bool operator==(clang::Decl const* lhs, Dominator const& rhs) {
+    assert(lhs);
+    if(isCastData(rhs)) {
+        auto const& rhsDecl = std::get<CastData>(rhs).from;
+        return lhs->getID() == rhsDecl->getID();
+    }
+    return false;
+}
+bool operator!=(clang::Decl const* lhs, Dominator const& rhs) {
+    return !(lhs == rhs);
+}
+
+std::ostream& dump(std::ostream& os, Dominator const& d) {
+    if(isCastData(d)) {
+        dump(os, std::get<CastData>(d));
+    }
+    return os;
+}
+
 void dump(std::ostream& os, DeclInfo const& d) {
-    auto const& [decl, cast] = d;
+    auto const& [decl, dominator] = d;
     std::stringstream ss;
     dump(ss, decl);
-    if(!cast) {
+    if(!dominator) {
         //dump(os, decl);
         os << ss.str();
         return;
     }
-    dump(os, cast.value()) << " ---> " << ss.str();
+    dump(os, dominator.value());
+    os << " ---> " << ss.str();
 }
 
-
-void censusSummary(std::ostream &os, DeclData const& data, std::optional<CastData const> const& castData) {
+void declSummary(std::ostream &os, DeclData const& data) {
     os << "[" << data.category << "] " << data.ident << "(" << data.type << ")"
        << " " << data.linkedParameter;
-    if(castData) {
-        auto const& c = castData.value();
-        os << "<" << c.containerFunction << ">: " << c.location << ">";
-    }
 }
 
-void censusSummary(std::ostream &os, CensusDecl const* decl, DeclData const& data, std::optional<CastData const> const& castData, int indent = 0) {
+void declCastSummary(std::ostream &os, DeclData const& data, CastData const& cast) {
+    os << "[" << data.category << "] " << data.ident << "(" << data.type << ")"
+       << " " << data.linkedParameter;
+    os << "<" << cast.containerFunction << ">: " << cast.location << ">";
+}
 
+void censusSummary(std::ostream &os, CensusDecl const* decl, DeclData const& declData, std::optional<Dominator> const& dominator, int indent = 0) {
     assert(decl);
     std::string ws(indent, ' ');
     if(!decl) {
@@ -173,46 +199,43 @@ void censusSummary(std::ostream &os, CensusDecl const* decl, DeclData const& dat
     }
 
     os << "{";
-    censusSummary(os, data, castData);
+    if(!dominator) {
+        declSummary(os, declData);
+    } else if(isCastData(dominator.value())) {
+        auto const& castData = std::get<CastData>(dominator.value());
+        declCastSummary(os, declData, castData);
+    }
 
-    auto isLHS = [&decl](auto const& censusNode) {
-                    auto const& [_, data] = censusNode;
-                    auto const& [__, castData] = data;
-                    if(!castData)
-                        return false;
-
-                    return (decl->getID() == castData.value().from->getID());
+    auto doesDeclDominate = [&decl](auto const& censusNode) {
+        auto const& [_, data] = censusNode;
+        auto const& [__, d] = data;
+        if(!d)
+            return false;
+        if(isCastData(d.value()))
+            return decl == d.value();
+        return false;
     };
 
     std::vector<CensusNode> rchain;
-    std::copy_if(std::begin(census), std::end(census), std::back_inserter(rchain), isLHS);
+    std::copy_if(std::begin(census), std::end(census), std::back_inserter(rchain), doesDeclDominate);
     if(rchain.empty()) {
         os << "\n" << ws << "-> <end>}\n";
         return;
     }
 
-    for(auto const& [rdecl, info]: rchain) {
+    for(auto const& [rdecl, rinfo]: rchain) {
         os << "\n" << ws << "-> ";
-        auto const& [rdata, castdata] = info;
-        censusSummary(os, rdecl, rdata, castdata, indent+2);
+        auto const& [rdata, rdominator] = rinfo;
+        censusSummary(os, rdecl, rdata, rdominator, indent+2);
     }
     os << ws << "}\n";
 }
 
 void censusSummary(std::ostream &os) {
-    Census uncasts;
-    std::remove_copy_if(std::begin(census),
-                        std::end(census),
-                        std::inserter(uncasts, std::end(uncasts)),
-                        [](auto const& i) {
-                            auto const& [_, data] = i;
-                            auto const& [__, castData] = data;
-                            return castData.has_value();
-                        });
-    
     for(auto const& [decl, info]: census) {
-        auto const& [data, cast] = info;
-        censusSummary(os, decl, data, cast);
+        auto const& [data, dominator] = info;
+
+        censusSummary(os, decl, data, dominator);
         os << "\n";
     }
 }
@@ -265,16 +288,40 @@ int f(void *pv){
 
 // TODO TODO
 //  - Add missing cast dumps. For example in other cast types.(?).
-StatementMatcher CastMatcher = castExpr(
-                                allOf(
-                                    hasCastKind(CK_BitCast),
-                                    anyOf( // technically just any of expr or decl is needed.
-                                        hasAncestor(declStmt().bind("var")),
-                                        hasAncestor(binaryOperator().bind("binop")),
-                                        hasAncestor(callExpr().bind("call")),
-                                        hasAncestor(expr().bind("gexpr"))),
-                                    hasDescendant(declRefExpr().bind("castee")))
-                                ).bind("cast");
+DeclarationMatcher DeclMatcher =
+    varDecl(hasDescendant(declRefExpr().bind("assignee"))).bind("varDecl");
+
+StatementMatcher CastMatcher =
+    castExpr(
+        allOf(
+            hasCastKind(CK_BitCast),
+            anyOf( // technically just any of expr or decl is needed.
+                hasAncestor(declStmt().bind("var")),
+                hasAncestor(binaryOperator().bind("binop")),
+                hasAncestor(callExpr().bind("call")),
+                hasAncestor(expr().bind("gexpr"))),
+                hasDescendant(declRefExpr().bind("castee")))
+        ).bind("cast");
+    /*
+StatementMatcher CastMatcher =
+    compoundStmt(
+        anyOf(
+            hasDescendant(
+                castExpr(
+                    allOf(
+                        hasCastKind(CK_BitCast),
+                        anyOf( // technically just any of expr or decl is needed.
+                            hasAncestor(declStmt().bind("var")),
+                            hasAncestor(binaryOperator().bind("binop")),
+                            hasAncestor(callExpr().bind("call")),
+                            hasAncestor(expr().bind("gexpr"))),
+                            hasDescendant(declRefExpr().bind("castee")))
+                    ).bind("cast")),
+            hasDescendant(
+                varDecl(
+                    hasDescendant(declRefExpr().bind("assignee"))
+                    ).bind("varDecl"))));
+        */
 
 
 // Apply a custom category to all cli options so that they are the only ones displayed
@@ -291,7 +338,8 @@ static cl::extrahelp Morehelp("\nMore help text...\n");
 
 std::string functionParameterMatch(
         clang::ASTContext & context,
-        clang::CastExpr const& castExpr,
+        //clang::CastExpr const& castExpr,
+        clang::Stmt const& castExpr,
         clang::DeclarationNameInfo const& name) {
 
     auto const *fn = getContainerFunctionDecl(context, castExpr);
@@ -305,6 +353,28 @@ std::string functionParameterMatch(
     return "(Not a param)";
 }
 
+std::string functionParameterMatch(
+        clang::ASTContext & context,
+        clang::VarDecl const& var) {
+
+    if(var.isLocalVarDecl()) {
+        return "(Not a param)";
+    }
+    
+    return "(No_Impl_Yet!)";
+}
+
+DeclData buildDeclData(
+        clang::ASTContext & context,
+        clang::VarDecl const& var) {
+    return {
+        toString(context, var),
+        typeof(context, var),
+        getTypeCategoryName(context, var),
+        functionParameterMatch(context, var)
+    };
+}
+
 DeclData buildDeclData(
         clang::ASTContext & context,
         clang::CastExpr const& castExpr,
@@ -315,6 +385,29 @@ DeclData buildDeclData(
         typeof(context, e),                                         // type
         getTypeCategoryName(context, e),                            // category
         functionParameterMatch(context, castExpr, e.getNameInfo())  // linkedParameter
+    };
+}
+
+DeclData buildDeclData(
+        clang::ASTContext & context,
+        clang::DeclRefExpr const& e) {
+
+        auto const * stmt = e.getExprStmt();
+        if(!stmt) {
+            FOUT << "[ERROR](buildDeclData) Expr stmt from DeclRefExpr == nullptr";
+            return {
+                toString(context, e),
+                typeof(context, e),
+                getTypeCategoryName(context, e),
+                {}
+            };
+        }
+
+    return {
+        toString(context, e),                                       // ident
+        typeof(context, e),                                         // type
+        getTypeCategoryName(context, e),                            // category
+        functionParameterMatch(context, *stmt, e.getNameInfo())  // linkedParameter
     };
 }
 
@@ -536,6 +629,148 @@ void updateCensus(clang::ASTContext & context,
          << "\n";
 }
 
+void processVar(MatchFinder::MatchResult const& result) {
+    assert(result);
+    auto *context = result.Context;
+    assert(context);
+
+    // [VarDecl]    [DeclRefExpr]
+    // [int *pi2] = [pi]
+    //  {pi -> p2}
+    //  LHS    RHS
+
+    auto const *rhs = result.Nodes.getNodeAs<clang::VarDecl>("varDecl");
+    assert(rhs);
+    auto const *lhsRef = result.Nodes.getNodeAs<clang::DeclRefExpr>("assignee");
+    assert(lhsRef);
+    auto const * lhs = lhsRef->getFoundDecl();
+    if(!lhs) {
+        FOUT << "[ERROR](processVar) LHS Decl == nullptr\n";
+        auto lhs_ = lhsRef->getFoundDecl();
+        if(!lhs_) {
+            FOUT << "[ERROR](processVar) LHS' Decl == nullptr\n";
+        }
+        lhs = lhs_;
+    }
+
+    auto rhsData = buildDeclData(*context, *rhs);
+    auto lhsData = buildDeclData(*context, *lhsRef);
+
+    auto const& location = rhs->getLocation().printToString(*result.SourceManager);
+
+    CastData castInfo{
+        lhs,                                                // CastData.from
+        lhsData,                                            // CastData.fromData
+        {},                        // CastData.expr
+        {},                             // CastData.exprType
+        {},            // castData.containerFunction
+        {},        // CastData.linkedFunction
+        location                                            // CastData.location
+    };
+
+    if (census.find(lhs) == std::end(census)) {
+        census.insert({lhs, {lhsData, {}}});
+    } else {
+        // LHS is already in census. 
+        //  - Ensure that lhsdata is same.
+        auto const& [data, _] = census[lhs];
+        if(lhsData != data) {
+            FOUT << "[WARN](processVar) LHS in Census with different DeclData\n";
+        }
+        //  - Cast data will be unchanged.
+        // Nothing to do.
+    }
+
+    if (census.find(rhs) == std::end(census)) {
+        census.insert({rhs, {rhsData, castInfo}});
+    } else {
+        // RHS is already in census.
+        //  - Ensure that rhsdata is same.
+        auto const& [data, cast] = census[rhs];
+        if(rhsData != data) {
+            FOUT << "[WARN](processVar) RHS in Census with different DeclData\n";
+            FOUT << "[WARN](processVar) Old RHS Data: {";
+            dump(FOUT, data);
+            FOUT << "[WARN](processVar) }";
+            FOUT << "[WARN](processVar) New RHS Data: {";
+            dump(FOUT, rhsData);
+            FOUT << "[WARN](processVar) }";
+        }
+        //  - If castdata is not present, update.
+        if(!cast) {
+            census[rhs] = {data, castInfo};
+        } else {
+            FOUT << "[WARN](processVar) RHS in Census with different CastData\n";
+            FOUT << "[WARN](processVar) Old RHS CastData: {";
+            dump(FOUT, cast.value());
+            FOUT << "[WARN](processVar) }";
+            FOUT << "[WARN](processVar) New RHS CastData: {";
+            dump(FOUT, castInfo);
+            FOUT << "[WARN](processVar) }";
+        }
+    }
+}
+
+void processCast(MatchFinder::MatchResult const& result) {
+    assert(result);
+    auto *context = result.Context;
+    assert(context);
+    // Source operand (i.e. the expression which is being cast)
+    //auto const *castSource = castExpr->getSubExprAsWritten();
+    auto const *castExpr = result.Nodes.getNodeAs<clang::CastExpr>("cast");
+    auto const *castSource = result.Nodes.getNodeAs<clang::DeclRefExpr>("castee");
+    assert(castSource);
+
+    // Dest
+    using namespace clang;
+    auto const *var = result.Nodes.getNodeAs<clang::DeclStmt>("var");
+    auto const *gexpr = result.Nodes.getNodeAs<clang::Expr>("gexpr");
+    auto const *binop = result.Nodes.getNodeAs<clang::BinaryOperator>("binop");
+    auto const *call = result.Nodes.getNodeAs<clang::CallExpr>("call");
+
+    auto const& location = castExpr->getExprLoc().printToString(*result.SourceManager);
+
+    if(!!var) {
+        updateCensus(*context, *castExpr, *castSource, var, location);
+    }
+    else if (!!call) {
+        updateCensus(*context, *castExpr, *castSource, call, location);
+    }
+
+    /*
+    } else if(!!binop) {
+        callee = containerFn;
+        cast.second = binop;
+        castExprType = "binop";
+        dest = toString(context, binop);
+    */
+    /*
+    } else if(!!gexpr) {
+        cast.second = gexpr;
+    }
+    */
+
+    /*
+    // Dump ast
+    FOUT << "------- AST DUMP----\n";
+    std::string dmpstr;
+    llvm::raw_string_ostream dmpstrm(dmpstr);
+    castExpr->dump(dmpstrm, *context);
+    FOUT << dmpstr << "\n";
+    FOUT << "----end AST DUMP----\n";
+
+    auto parents = context->getParents(*castExpr);
+    FOUT << "---    Parent Dumps---";
+    for(auto const& parent: parents) {
+        std::string dumpstr;
+        llvm::raw_string_ostream dumpstrm(dumpstr);
+        parent.dump(dumpstrm, *context);
+        FOUT << dumpstr << "\n";
+        auto const * fn = parent.get<clang::FunctionDecl>();
+    }
+    FOUT << "---end Parent Dumps---";
+    */
+}
 
 //---
 class CastMatchCallback: public MatchFinder::MatchCallback {
@@ -548,62 +783,16 @@ public:
 
         // Cast expression
         auto const *castExpr = result.Nodes.getNodeAs<clang::CastExpr>("cast");
-        assert(castExpr);
+        // Decl without cast
+        auto const *varDecl = result.Nodes.getNodeAs<clang::VarDecl>("varDecl");
 
-        // Source operand (i.e. the expression which is being cast)
-        //auto const *castSource = castExpr->getSubExprAsWritten();
-        auto const *castSource = result.Nodes.getNodeAs<clang::DeclRefExpr>("castee");
-        assert(castSource);
-
-        // Dest
-        using namespace clang;
-        auto const *var = result.Nodes.getNodeAs<clang::DeclStmt>("var");
-        auto const *gexpr = result.Nodes.getNodeAs<clang::Expr>("gexpr");
-        auto const *binop = result.Nodes.getNodeAs<clang::BinaryOperator>("binop");
-        auto const *call = result.Nodes.getNodeAs<clang::CallExpr>("call");
-
-        auto const& location = castExpr->getExprLoc().printToString(*result.SourceManager);
-
-        if(!!var) {
-            updateCensus(*context, *castExpr, *castSource, var, location);
-        }
-        else if (!!call) {
-            updateCensus(*context, *castExpr, *castSource, call, location);
+        if(castExpr) {
+            processCast(result);
         }
 
-        /*
-        } else if(!!binop) {
-            callee = containerFn;
-            cast.second = binop;
-            castExprType = "binop";
-            dest = toString(context, binop);
-        */
-        /*
-        } else if(!!gexpr) {
-            cast.second = gexpr;
+        if(varDecl) {
+            processVar(result);
         }
-        */
-
-        /*
-        // Dump ast
-        FOUT << "------- AST DUMP----\n";
-        std::string dmpstr;
-        llvm::raw_string_ostream dmpstrm(dmpstr);
-        castExpr->dump(dmpstrm, *context);
-        FOUT << dmpstr << "\n";
-        FOUT << "----end AST DUMP----\n";
-
-        auto parents = context->getParents(*castExpr);
-        FOUT << "---    Parent Dumps---";
-        for(auto const& parent: parents) {
-            std::string dumpstr;
-            llvm::raw_string_ostream dumpstrm(dumpstr);
-            parent.dump(dumpstrm, *context);
-            FOUT << dumpstr << "\n";
-            auto const * fn = parent.get<clang::FunctionDecl>();
-        }
-        FOUT << "---end Parent Dumps---";
-        */
 
         /* Dumps the whole AST!
         std::cout << "TUD:\n";
@@ -661,6 +850,7 @@ int main(int argc, const char **argv) {
     CastMatchCallback dumper;
     MatchFinder Finder;
     Finder.addMatcher(CastMatcher, &dumper);
+    Finder.addMatcher(DeclMatcher, &dumper);
 
     FOUT.open("census-dump.txt", std::ios::out);
     //return Tool.run(newFrontendActionFactory<clang::SyntaxOnlyAction>().get());
