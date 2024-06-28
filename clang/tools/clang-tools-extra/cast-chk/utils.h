@@ -97,32 +97,6 @@ std::string toString(ASTContext const& context, CallExpr const& call, unsigned p
     assert(fn);
 
     return toString(context, *fn, parmPos);
-    /*
-    std::stringstream ss;
-    ss << fn->getNameAsString() << "{$" << parmPos << ": ";
-
-    auto const * parm = fn->getParamDecl(parmPos);
-    if(!parm) {
-        ss << "(Cannot getParamDecl())";
-        return ss.str();
-    }
-    assert(parm);
-
-    // Get parm type
-    auto const parmType = parm->getOriginalType(); 
-    ss << typeof(context, parmType) << "} ";
-
-    // Get parm id
-    auto const * parmId = parm->getIdentifier();
-    if(!parmId) {
-        ss << "(Cannot get parameter ID)";
-        return ss.str();
-    }
-    assert(parmId);
-    ss << parmId->getName().str();
-
-    return ss.str();
-    */
 }
 
 std::string toString(ASTContext const& context, FunctionDecl const& fn, unsigned parmPos) {
@@ -250,33 +224,26 @@ clang::Decl const* getParamDecl(ASTContext const& context, CallExpr const& call,
     auto const * parm = fn->getParamDecl(parmPos);
     assert(parm);   // not needed
     return parm;
-    //return parm->getCanonicalDecl();
 }
 
 std::optional<unsigned> getParameterMatch(clang::FunctionDecl const* fn, clang::DeclarationNameInfo const& matchInfo) {
-    assert(fn);
-    //FOUT << "[DEBUG](utils.h::getParameterMatch)" << "matchInfo: " << matchInfo.getAsString() << "\n";
+    //assert(fn);
+    if(!fn) {
+        return std::nullopt;
+    }
     unsigned parmPos = 0;
     auto match = std::find_if(fn->param_begin(), fn->param_end(),
         [&] (auto const& parm) -> bool {
         parmPos++;
         auto parmName = parm->getDeclName();
-        //FOUT << "[DEBUG](utils.h::getParameterMatch)" << "parmPos: " << parmPos << "; parmName: " << parmName.getAsString() << "\n";
         return parmName == matchInfo.getName();
     });
-    //FOUT << "[DEBUG](utils.h::getParameterMatch)" << "parmPos: " << parmPos << "\n";
-    //FOUT << "[DEBUG](utils.h::getParameterMatch)" << "nbParms: " << fn->getNumParams() << "\n";
 
     if (match == fn->param_end() || parmPos > fn->getNumParams()) {
-        //FOUT << "[DEBUG](utils.h::getParameterMatch)" << "parmPos > nbParams\n";
         return std::nullopt;
     }
     else {
-        //FOUT << "[DEBUG](utils.h::getParameterMatch)" << "parmPos: " << parmPos << "\n";
         return parmPos - 1;
     }
 }
-        
-// get non cast node()
-//{
-// }
+

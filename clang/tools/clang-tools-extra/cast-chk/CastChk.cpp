@@ -35,6 +35,7 @@
 #include <optional>
 #include <any>
 #include <tuple>
+#include <set>
 
 #include "utils.h"
 
@@ -78,6 +79,10 @@ struct DeclData {
     std::string type;
     std::string category;
     std::string linkedParameter;
+    /*
+    std::string linkedFunction;
+    std::string location;
+    */
 };
 
 bool operator==(DeclData const& lhs, DeclData const& rhs) {
@@ -121,11 +126,11 @@ bool operator!=(DominatorData const& lhs, DominatorData const& rhs) {
     return !(lhs == rhs);
 }
 
-bool operator==(CensusDecl const* lhs, DominatorData const& rhs) {
+bool operator==(DominatorData const& lhs, CensusDecl const* rhs) {
     assert(lhs);
-    return lhs->getID() == rhs.from->getID();
+    return rhs->getID() == lhs.from->getID();
 }
-bool operator!=(CensusDecl const* lhs, DominatorData const& rhs) {
+bool operator!=(DominatorData const& lhs, CensusDecl const* rhs) {
     return !(lhs == rhs);
 }
 
@@ -139,7 +144,8 @@ struct std::hash<CensusDecl>
     }
 };
 
-using DeclInfo = std::pair<DeclData, std::optional<DominatorData>>;
+using Dominators = std::vector<DominatorData>;
+using DeclInfo = std::pair<DeclData, std::optional<Dominators>>;
 
 // Census stores decl & dominator data for every decl.
 using Census = std::unordered_map<CensusDecl const*, DeclInfo>;
@@ -147,17 +153,49 @@ Census census;
 using CensusNode = decltype(census)::value_type;
 
 std::ofstream FOUT;
+std::ofstream FOUT2;
 
+struct TypeData {
+    std::string tname;
+};
+bool operator ==(TypeData const& lhs, TypeData const& rhs) {
+    return lhs.tname == rhs.tname;
+}
+bool operator !=(TypeData const& lhs, TypeData const& rhs) {
+    return !(lhs == rhs);
+}
 
-std::ostream& dump(std::ostream& os, DominatorData const& d);
+// With every decl, store the orderd_type.
+// censusI2[decl].insert({censusI2[decl].size() + 1, new_type})
+using OrderedType = std::pair<unsigned, TypeData>;
+struct OrderedTypeCmp {
+    bool operator()(OrderedType const& lhs, OrderedType const& rhs) const {
+        if(lhs.second == rhs.second)
+            return false;
+        return lhs.first < rhs.first;
+    }
+};
+
+using CensusI2 = std::unordered_map<CensusDecl const*, std::set<OrderedType, OrderedTypeCmp>>;
+CensusI2 census2;
+
+/*
+using DeclChainedData = std::pair<CensusDecl const*, DeclData const&>;
+using CastChain = std::vector<DeclChainedData>;
+using CastHistory = std::unordered_map<CensusDecl const*, std::vector<CastChain>>;
+CastHistory history;
+*/
+
+std::ostream& dump(std::ostream &os, Dominators const& doms);
 std::ostream& dump(std::ostream &os, DeclData const& info);
 std::ostream& dump(std::ostream &os, DominatorData const& info);
 void dump(std::ostream& os, DeclInfo const& d);
 
 void declSummary(std::ostream &os, DeclData const& data);
 void declCastSummary(std::ostream &os, DeclData const& data, DominatorData const& cast);
-void censusSummary(std::ostream &os, CensusDecl const* decl, DeclData const& declData, std::optional<DominatorData const> const& dominator, int indent = 0);
+void censusSummary(std::ostream &os, CensusDecl const* decl, DeclData const& declData, int indent = 0);
 void censusSummary(std::ostream &os);
+void census2Summary(std::ostream &os);
 
 std::string functionParameterMatch(
         clang::ASTContext & context,
@@ -293,9 +331,6 @@ std::string getLinkedFunction(
         clang::CastExpr const& castExpr,
         clang::CallExpr const& call) {
 
-    // Get function body
-    // parm->getOriginalType : QualType
-    // parm->getFunctionScopeIndex: unsigned parameter index
     auto const * calledFn = call.getDirectCallee();
     assert(calledFn);
 
@@ -330,16 +365,23 @@ CensusDecl const* getTargetDecl(
 }
 
 //---
+std::ostream& dump(std::ostream &os, Dominators const& doms) {
+    for(auto const& d: doms) {
+        dump(os, d);
+    }
+
+    return os;
+}
+
 void dump(std::ostream& os, DeclInfo const& d) {
-    auto const& [decl, dominator] = d;
+    auto const& [decl, dominators] = d;
     std::stringstream ss;
     dump(ss, decl);
-    if(!dominator) {
-        //dump(os, decl);
+    if(!dominators) {
         os << ss.str();
         return;
     }
-    dump(os, dominator.value());
+    dump(os, dominators.value());
     os << " ---> " << ss.str();
 }
 
@@ -361,15 +403,20 @@ std::ostream& dump(std::ostream &os, DominatorData const& info) {
     return os;
 }
 
-void declSummary(std::ostream &os, DeclData const& data, std::optional<DominatorData const> const& dom) {
+//void declSummary(std::ostream &os, DeclData const& data, std::optional<Dominators const> const& doms) {
+void declSummary(std::ostream &os, DeclData const& data) {
     os << "[" << data.category << "] " << data.ident << "(" << data.type << ")"
        << " " << data.linkedParameter;
-    if(dom) {
-        os << "<" << dom->containerFunction << ">: " << dom->location << ">";
+    /*
+    if(doms) {
+        for(auto const& d: doms) {
+            os << "<" << dom->containerFunction << ">: " << dom->location << ">";
+        }
     }
+    */
 }
 
-void censusSummary(std::ostream &os, CensusDecl const* decl, DeclData const& declData, std::optional<DominatorData const> const& dominator, int indent) {
+void censusSummary(std::ostream &os, CensusDecl const* decl, DeclData const& declData, int indent) {
     assert(decl);
     std::string ws(indent, ' ');
     if(!decl) {
@@ -378,18 +425,21 @@ void censusSummary(std::ostream &os, CensusDecl const* decl, DeclData const& dec
     }
 
     os << "{";
-    declSummary(os, declData, dominator);
+    declSummary(os, declData);
 
     auto doesDeclDominate = [&decl](auto const& censusNode) {
         auto const& [_, info] = censusNode;
-        auto const& [__, d] = info;
-        if(!d)
+        auto const& [__, nodeDoms] = info;
+        if(!nodeDoms)
             return false;
-        return decl == d.value();
+        auto const& doms = nodeDoms.value();
+        return std::find(std::begin(doms), std::end(doms),
+                decl) != std::end(doms);
     };
 
     std::vector<CensusNode> rchain;
     std::copy_if(std::begin(census), std::end(census), std::back_inserter(rchain), doesDeclDominate);
+
     if(rchain.empty()) {
         os << "\n" << ws << "-> <end>}\n";
         return;
@@ -397,17 +447,84 @@ void censusSummary(std::ostream &os, CensusDecl const* decl, DeclData const& dec
 
     for(auto const& [rdecl, rinfo]: rchain) {
         os << "\n" << ws << "-> ";
-        auto const& [rdata, rdominator] = rinfo;
-        censusSummary(os, rdecl, rdata, rdominator, indent+2);
+        auto const& [rdata, _] = rinfo;
+        censusSummary(os, rdecl, rdata, indent+2);
     }
     os << ws << "}\n";
 }
 
+/*
+void buildCastChain(CensusDecl const* decl, DeclData const& data, CastChain chain) {
+    auto doesDeclDominate = [&decl](auto const& censusNode) {
+        auto const& [_, info] = censusNode;
+        auto const& [__, d] = info;
+        if(!d)
+            return false;
+        auto const& doms = d.value();
+        return std::find(std::begin(doms), std::end(doms),
+                decl) != std::end(doms);
+    };
+
+    std::vector<CensusNode> c;
+    std::copy_if(std::begin(census), std::end(census), std::back_inserter(c), doesDeclDominate);
+    if(c.empty()) {
+        return;
+    }
+
+    for(auto const& [rdecl, rinfo]: c) {
+        auto const& [rdata, _] = rinfo;
+}
+
+void buildCastHistory(CensusDecl const* decl, DeclData const& data) {
+
+    auto doesDeclDominate = [&decl](auto const& censusNode) {
+        auto const& [_, info] = censusNode;
+        auto const& [__, d] = info;
+        if(!d)
+            return false;
+        auto const& doms = d.value();
+        return std::find(std::begin(doms), std::end(doms),
+                decl) != std::end(doms);
+    };
+
+    std::vector<CensusNode> chain;
+    std::copy_if(std::begin(census), std::end(census), std::back_inserter(chain), doesDeclDominate);
+    if(chain.empty()) {
+        return;
+    }
+
+    for(auto const& [rdecl, rinfo]: chain) {
+        auto const& [rdata, _] = rinfo;
+        CastChain rchain;
+        rchain.push_back({rdecl, rdata});
+        buildCastChain(rdecl, rdata, rchain);
+    }
+}
+
+void buildCastHistory() {
+    for(auto const& [decl, info]: census) {
+        auto const& [data, _] = info;
+        buildCastHistory(decl, data);
+    }
+}
+*/
+
+void census2Summary(std::ostream &os) {
+    for(auto const& [decl, typeset]: census2) {
+        declSummary(os, census[decl].first);
+        os << ": ";
+        for(auto const& [_, type]: typeset) {
+            os << type.tname << " -> ";
+        }
+        os << "(end)\n";
+    }
+}
+
 void censusSummary(std::ostream &os) {
     for(auto const& [decl, info]: census) {
-        auto const& [data, dominator] = info;
+        auto const& [data, _] = info;
 
-        censusSummary(os, decl, data, dominator);
+        censusSummary(os, decl, data);
         os << "\n";
     }
 }
@@ -432,12 +549,48 @@ void preprocess(
     }
 }
 
+void updateCensusI2(
+        clang::ASTContext & context,
+        CensusDecl const* domDecl,
+        std::string domType,
+        CensusDecl const* decl,
+        std::string declType) {
+
+    // If domDecl is not already in census
+    if(census2.find(domDecl) == std::end(census2)) {
+        //  - insert domDecl with domDecl's type
+        FOUT2 << "Inserting domdecl with type {0, " << domType << "}\n";
+        census2.insert({domDecl, {{0, {domType}}}});
+        //  - add decl's type to domDecl's type set.
+        FOUT2 << "Inserting domdecl with type {" << census2[domDecl].size() << ", " << declType << "}\n";
+        census2[domDecl].insert({census2[domDecl].size(), {declType}});
+    }
+    else { // just add the new type (decl's)
+        FOUT2 << "Inserting domdecl with type {" << census2[domDecl].size() << ", " << declType << "}\n";
+        census2[domDecl].insert({census2[domDecl].size(), {declType}});
+    }
+
+    // If decl is not already in census
+    if(census2.find(decl) == std::end(census2)) {
+        //  - insert decl with decl's type
+        FOUT2 << "Inserting decl with type {0, " << declType << "}\n";
+        census2.insert({decl, {{0, {declType}}}});
+
+    } else {// probably nothing to do
+        //census2[decl].insert({census2[decl].size(), {declType}});
+    }
+}
+
+using DeclInfoSingleDom = std::pair<DeclData, std::optional<DominatorData>>;
 void updateCensus(
+        clang::ASTContext & context,
         CensusDecl const* domDecl,
         DeclInfo domInfo,
         CensusDecl const* decl,
-        DeclInfo info) {
+        DeclInfoSingleDom info) {
     assert(decl);
+
+    updateCensusI2(context, domDecl, domInfo.first.type, decl, info.first.type);
 
     if (census.find(domDecl) == std::end(census)) {
         census.insert({domDecl, domInfo});
@@ -453,13 +606,16 @@ void updateCensus(
         // Nothing to do.
     }
 
+    auto const& [newData, newDomData] = info;
     if (census.find(decl) == std::end(census)) {
-        census.insert({decl, info});
+        census.insert({decl, {newData, {{newDomData.value()}}}});
+
     } else {
         // Decl is already in census.
         //  - Check that DeclData is same.
-        auto const& [oldData, oldDomData] = census[decl];
-        auto const& [newData, newDomData] = info;
+        auto & [oldData, oldDoms] = census[decl];
+
+        // Check existing decl data
         if(oldData != newData) {
             FOUT << "[WARN](updateCensus) decl in Census with different DeclData\n";
             FOUT << "[WARN](updateCensus) Old decl Data: {";
@@ -469,11 +625,13 @@ void updateCensus(
             dump(FOUT, newData);
             FOUT << "[WARN](updateCensus) }";
         }
-        //  - If DominatorData is not present, update.
-        if(!oldDomData) {
-            census[decl] = {info};
 
-        } else if(oldDomData.value() != newDomData.value()) {
+        // If DominatorData is not present, update.
+        if(!oldDoms) {
+            census[decl] = {newData, {{newDomData.value()}}};
+
+        } else {
+            /*
             // Nothing to do. (YET)
             FOUT << "[WARN](updateCensus) decl in Census with different DominatorData\n";
             FOUT << "[WARN](updateCensus) Old DominatorData: {";
@@ -482,6 +640,12 @@ void updateCensus(
             FOUT << "[WARN](updateCensus) New DominatorData: {";
             dump(FOUT, newDomData.value());
             FOUT << "[WARN](updateCensus) }";
+            */
+            auto &doms = oldDoms.value();
+            doms.push_back(newDomData.value());
+            FOUT << "[INFO](updateCensus) New Dominator Appended: {\n";
+            dump(FOUT, newDomData.value());
+            FOUT << "[INFO](updateCensus) }\n";
         }
     }
 }
@@ -513,7 +677,7 @@ void updateCensus(clang::ASTContext & context,
     }
     auto rhsData = buildDeclData(context, castExpr, *dest);
 
-    DominatorData castInfo{
+    DominatorData rhsDom{
         lhs,                                                // DominatorData.from
         lhsData,                                            // DominatorData.fromData
         toString(context, castExpr),                        // DominatorData.expr
@@ -523,13 +687,13 @@ void updateCensus(clang::ASTContext & context,
         location                                            // DominatorData.location
     };
 
-    updateCensus(lhs, {lhsData,{}}, rhs, {rhsData, castInfo});
+    updateCensus(context, lhs, {lhsData,{}}, rhs, {rhsData, rhsDom});
 
-    FOUT << "Cast site: " << castInfo.location << "\n"
-         << "    Casting: " << castInfo.fromData.ident << " -> " << rhsData.ident << "\n"
-         << "       from: [" << castInfo.fromData.category << "] " << castInfo.fromData.type << "\n"
+    FOUT << "Cast site: " << rhsDom.location << "\n"
+         << "    Casting: " << rhsDom.fromData.ident << " -> " << rhsData.ident << "\n"
+         << "       from: [" << rhsDom.fromData.category << "] " << rhsDom.fromData.type << "\n"
          << "         to: [" << rhsData.category << "] " << rhsData.type << "\n"
-         << "       expr: " << "[" << castInfo.exprType << "] " << castInfo.expr << "\n"
+         << "       expr: " << "[" << rhsDom.exprType << "] " << rhsDom.expr << "\n"
          << "\n";
 }
 
@@ -610,54 +774,11 @@ void processVar(MatchFinder::MatchResult const& result) {
         location                   // DominatorData.location
     };
 
-    updateCensus(lhs, {lhsData, {}}, rhs, {rhsData, domData});
-
-    /*
-    if (census.find(lhs) == std::end(census)) {
-        census.insert({lhs, {lhsData, {}}});
-    } else {
-        // LHS is already in census. 
-        //  - Ensure that lhsdata is same.
-        auto const& [data, _] = census[lhs];
-        if(lhsData != data) {
-            FOUT << "[WARN](processVar) LHS in Census with different DeclData\n";
-        }
-        //  - Cast data will be unchanged.
-        // Nothing to do.
-    }
-
-    if (census.find(rhs) == std::end(census)) {
-        census.insert({rhs, {rhsData, castInfo}});
-    } else {
-        // RHS is already in census.
-        //  - Ensure that rhsdata is same.
-        auto const& [data, cast] = census[rhs];
-        if(rhsData != data) {
-            FOUT << "[WARN](processVar) RHS in Census with different DeclData\n";
-            FOUT << "[WARN](processVar) Old RHS Data: {";
-            dump(FOUT, data);
-            FOUT << "[WARN](processVar) }";
-            FOUT << "[WARN](processVar) New RHS Data: {";
-            dump(FOUT, rhsData);
-            FOUT << "[WARN](processVar) }";
-        }
-        //  - If DominatorData is not present, update.
-        if(!cast) {
-            census[rhs] = {data, castInfo};
-        } else {
-            FOUT << "[WARN](processVar) RHS in Census with different DominatorData\n";
-            FOUT << "[WARN](processVar) Old RHS DominatorData: {";
-            dump(FOUT, cast.value());
-            FOUT << "[WARN](processVar) }";
-            FOUT << "[WARN](processVar) New RHS DominatorData: {";
-            dump(FOUT, castInfo);
-            FOUT << "[WARN](processVar) }";
-        }
-    }
-    */
+    updateCensus(*context, lhs, {lhsData, {}}, rhs, {rhsData, domData});
 }
 
 //----------------------------------------------------------------------------
+// MATCHERS
 
 DeclarationMatcher DeclMatcher =
     varDecl(hasDescendant(declRefExpr().bind("assignee"))).bind("varDecl");
@@ -677,7 +798,6 @@ StatementMatcher CastMatcher =
 
 //---
 class CastMatchCallback: public MatchFinder::MatchCallback {
-
 public:
     void run(MatchFinder::MatchResult const &result) override {
         assert(result);
@@ -708,17 +828,12 @@ public:
             return;
         }
 
-        /*
-        FOUT << "# Census collection so far:\n";
-        for(auto const& [_, data]: census) {
-            dump(FOUT, data);
-        }
-        FOUT << "# Census end.\n";
-        */
-
         FOUT << "# Census summary so far:\n";
         censusSummary(FOUT);
         FOUT << "# Census summary end.\n";
+        FOUT2 << "# Census summary so far:\n";
+        census2Summary(FOUT2);
+        FOUT2 << "# Census summary end.\n";
 
         // TODO: Emit error when a cast destination is incompatible with source/parent types.
     }
@@ -766,6 +881,7 @@ int main(int argc, const char **argv) {
     Finder.addMatcher(DeclMatcher, &dumper);
 
     FOUT.open("census-dump.txt", std::ios::out);
+    FOUT2.open("census2-dump.txt", std::ios::out);
     //return Tool.run(newFrontendActionFactory<clang::SyntaxOnlyAction>().get());
     return Tool.run(newFrontendActionFactory(&Finder).get());
 }
