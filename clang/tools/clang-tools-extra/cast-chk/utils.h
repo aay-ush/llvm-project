@@ -219,6 +219,9 @@ std::string getContainerFunction(ASTContext & context, clang::Stmt const& stmt) 
 
 clang::Decl const* getParamDecl(ASTContext const& context, CallExpr const& call, unsigned parmPos) {
     auto const * fn = call.getDirectCallee();
+    if(!fn) {
+        return nullptr;
+    }
     assert(fn);
 
     auto const * parm = fn->getParamDecl(parmPos);

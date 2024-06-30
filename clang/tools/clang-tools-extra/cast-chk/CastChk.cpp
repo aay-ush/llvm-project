@@ -117,7 +117,19 @@ struct DominatorData {
     std::string location;
 };
 
+std::ofstream FOUT;
+std::ofstream FOUT2;
+
 bool operator==(DominatorData const& lhs, DominatorData const& rhs) {
+    if(!lhs.from) {
+        FOUT << "[ERROR](DominatorData-operator==) lhs.from == nullptr\n";
+        return false;
+    }
+    if(!rhs.from) {
+        FOUT << "[ERROR](DominatorData-operator==) rhs.from == nullptr\n";
+        return false;
+    }
+
     return lhs.from->getID() == rhs.from->getID()
         && lhs.fromData == rhs.fromData
         && lhs.location == rhs.location;
@@ -127,7 +139,15 @@ bool operator!=(DominatorData const& lhs, DominatorData const& rhs) {
 }
 
 bool operator==(DominatorData const& lhs, CensusDecl const* rhs) {
-    assert(lhs);
+    if(!lhs.from) {
+        FOUT << "[ERROR](DominatorData-operator==) lhs.from == nullptr\n";
+        return false;
+    }
+    if(!rhs) {
+        FOUT << "[ERROR](DominatorData-operator==) rhs == nullptr\n";
+        return false;
+    }
+    assert(rhs);
     return rhs->getID() == lhs.from->getID();
 }
 bool operator!=(DominatorData const& lhs, CensusDecl const* rhs) {
@@ -152,8 +172,6 @@ using Census = std::unordered_map<CensusDecl const*, DeclInfo>;
 Census census;
 using CensusNode = decltype(census)::value_type;
 
-std::ofstream FOUT;
-std::ofstream FOUT2;
 
 struct TypeData {
     std::string tname;
@@ -164,19 +182,34 @@ bool operator ==(TypeData const& lhs, TypeData const& rhs) {
 bool operator !=(TypeData const& lhs, TypeData const& rhs) {
     return !(lhs == rhs);
 }
+bool operator <(TypeData const& lhs, TypeData const& rhs) {
+    return lhs.tname < rhs.tname;
+}
 
 // With every decl, store the orderd_type.
 // censusI2[decl].insert({censusI2[decl].size() + 1, new_type})
 using OrderedType = std::pair<unsigned, TypeData>;
+/*
 struct OrderedTypeCmp {
     bool operator()(OrderedType const& lhs, OrderedType const& rhs) const {
-        if(lhs.second == rhs.second)
-            return false;
+        //if(lhs.second == rhs.second)
+        //    return false;
         return lhs.first < rhs.first;
     }
 };
+*/
 
-using CensusI2 = std::unordered_map<CensusDecl const*, std::set<OrderedType, OrderedTypeCmp>>;
+bool operator<(OrderedType const& lhs, OrderedType const& rhs) {
+    return lhs.first < rhs.first;
+}
+bool operator<(OrderedType const& lhs, TypeData const& rhs) {
+    return lhs.second < rhs;
+}
+bool operator<(TypeData const& lhs, OrderedType const& rhs) {
+    return lhs < rhs.second;
+}
+
+using CensusI2 = std::unordered_map<CensusDecl const*, std::set<OrderedType, std::less<>>>;
 CensusI2 census2;
 
 /*
@@ -333,6 +366,9 @@ std::string getLinkedFunction(
 
     auto const * calledFn = call.getDirectCallee();
     assert(calledFn);
+    if(!calledFn) {
+        return "[ERROR](getLinkedFunction) callee == nullptr";
+    }
 
     return calledFn->getNameAsString();
 }
@@ -539,6 +575,10 @@ void preprocess(
 
     // Trigger cast check for the called function.
     auto const * calledFn = call.getDirectCallee();
+    if(!calledFn) {
+        FOUT << "[ERROR](preprocess) call.DirectCallee == nullptr\n";
+        return;
+    }
     assert(calledFn);
 
     if(calledFn->hasBody()) {
@@ -561,13 +601,17 @@ void updateCensusI2(
         //  - insert domDecl with domDecl's type
         FOUT2 << "Inserting domdecl with type {0, " << domType << "}\n";
         census2.insert({domDecl, {{0, {domType}}}});
+
         //  - add decl's type to domDecl's type set.
         FOUT2 << "Inserting domdecl with type {" << census2[domDecl].size() << ", " << declType << "}\n";
         census2[domDecl].insert({census2[domDecl].size(), {declType}});
     }
     else { // just add the new type (decl's)
-        FOUT2 << "Inserting domdecl with type {" << census2[domDecl].size() << ", " << declType << "}\n";
-        census2[domDecl].insert({census2[domDecl].size(), {declType}});
+        TypeData t {declType};
+        if(census2[domDecl].find(t) != std::end(census2[domDecl])) {
+            FOUT2 << "Inserting domdecl with type {" << census2[domDecl].size() << ", " << declType << "}\n";
+            census2[domDecl].insert({census2[domDecl].size(), {declType}});
+        }
     }
 
     // If decl is not already in census
@@ -618,12 +662,12 @@ void updateCensus(
         // Check existing decl data
         if(oldData != newData) {
             FOUT << "[WARN](updateCensus) decl in Census with different DeclData\n";
-            FOUT << "[WARN](updateCensus) Old decl Data: {";
+            FOUT << "[WARN](updateCensus) Old decl Data: {\n";
             dump(FOUT, oldData);
-            FOUT << "[WARN](updateCensus) }";
-            FOUT << "[WARN](updateCensus) New decl Data: {";
+            FOUT << "[WARN](updateCensus) }\n";
+            FOUT << "[WARN](updateCensus) New decl Data: {\n";
             dump(FOUT, newData);
-            FOUT << "[WARN](updateCensus) }";
+            FOUT << "[WARN](updateCensus) }\n";
         }
 
         // If DominatorData is not present, update.
@@ -634,12 +678,12 @@ void updateCensus(
             /*
             // Nothing to do. (YET)
             FOUT << "[WARN](updateCensus) decl in Census with different DominatorData\n";
-            FOUT << "[WARN](updateCensus) Old DominatorData: {";
+            FOUT << "[WARN](updateCensus) Old DominatorData: {\n";
             dump(FOUT, oldDomData.value());
-            FOUT << "[WARN](updateCensus) }";
-            FOUT << "[WARN](updateCensus) New DominatorData: {";
+            FOUT << "[WARN](updateCensus) }\n";
+            FOUT << "[WARN](updateCensus) New DominatorData: {\n";
             dump(FOUT, newDomData.value());
-            FOUT << "[WARN](updateCensus) }";
+            FOUT << "[WARN](updateCensus) }\n";
             */
             auto &doms = oldDoms.value();
             doms.push_back(newDomData.value());
@@ -780,13 +824,17 @@ void processVar(MatchFinder::MatchResult const& result) {
 //----------------------------------------------------------------------------
 // MATCHERS
 
-DeclarationMatcher DeclMatcher =
+DeclarationMatcher AssignMatcher =
     varDecl(hasDescendant(declRefExpr().bind("assignee"))).bind("varDecl");
 
 StatementMatcher CastMatcher =
     castExpr(
         allOf(
-            hasCastKind(CK_BitCast),
+            /*
+            anyOf(
+                hasCastKind(CK_BitCast),
+                hasCastKind(CK_LValueToRValue)),
+            */
             anyOf( // technically just any of expr or decl is needed.
                 hasAncestor(declStmt().bind("var")),
                 hasAncestor(binaryOperator().bind("binop")),
@@ -878,7 +926,7 @@ int main(int argc, const char **argv) {
     CastMatchCallback dumper;
     MatchFinder Finder;
     Finder.addMatcher(CastMatcher, &dumper);
-    Finder.addMatcher(DeclMatcher, &dumper);
+    Finder.addMatcher(AssignMatcher, &dumper);
 
     FOUT.open("census-dump.txt", std::ios::out);
     FOUT2.open("census2-dump.txt", std::ios::out);
