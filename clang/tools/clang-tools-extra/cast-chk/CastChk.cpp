@@ -118,7 +118,6 @@ struct DominatorData {
 };
 
 std::ofstream FOUT;
-std::ofstream FOUT2;
 
 bool operator==(DominatorData const& lhs, DominatorData const& rhs) {
     if(!lhs.from) {
@@ -138,6 +137,7 @@ bool operator!=(DominatorData const& lhs, DominatorData const& rhs) {
     return !(lhs == rhs);
 }
 
+// Check if decl dominates, i.e. decl == dominatorData.from
 bool operator==(DominatorData const& lhs, CensusDecl const* rhs) {
     if(!lhs.from) {
         FOUT << "[ERROR](DominatorData-operator==) lhs.from == nullptr\n";
@@ -152,6 +152,12 @@ bool operator==(DominatorData const& lhs, CensusDecl const* rhs) {
 }
 bool operator!=(DominatorData const& lhs, CensusDecl const* rhs) {
     return !(lhs == rhs);
+}
+bool operator==(CensusDecl const* lhs, DominatorData const& rhs) {
+    return rhs == lhs;
+}
+bool operator!=(CensusDecl const* lhs, DominatorData const& rhs) {
+    return !(rhs == lhs);
 }
 
 template<>
@@ -172,46 +178,6 @@ using Census = std::unordered_map<CensusDecl const*, DeclInfo>;
 Census census;
 using CensusNode = decltype(census)::value_type;
 
-
-struct TypeData {
-    std::string tname;
-};
-bool operator ==(TypeData const& lhs, TypeData const& rhs) {
-    return lhs.tname == rhs.tname;
-}
-bool operator !=(TypeData const& lhs, TypeData const& rhs) {
-    return !(lhs == rhs);
-}
-bool operator <(TypeData const& lhs, TypeData const& rhs) {
-    return lhs.tname < rhs.tname;
-}
-
-// With every decl, store the orderd_type.
-// censusI2[decl].insert({censusI2[decl].size() + 1, new_type})
-using OrderedType = std::pair<unsigned, TypeData>;
-/*
-struct OrderedTypeCmp {
-    bool operator()(OrderedType const& lhs, OrderedType const& rhs) const {
-        //if(lhs.second == rhs.second)
-        //    return false;
-        return lhs.first < rhs.first;
-    }
-};
-*/
-
-bool operator<(OrderedType const& lhs, OrderedType const& rhs) {
-    return lhs.first < rhs.first;
-}
-bool operator<(OrderedType const& lhs, TypeData const& rhs) {
-    return lhs.second < rhs;
-}
-bool operator<(TypeData const& lhs, OrderedType const& rhs) {
-    return lhs < rhs.second;
-}
-
-using CensusI2 = std::unordered_map<CensusDecl const*, std::set<OrderedType, std::less<>>>;
-CensusI2 census2;
-
 /*
 using DeclChainedData = std::pair<CensusDecl const*, DeclData const&>;
 using CastChain = std::vector<DeclChainedData>;
@@ -228,7 +194,6 @@ void declSummary(std::ostream &os, DeclData const& data);
 void declCastSummary(std::ostream &os, DeclData const& data, DominatorData const& cast);
 void censusSummary(std::ostream &os, CensusDecl const* decl, DeclData const& declData, int indent = 0);
 void censusSummary(std::ostream &os);
-void census2Summary(std::ostream &os);
 
 std::string functionParameterMatch(
         clang::ASTContext & context,
@@ -545,17 +510,6 @@ void buildCastHistory() {
 }
 */
 
-void census2Summary(std::ostream &os) {
-    for(auto const& [decl, typeset]: census2) {
-        declSummary(os, census[decl].first);
-        os << ": ";
-        for(auto const& [_, type]: typeset) {
-            os << type.tname << " -> ";
-        }
-        os << "(end)\n";
-    }
-}
-
 void censusSummary(std::ostream &os) {
     for(auto const& [decl, info]: census) {
         auto const& [data, _] = info;
@@ -589,42 +543,6 @@ void preprocess(
     }
 }
 
-void updateCensusI2(
-        clang::ASTContext & context,
-        CensusDecl const* domDecl,
-        std::string domType,
-        CensusDecl const* decl,
-        std::string declType) {
-
-    // If domDecl is not already in census
-    if(census2.find(domDecl) == std::end(census2)) {
-        //  - insert domDecl with domDecl's type
-        FOUT2 << "Inserting domdecl with type {0, " << domType << "}\n";
-        census2.insert({domDecl, {{0, {domType}}}});
-
-        //  - add decl's type to domDecl's type set.
-        FOUT2 << "Inserting domdecl with type {" << census2[domDecl].size() << ", " << declType << "}\n";
-        census2[domDecl].insert({census2[domDecl].size(), {declType}});
-    }
-    else { // just add the new type (decl's)
-        TypeData t {declType};
-        if(census2[domDecl].find(t) != std::end(census2[domDecl])) {
-            FOUT2 << "Inserting domdecl with type {" << census2[domDecl].size() << ", " << declType << "}\n";
-            census2[domDecl].insert({census2[domDecl].size(), {declType}});
-        }
-    }
-
-    // If decl is not already in census
-    if(census2.find(decl) == std::end(census2)) {
-        //  - insert decl with decl's type
-        FOUT2 << "Inserting decl with type {0, " << declType << "}\n";
-        census2.insert({decl, {{0, {declType}}}});
-
-    } else {// probably nothing to do
-        //census2[decl].insert({census2[decl].size(), {declType}});
-    }
-}
-
 using DeclInfoSingleDom = std::pair<DeclData, std::optional<DominatorData>>;
 void updateCensus(
         clang::ASTContext & context,
@@ -633,8 +551,6 @@ void updateCensus(
         CensusDecl const* decl,
         DeclInfoSingleDom info) {
     assert(decl);
-
-    updateCensusI2(context, domDecl, domInfo.first.type, decl, info.first.type);
 
     if (census.find(domDecl) == std::end(census)) {
         census.insert({domDecl, domInfo});
@@ -675,16 +591,6 @@ void updateCensus(
             census[decl] = {newData, {{newDomData.value()}}};
 
         } else {
-            /*
-            // Nothing to do. (YET)
-            FOUT << "[WARN](updateCensus) decl in Census with different DominatorData\n";
-            FOUT << "[WARN](updateCensus) Old DominatorData: {\n";
-            dump(FOUT, oldDomData.value());
-            FOUT << "[WARN](updateCensus) }\n";
-            FOUT << "[WARN](updateCensus) New DominatorData: {\n";
-            dump(FOUT, newDomData.value());
-            FOUT << "[WARN](updateCensus) }\n";
-            */
             auto &doms = oldDoms.value();
             doms.push_back(newDomData.value());
             FOUT << "[INFO](updateCensus) New Dominator Appended: {\n";
@@ -879,9 +785,6 @@ public:
         FOUT << "# Census summary so far:\n";
         censusSummary(FOUT);
         FOUT << "# Census summary end.\n";
-        FOUT2 << "# Census summary so far:\n";
-        census2Summary(FOUT2);
-        FOUT2 << "# Census summary end.\n";
 
         // TODO: Emit error when a cast destination is incompatible with source/parent types.
     }
@@ -929,7 +832,6 @@ int main(int argc, const char **argv) {
     Finder.addMatcher(AssignMatcher, &dumper);
 
     FOUT.open("census-dump.txt", std::ios::out);
-    FOUT2.open("census2-dump.txt", std::ios::out);
     //return Tool.run(newFrontendActionFactory<clang::SyntaxOnlyAction>().get());
     return Tool.run(newFrontendActionFactory(&Finder).get());
 }
