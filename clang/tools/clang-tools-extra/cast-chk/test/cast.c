@@ -1,17 +1,21 @@
-void f(void*p) {
-    int *pi = (int*)p;
-    *pi = 1;
-    void *pv = (void*)pi;
-    short *ps = (short*)pv;
-    *ps = 2;
+void fg(void*p, void* q) {
 }
 
-void f2(void* p) {
-    int *pi = (int*)p;
-    int *pi2 = pi;
-    void *pv = (void*)pi2;
-    short *ps = (short*)pv;
-    *ps = 3;
+void f(void*f_p) {   // f = f.p: void* -> int* ->...
+    int *f_pi = (int*)f_p;
+    *f_pi = 1;
+    void *f_pv = (void*)f_pi;
+    short *f_ps = (short*)f_pv;
+    *f_ps = 2;
+}
+
+void f2(void* f2_p) {
+    int *f2_pi = (int*)f2_p;
+    int *f2_pi2 = f2_pi;
+    void *f2_pv = (void*)f2_pi2;
+    short *f2_ps = (short*)f2_pv;
+    *f2_ps = 3;
+    f(f2_p);
 }
 
 int main() {
@@ -21,8 +25,8 @@ int main() {
     void *p;
     p = (void*) &i;
 
-    void (*fp) (void*) = f;
-    fp(p);
+    void (*fnp) (void*) = f;
+    fnp(p);
 
     f2(&i);
 
