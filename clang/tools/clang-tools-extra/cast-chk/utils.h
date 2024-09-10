@@ -40,6 +40,39 @@ using namespace clang::ento;
 
 std::ofstream FOUT;
 
+#define CNS_LOG(sev, msg)\
+    do{ FOUT << "[" << sev << "](" << __func__ << "(): " << __LINE__ << ") " << " " << msg << "\n"; }while(0)
+
+#define CNS_LOG_LEVEL_DEBUG {}
+#define CNS_LOG_LEVEL_INFO {}
+#define CNS_LOG_LEVEL_WARN {}
+#define CNS_LOG_LEVEL_ERROR {}
+
+#ifdef CNS_LOG_LEVEL_DEBUG
+#define CNS_DEBUG(msg) {CNS_LOG("DEBUG", msg);}
+#else
+#define CNS_DEBUG(msg) {}
+#endif
+
+#ifdef CNS_LOG_LEVEL_INFO
+#define CNS_INFO(msg) {CNS_LOG("INFO ", msg);}
+#else
+#define CNS_INFO(msg) {}
+#endif
+
+#ifdef CNS_LOG_LEVEL_WARN
+#define CNS_WARN(msg) {CNS_LOG("WARN ", msg);}
+#else
+#define CNS_WARN(msg) {}
+#endif
+
+#ifdef CNS_LOG_LEVEL_ERROR
+#define CNS_ERROR(msg) {CNS_LOG("ERROR", msg);}
+#else
+#define CNS_ERROR(msg) {}
+#endif
+
+
 // Stringer to get source statement from Stmt.
 std::string String(ASTContext const &context, Stmt const &stmt);
 std::string String(ASTContext const &context, DeclStmt const &decl);
@@ -71,75 +104,124 @@ std::optional<unsigned> getParameterMatch(clang::FunctionDecl const &fn, clang::
 
 //---//
 clang::FunctionDecl const* getDeclFromFunctionPtr(clang::VarDecl const &fp) {
+    CNS_DEBUG("<VarDecl>");
     auto const *init = fp.getInit();
     if(!init) {
-        FOUT << "[ERROR](getDeclFromFunctionPtr) FP Init expr == nullptr\n";
-        return nullptr;
+       CNS_ERROR("FP Init expr == nullptr");
+       CNS_DEBUG("<VarDecl> end.");
+       return nullptr;
     }
 
     auto const *decl = init->getReferencedDeclOfCallee();
     if(!decl) {
-        FOUT << "[ERROR](getDeclFromFunctionPtr) FP ref'd decl == nullptr\n";
+        CNS_ERROR("FP ref'd decl == nullptr");
+        CNS_DEBUG("<VarDecl> end.");
         return nullptr;
     }
 
     auto const *func = dyn_cast<FunctionDecl>(decl);
     if(!func) {
-        FOUT << "[ERROR](getDeclFromFunctionPtr) dyncast<FD> FP ref'd decl == nullptr\n";
+        CNS_ERROR("dyncast<FD> FP ref'd decl == nullptr");
+        CNS_DEBUG("<VarDecl> end.");
         return nullptr;
     }
+    CNS_DEBUG("<VarDecl> end.");
     return func;
 }
 
 clang::FunctionDecl const* getDeclFromFunctionPtr(clang::CallExpr const &call) {
+    CNS_DEBUG("<CallExpr>");
     auto const *expr = call.getCallee();
+    FunctionProtoType const * d {nullptr};
     if(!expr) {
-        FOUT << "[ERROR](getDeclFromFunctionPtr) Call expr == nullptr\n";
-        return nullptr;
+        CNS_ERROR("Call expr == nullptr");
+
+        auto const *e = call.getDirectCallee();
+        if(!e) {
+            CNS_ERROR("DirectCallee == nullptr");
+            CNS_DEBUG("<CallExpr> end (1).");
+            return nullptr;
+        }
+
+        d = e->getType()->getAs<FunctionProtoType>();
+
+    }
+
+    if(d) {
+        CNS_DEBUG("Well, got function prototype!");
+        CNS_DEBUG("<CallExpr> end (2).");
+        return nullptr; //getDeclFromFunctionPtr(*d);
     }
 
     auto const *fpDecl = expr->getReferencedDeclOfCallee();
     if(!fpDecl) {
-        FOUT << "[ERROR](getDeclFromFunctionPtr) FP Decl == nullptr\n";
+        CNS_ERROR("FP Decl == nullptr");
+        CNS_DEBUG("<CallExpr> end (3).");
         return nullptr;
     }
 
     auto const *fp = dyn_cast<VarDecl>(fpDecl);
     if(!fp) {
-        FOUT << "[ERROR](getDeclFromFunctionPtr) dyncast<VarDecl> FP Decl == nullptr\n";
+        CNS_ERROR("dyncast<VarDecl> FP Decl == nullptr");
+        CNS_DEBUG("<CallExpr> end (4).");
         return nullptr;
     }
 
+    CNS_DEBUG("<CallExpr> end (5: last return i.e. Found FPtr).");
     return getDeclFromFunctionPtr(*fp);
 }
 
 clang::FunctionDecl const* getCalleeDecl(CallExpr const &call) {
+    CNS_DEBUG("");
     auto const *fn = call.getDirectCallee();
     if(!fn) {
-        FOUT << "[INFO](getFunctionDecl) call.DirectCallee == nullptr\n";
-        FOUT << "[INFO](getFunctionDecl) Attempting getDeclFromFunctionPtr\n";
-        fn = getDeclFromFunctionPtr(call);
-        if(!fn) {
-            FOUT << "[ERROR](getFunctionDecl) getDeclFromFunctionPtr == nullptr too\n";
+        // If direct callee is null, check if call is actually a callexpr/fnptr.
+        // If not, return.
+        /*
+        // Doesn't work because input is CallExpr even for error case.
+        if(dyn_cast<CallExpr const>(&call)) {
+        }
+        else {
+            CNS_ERROR("input call is not CallExpr");
             return nullptr;
         }
-        FOUT << "[INFO](getFunctionDecl) Found getDeclFromFunctionPtr\n";
+        */
+        CNS_INFO("call.DirectCallee == nullptr");
+        CNS_INFO("Attempting getDeclFromFunctionPtr");
+        fn = getDeclFromFunctionPtr(call);
+        if(!fn) {
+            CNS_ERROR("getDeclFromFunctionPtr == nullptr too");
+            CNS_DEBUG("end.");
+            return nullptr;
+        }
+        CNS_INFO("Found getDeclFromFunctionPtr");
     }
+
+    if(fn->isVariadic()) {
+        CNS_INFO("Callee is variadic and not supported yet for Census.");
+        CNS_DEBUG("<callexpr> end.");
+        return nullptr;
+    }
+
+    CNS_DEBUG("end.");
     return fn;
 }
 
 // Stringer to get source statement from Stmt.
 std::string String(ASTContext const &context, Stmt const &stmt) {
+    CNS_DEBUG("<Stmt>");
     clang::LangOptions defaultOps;
     std::string oStr;
     llvm::raw_string_ostream stream(oStr);
     //stmt->printPretty(stream, NULL, PrintingPolicy(defaultOps));
     auto policy = context.getLangOpts();
     stmt.printPretty(stream, NULL, policy);
+    CNS_DEBUG("<Stmt> end.");
     return oStr;
 }
 
 std::string String(ASTContext const &context, DeclStmt const &decl) {
+    CNS_DEBUG("<DeclStmt>");
     if (decl.isSingleDecl()) {
         auto const *d = decl.getSingleDecl();
         auto const &nd = static_cast<NamedDecl const*>(d);
@@ -147,25 +229,30 @@ std::string String(ASTContext const &context, DeclStmt const &decl) {
             return "(Could not find name!)";
         return nd->getNameAsString();
     }
+    CNS_DEBUG("<DeclStmt> end.");
     return "(Could not find name!)";
 }
 
 std::string String(ASTContext const &context, CallExpr const &call, unsigned parmPos) {
+    CNS_DEBUG("<CallExpr, unsigned>");
     auto const *fn = getCalleeDecl(call);
     if(!fn)
         return "(Could not find function name!)";
     assert(fn);
 
+    CNS_DEBUG("<CallExpr, unsigned> end.");
     return String(context, *fn, parmPos);
 }
 
 std::string String(ASTContext const &context, FunctionDecl const &fn, unsigned parmPos) {
+    CNS_DEBUG("<FunctionDecl, unsigned>");
     std::stringstream ss;
     ss << "{" << fn.getNameAsString() << ".$" << parmPos << ": ";
 
     auto const *parm = fn.getParamDecl(parmPos);
     if(!parm) {
         ss << "(Cannot getParamDecl())";
+        CNS_DEBUG("<FunctionDecl, unsigned> end.");
         return ss.str();
     }
     assert(parm);
@@ -178,69 +265,95 @@ std::string String(ASTContext const &context, FunctionDecl const &fn, unsigned p
     auto const *parmId = parm->getIdentifier();
     if(!parmId) {
         ss << "(Cannot get parameter ID)";
+        CNS_DEBUG("<FunctionDecl, unsigned> end.");
         return ss.str();
     }
     assert(parmId);
     ss << parmId->getName().str();
 
+    CNS_DEBUG("<FunctionDecl, unsigned> end.");
     return ss.str();
 }
 
 std::string String(ASTContext const &context, NamedDecl const &d) {
+    CNS_DEBUG("<NamedDecl>");
+    CNS_DEBUG("<NamedDecl> end.");
     return d.getNameAsString();
 }
 
 // Get type name of QualType
 std::string Typename(ASTContext const &context, QualType qtype) {
+    CNS_DEBUG("<QualType>");
     auto policy = context.getLangOpts();
+    CNS_DEBUG("<QualType> end.");
     return qtype.getAsString(policy);
 }
 
 // Get type name of Expr.
 std::string Typename(ASTContext const &context, Expr const &expr) {
+    CNS_DEBUG("<Expr>");
+    CNS_DEBUG("<Expr> end.");
     return Typename(context, expr.getType());
 }
 
 // Get type name of Type
 std::string Typename(ASTContext const &context, clang::Type const *type) {
+    CNS_DEBUG("<Type>");
     assert(type);
 
     std::string oStr;
     llvm::raw_string_ostream stream(oStr);
 
     type->dump(stream, context);
+    CNS_DEBUG("<Type> end.");
     return oStr; 
 }
 
 // Get type name from VarDecl
 std::string Typename(ASTContext const &context, clang::ValueDecl const &d) {
+    CNS_DEBUG("<ValueDecl>");
     auto const qtype = d.getType();
+    CNS_DEBUG("<ValueDecl> end.");
     return Typename(context, qtype);
 }
 
 std::string TypeCategory(QualType const &qtype) {
+    CNS_DEBUG("<QualType>");
     auto const *type = qtype.getTypePtr();
     assert(type);
+    if(type->isFunctionPointerType()){ // No type class for fptr in clang.
+        CNS_INFO("Assinging FunctionPointer TypeCategory not defined in clang::Type::TypeClass.");
+        CNS_DEBUG("<QualType> end.");
+        return "FunctionPointer";
+    }
+
+    CNS_DEBUG("<QualType> end.");
     return type->getTypeClassName();
 }
 
 // Get type class of Expr (pointer, array)
 std::string TypeCategory(ASTContext const &context, Expr const &expr) {
+    CNS_DEBUG("<Expr>");
     auto qtype = expr.getType();
+    CNS_DEBUG("<Expr> end.");
     return TypeCategory(qtype);
 }
 
 std::string TypeCategory(ASTContext const &context, ValueDecl const &d) {
+    CNS_DEBUG("<ValueDecl>");
     auto qtype = d.getType();
+    CNS_DEBUG("<ValueDecl> end.");
     return TypeCategory(qtype);
 }
 
 // Get containing function decl
 template<typename T>
 clang::FunctionDecl const* getContainerFunctionDecl(ASTContext &context, T const &node) {
+    CNS_DEBUG("<T>");
     auto parents = context.getParents(node);
     if (parents.size() == 0) {
-        //FOUT << "[INFO](getContainerFunctionDecl) 0 Parents found\n";
+        CNS_INFO("0 Parents found");
+        CNS_DEBUG("<T> end.");
         return nullptr;
     }
 
@@ -254,7 +367,8 @@ clang::FunctionDecl const* getContainerFunctionDecl(ASTContext &context, T const
             parents = context.getParents(*decl);
         }
         else {
-            //FOUT << "[INFO](getContainerFunctionDecl)  Cannot continue loop due to unknown parent type.\n";
+            CNS_INFO(" Cannot continue loop due to unknown parent type.");
+            CNS_DEBUG("<T> end.");
             return nullptr;
         }
     }
@@ -262,8 +376,10 @@ clang::FunctionDecl const* getContainerFunctionDecl(ASTContext &context, T const
     if(parents.size() == 0) return nullptr;
     auto const *fn = parents[0].template get<clang::FunctionDecl>();
     if(!fn) {
-        //FOUT << "[INFO](getContainerFunctionDecl) Could not find container function\n";
+        CNS_INFO("Could not find container function");
+        CNS_DEBUG("<T> end.");
     }
+    CNS_DEBUG("<T> end.");
     return fn;
 }
 
@@ -271,32 +387,40 @@ clang::FunctionDecl const* getContainerFunctionDecl(
         clang::DeclContext const *context,
         clang::VarDecl const &var) {
 
+    CNS_DEBUG("<DeclContext, VarDecl>");
     while(context) {
         if(auto const *func = dyn_cast<FunctionDecl>(context)) {
             // Found the parent function
             FOUT << "[INFO](getContainerFunction<DC>) Found parent function: " << func->getNameAsString() << "\n";
+    CNS_DEBUG("<DeclContext, VarDecl> end.");
             return func;
         }
         context = context->getParent();
     }
 
-    FOUT << "[INFO](getContainerFunction<DC>) Could not find parent function.\n";
+    CNS_INFO("Could not find parent function.");
+    CNS_DEBUG("<DeclContext, VarDecl> end.");
     return nullptr;
 }
 
 clang::FunctionDecl const* getContainerFunctionDecl(ASTContext &context, VarDecl const &var) {
+    CNS_DEBUG("<Context, VarDecl>");
     auto const *c2 = var.getDeclContext();
+    CNS_DEBUG("<Context, VarDecl> end.");
     return getContainerFunctionDecl(c2, var);
 }
 
 // Get containing function for declaration
 template<typename T>
 std::string getContainerFunction(ASTContext &context, T const &node) {
+    CNS_DEBUG("<T>");
     auto const *fn = getContainerFunctionDecl(context, node);
     if(!fn) {
         return "(Could not find container function)\n";
+        CNS_DEBUG("<T> end.");
     }
 
+    CNS_DEBUG("<T> end.");
     return fn->getNameAsString();
 }
 
@@ -304,49 +428,59 @@ std::string getContainerFunction(ASTContext &context, T const &node) {
 //
 
 clang::Decl const* getParamDecl(ASTContext const &context, CallExpr const &call, unsigned parmPos) {
+    CNS_DEBUG("<CallExpr, unsigned>");
     auto const *fn = getCalleeDecl(call);
     if(!fn) {
+        CNS_DEBUG("<CallExpr, unsigned> end.");
         return nullptr;
     }
     assert(fn);
 
     auto const *parm = fn->getParamDecl(parmPos);
     assert(parm);   // not needed
+    CNS_DEBUG("<CallExpr, unsigned> end.");
     return parm;
 }
 
 std::optional<unsigned> getParameterMatch(clang::FunctionDecl const &fn, clang::DeclarationName const &matchName) {
+    CNS_DEBUG("<FunctionDecl, DeclarationName>");
     /*
     //assert(fn);
-    //FOUT << "[INFO](getParametermatch) declarationname\n";
+    //CNS_INFO("declarationname");
     if(!fn) {
-        //FOUT << "[INFO](getParametermatch) fn == nullptr\n";
+        //CNS_INFO("fn == nullptr");
         return std::nullopt;
     }
-    //FOUT << "[INFO](getParametermatch) fn != nullptr\n";
+    //FOUT << "CNS_INFO("fn != nullptr");
     */
 
     unsigned parmPos = 0;
     auto match = std::find_if(fn.param_begin(), fn.param_end(),
         [&] (auto const &parm) -> bool {
         parmPos++;
-        //FOUT << "[INFO](getParametermatch) parmPos == " << parmPos << "\n";
+        FOUT << "[INFO](getParametermatch) parmPos == " << parmPos << "\n";
+        CNS_DEBUG("<FunctionDecl, DeclarationName> end.");
         auto parmName = parm->getDeclName();
         return parmName == matchName;
     });
 
     if (match == fn.param_end() || parmPos > fn.getNumParams()) {
-        //FOUT << "[INFO](getParametermatch) parmPos is nullopt.\n";
+        CNS_INFO("parmPos is nullopt.");
+        CNS_DEBUG("<FunctionDecl, DeclarationName> end.");
         return std::nullopt;
     }
     else {
-        //FOUT << "[INFO](getParametermatch) matched parmPos: " << parmPos - 1 << "\n";
+        FOUT << "[INFO](getParametermatch) matched parmPos: " << parmPos - 1 << "\n";
+        CNS_DEBUG("<FunctionDecl, DeclarationName> end.");
         return parmPos - 1;
     }
+    CNS_DEBUG("<FunctionDecl, DeclarationName> end.");
 }
 
 std::optional<unsigned> getParameterMatch(clang::FunctionDecl const &fn, clang::DeclarationNameInfo const &matchInfo) {
-    //FOUT << "[INFO](getParametermatch) declarationnameINFO\n";
+    CNS_DEBUG("<FunctionDecl, DeclarationNameInfo>");
+    //CNS_INFO("declarationnameINFO");
+    CNS_DEBUG("<FunctionDecl, DeclarationNameInfo> end.");
     return getParameterMatch(fn, matchInfo.getName());
 }
 
@@ -356,19 +490,23 @@ std::string getLinkedParm(
         T const &node,
         clang::DeclarationName const &name) {
 
-    //FOUT << "[INFO](getLinkedParm) declname\n";
+    CNS_DEBUG("<T, DeclarationName>");
+    //CNS_INFO("declname");
     auto const *fn = getContainerFunctionDecl(context, node);
     if(!fn) {
-        FOUT << "[INFO](getLinkedParm) fn == nullptr\n";
+        CNS_INFO("fn == nullptr");
+        CNS_DEBUG("<T, DeclarationName> end.");
         return "(Not a param)";
     }
 
     if(auto parmPos = getParameterMatch(*fn, name)) {
-        //FOUT << "[INFO](getLinkedParm) parmPos: " << parmPos.value() << "; " << String(context, *fn, *parmPos) << "\n";
+        FOUT << "[INFO](getLinkedParm) parmPos: " << parmPos.value() << "; " << String(context, *fn, *parmPos) << "\n";
+        CNS_DEBUG("<T, DeclarationName> end.");
         return String(context, *fn, *parmPos);
     }
 
-    //FOUT << "[Warn](getLinkedParm) parmPos nullopt.\n";
+    CNS_WARN("parmPos nullopt.");
+    CNS_DEBUG("<T, DeclarationName> end.");
     return "(Not a param)";
 }
 
@@ -378,7 +516,9 @@ std::string getLinkedParm(
         T const &node,
         clang::DeclarationNameInfo const &nameInfo) {
 
-    //FOUT << "[INFO](getLinkedParm) declnameinfo\n";
+    CNS_DEBUG("<T, DeclarationNameInfo>");
+    //CNS_INFO("declnameinfo");
+    CNS_DEBUG("<T, DeclarationNameInfo> end.");
     return getLinkedParm(context, node, nameInfo.getName());
 }
 
@@ -386,18 +526,22 @@ std::string getLinkedParm(
         clang::DeclContext const *context,
         clang::VarDecl const &var) {
 
+    CNS_DEBUG("<DeclContext, VarDecl>");
     auto const *func = getContainerFunctionDecl(context, var);
     if(!func) {
-        FOUT << "[ERROR](getLinkedParm<DC>) No Parent function found.\n";
+        CNS_ERROR("<DC>No Parent function found.");
+        CNS_DEBUG("<DeclContext, VarDecl> end.");
         return "(Not a param)";
     }
 
     if(auto parmPos = getParameterMatch(*func, var.getDeclName())) {
         FOUT << "[INFO](getLinkedParm<DC>) parmPos: " << parmPos.value() << "; " << String(context->getParentASTContext(), *func, *parmPos) << "\n";
+        CNS_DEBUG("<DeclContext, VarDecl> end.");
         return String(context->getParentASTContext(), *func, *parmPos);
     }
 
-    FOUT << "[ERROR](getLinkedParm<DC>) parmPos nullopt.\n";
+    CNS_ERROR("<DC>parmPos nullopt.");
+    CNS_DEBUG("<DeclContext, VarDecl> end.");
     return "(Not a param)";
 }
 
@@ -405,25 +549,30 @@ std::string getLinkedParm(
         clang::ASTContext &context,
         clang::VarDecl const &var) {
 
+    CNS_DEBUG("<Context, VarDecl>");
     if(var.isLocalVarDecl()) {
-        FOUT << "[INFO](getLinkedParm) VarDecl is local var & not parm\n";
+        CNS_INFO("VarDecl is local var & not parm");
+        CNS_DEBUG("<Context, VarDecl> end.");
         return "(Not a param)";
     }
 
-    FOUT << "[INFO](getLinkedParm) VarDecl is not local var\n";
+    CNS_INFO("VarDecl is not local var");
     if(var.isLocalVarDeclOrParm()) {
-        FOUT << "[INFO](getLinkedParm) VarDecl is probably a parm\n";
+        CNS_INFO("VarDecl is probably a parm");
         //return getLinkedParm(context, var, var.getDeclName());
         auto const *c2 = var.getDeclContext();
         if(!c2) {
-            FOUT << "[INFO](getLinkedParm) Using iContext.\n";
+            CNS_INFO("Using iContext.");
+            CNS_DEBUG("<Context, VarDecl> end.");
             return getLinkedParm(context, var, var.getDeclName());
         }
 
-        FOUT << "[INFO](getLinkedParm) Trying with var.getDeclContext\n";
+        CNS_INFO("Trying with var.getDeclContext");
+        CNS_DEBUG("<Context, VarDecl> end.");
         return getLinkedParm(c2, var);
     }
 
+    CNS_DEBUG("<Context, VarDecl> end.");
     return "(No_Impl_Yet!)";
 }
 
@@ -482,5 +631,84 @@ public:
 private:
     T value_;
 };
+
+//--
+
+template<typename T>
+constexpr bool impl_false = false;
+
+/*
+template<typename T>
+unsigned cnsHash(ASTContext &context, T const& node) {
+    static_assert(impl_false<T>, "cnsHash not defined for this type");
+    // For parameter/variables:
+    //  - include declname, decl, type, container function, translation unit
+    // For unary operand:
+    //  - include declname, exprtype, container function, translation unit
+}
+
+unsigned cnsHash(ASTContext &context, clang::VarDecl const& var) {
+    ODRHash h;
+    h.AddFunctionDecl(getContainerFunctionDecl(context, var));
+    h.AddDecl(&var);
+    h.AddType(var.getType().getTypePtr());
+    h.AddIdentifierInfo(var.getIdentifier());
+    return h.CalculateHash();
+}
+*/
+
+// VarDecl isA ValueDecl
+unsigned cnsHash(clang::ASTContext &context, clang::ValueDecl const& var) {
+    ODRHash h;
+    auto const *f = getContainerFunctionDecl(context, var);
+    if(f) {
+        h.AddFunctionDecl(f);
+    }
+    h.AddDecl(&var);
+    h.AddQualType(var.getType());
+    auto const *ii = var.getIdentifier();
+    if(ii) {
+        h.AddIdentifierInfo(ii);
+    }
+    return h.CalculateHash();
+}
+unsigned cnsHash(clang::ASTContext &context, clang::Decl const& decl) {
+    ODRHash h;
+    auto const *f = getContainerFunctionDecl(context, decl);
+    if(f) {
+        h.AddFunctionDecl(f);
+    }
+    h.AddDecl(&decl);
+    return h.CalculateHash();
+}
+unsigned cnsHash(clang::ASTContext &context, clang::Expr const& e) {
+    ODRHash h;
+    auto const *f = getContainerFunctionDecl(context, e);
+    if(f) {
+        h.AddFunctionDecl(f);
+    }
+    h.AddStmt(&e);
+    h.AddQualType(e.getType());
+    return h.CalculateHash();
+}
+unsigned cnsHash(clang::ASTContext &context, clang::Stmt const& s) {
+    ODRHash h;
+    auto const *f = getContainerFunctionDecl(context, s);
+    if(f) {
+        h.AddFunctionDecl(f);
+    }
+    h.AddStmt(&s);
+    return h.CalculateHash();
+}
+
+unsigned cnsHash(clang::ASTContext &context, clang::DeclarationNameInfo const& n) {
+    ODRHash h;
+    h.AddDeclarationName(n.getName());
+    auto const *t = n.getNamedTypeInfo();
+    if(t) {
+        h.AddQualType(t->getType());
+    }
+    return h.CalculateHash();
+}
 //--
 

@@ -21,7 +21,7 @@ void f(void*f_p) {   // f = f.p: void* -> int* ->...
     short *f_ps = (short*)f_pv;
     *f_ps = 2;
     f4(f_p);
-    //f2(f_p);
+    f2(f_p);
 }
 
 void f2(void* f2_p) {
@@ -39,6 +39,8 @@ int main() {
 
     void *p;
     p = (void*) &i;
+    *(int*)p = (int)(void*)&i + 1;
+    *(int*)p = *(int*)p + 1;
 
     void (*fnp) (void*) = f;
     fnp(p);
