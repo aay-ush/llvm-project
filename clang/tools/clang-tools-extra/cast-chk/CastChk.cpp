@@ -149,6 +149,21 @@ bool operator!=(OpData const &lhs, OpData const &rhs) {
     return !(lhs == rhs);
 }
 
+void OpDebugSummary(std::ostream &os, OpData const &data) {
+    os << "[" << data.category_ << "](" << data.hash_ << ") " << data.expr_ << ": '" << data.type_ << "'"
+       << " " << data.linkedParm_ << " in " << data.container_ << "()";
+}
+
+void OpSummary(std::ostream &os, OpData const &data) {
+    os << "[" << data.category_ << "]" << data.expr_ << ": '" << data.type_ << "'"
+       << " " << data.linkedParm_ << " at " << data.location_.substr(
+               data.location_.find_last_of('/') + 1);
+}
+
+void OpTypeSummary(std::ostream &os, OpData const &data) {
+    os << "'" << data.type_ << "'" << " " << data.linkedParm_;
+}
+/*
 struct ParameterData {
     unsigned argPos_;
     std::string argType_;
@@ -160,6 +175,7 @@ struct FunctionInfo {
 };
 
 std::unordered_map<unsigned, FunctionInfo> Functions;
+*/
 //--
 
 /*
@@ -358,7 +374,9 @@ void elaborateUse(OpData const &node, std::optional<int> level) {
         // Add the node 'p' from usechain
         node.use_.push_back(hash);
         // Add use(p)
-        std::copy(begin(ops(hash).use_), end(ops(hash).use_), back_inserter(node.use_));
+        if(level && (level.value() > 0)) {
+            std::copy(begin(ops(hash).use_), end(ops(hash).use_), back_inserter(node.use_));
+        }
     }
     CNS_DEBUG("end.");
 }
@@ -371,7 +389,7 @@ void censusSummary() {
     for(auto const &[_, info]: census) {
         auto const &[op, __] = info;
 
-        elaborateUse(op, {});
+        elaborateUse(op, {1});
         OpSummary(FOUT, op);
         FOUT << "\n";
         int indent = 0;
@@ -703,17 +721,38 @@ OpData buildOpData<CastSourceType::FunctionArg>(
     }
     assert(parm);
     if(!parm) {
+        // Couldn't find parameter info but we can still use info from call expr.
+        auto const *c = e.getCallee();
+        //auto const *c = e.getCalleeDecl();
+        if(c) {
+        std::stringstream ss;
+        ss << "{" << String(context, *c) << ".$" << argPos - 1;
+
         return {
-            0,
-            "(no parm found)",
-            "(noParmFound_t)", //Typename(context, castExpr),
-            "(noParmFound_cat)", //TypeCategory(context, castExpr),
+            cnsHash(context, castExpr),
+            ss.str(),
+            "(T)", //Typename(context, castExpr),
+            "(?)", //TypeCategory(context, castExpr),
             (argPos > e.getNumArgs()
                 ? ("(Failed to match arg)")
                 : (String(context, e, argPos - 1))),
             getContainerFunction(context, castExpr),
             e.getExprLoc().printToString(sm),
         };
+        }
+        else {
+        return {
+            cnsHash(context, castExpr),
+            String(context, e),
+            "(T')", //Typename(context, castExpr),
+            "(?)", //TypeCategory(context, castExpr),
+            (argPos > e.getNumArgs()
+                ? ("(Failed to match arg)")
+                : (String(context, e, argPos - 1))),
+            getContainerFunction(context, castExpr),
+            e.getExprLoc().printToString(sm),
+        };
+        }
     }
 
     return {
@@ -1064,11 +1103,6 @@ void censusSummary(std::ostream &os, OpData const &node, int indent) {
     }
     space(os, indent) << "}\n";
 }
-
-void OpSummary(std::ostream &os, OpData const &data) {
-    os << "[" << data.category_ << "](" << data.hash_ << ") " << data.expr_ << ": '" << data.type_ << "'"
-       << " " << data.linkedParm_ << " in " << data.container_ << "()";
-}
 //---
 /*
 void preprocess(
@@ -1076,6 +1110,10 @@ void preprocess(
         clang::DeclStmt const &decl) {}
 */
 
+// TODO TODO
+// Before preprocessing, check if function is meant to be filtered.
+// Filter seen functions too.
+//
 void preprocess(
         clang::ASTContext &context,
         clang::UnaryOperator const &op) {
@@ -1090,6 +1128,7 @@ void preprocess(
     CNS_DEBUG("<DeclRefExpr> end.");
 }
 
+/*
 void addFunction(
         clang::ASTContext &context,
         clang::FunctionDecl const &f) {
@@ -1107,6 +1146,10 @@ void addFunction(
     // TODO: maintain fp->f links such that fp can be resolved to f for f in Functions and valid fp.
     CNS_DEBUG("end");
 }
+*/
+
+std::vector<unsigned> seenFunctions;
+std::vector<std::string> ignoreFunctions;
 
 void preprocess(
         clang::ASTContext &context,
@@ -1115,58 +1158,115 @@ void preprocess(
     CNS_DEBUG("<CallExpr>");
     // Trigger cast check for the called function.
     auto const *calledFn = getCalleeDecl(call);
+    // assert still throws error for qsort. WHY?
     assert(calledFn);
+    if(!calledFn) {
+        CNS_INFO("<CallExpr> null callee decl");
+        CNS_DEBUG("<CallExpr> end.");
+        return;
+    }
+
+    auto h = cnsHash(context, *calledFn);
+    if(std::find(begin(seenFunctions), end(seenFunctions), h) != end(seenFunctions)) {
+        FOUT << "[INFO](preprocess<CallExpr>) Skipping processed function: " << String(context, *calledFn) << "\n";
+        CNS_DEBUG("<CallExpr> end.");
+        return; // already seen
+    }
+    if(std::find(begin(ignoreFunctions), end(ignoreFunctions), calledFn->getNameAsString()) != end(ignoreFunctions)) {
+        FOUT << "[INFO](preprocess<CallExpr>) Skipping ignored function: " << String(context, *calledFn) << "\n";
+        CNS_DEBUG("<CallExpr> Adding ignored function to seen functions.");
+        seenFunctions.push_back(cnsHash(context, *calledFn));
+        CNS_DEBUG("<CallExpr> end.");
+        return; // ignore
+    }
+    /*
     if(calledFn) {
         FOUT << "[INFO](preprocess) Adding function : " << String(context, *calledFn) << "\n";
         addFunction(context, *calledFn);
     }
+    */
 
-    // assert still throws error for qsort. WHY?
-    if(!calledFn) {
-        // Couldn't find function decl from callexpr
-        // But maybe the call args have a function pointer?
-        // If yes, now's the time to check it.
-
-        std::for_each(call.arg_begin(), call.arg_end(),
-            [&] (auto const *arg) -> void{
-            CNS_DEBUG("");
-            FOUT << "[DEBUG](preprocess<call>) Arg: " << String(context, *arg) << "\n";
-            auto const *argType = arg->getType().getTypePtrOrNull();
-            if(!argType) {
-                CNS_DEBUG("Arg Type could not be retrieved.");
-                CNS_DEBUG("end fparg finder.");
-                return;
-            }
-
-            if(argType->isFunctionPointerType()) {
-                // FP Type arg.Get the decl out of it and preprocess it.
-                auto const *dre = dyn_cast<DeclRefExpr>(arg);
-                if(dre) {
-                    CNS_DEBUG("DeclRefExpr Arg for Fptr. FindDom to resolve.");
-                // at this point census probably has the dominator for this fptr.
-                // The dominator is the functionproto or the callee decl.
-                // Get the callee decl from functioncensus.
-                /*
-                    if(auto it = census.find(cnsHash(context, dre)); it != end(census)) {
-                            // 1. get the dominator function.
-                            // 2. find Functions(cnsHash(context, function.name))
-                            // 3. from Functions, find the link between function args and params.
-                    }
-                    else {
-                        CNS_INFO("Could not find function.");
-                        CNS_DEBUG("end fparg finder.");
-                        return;
-                    }
-                    */
-                }
-            }
-            CNS_DEBUG("Arg is not a function pointer.");
-            CNS_DEBUG("end fparg finder.");
-        });
-
-        CNS_DEBUG("<CallExpr> end.");
-        return;
-    }
+    ////if(!calledFn) {
+        //// Couldn't find function decl from callexpr
+        //// But maybe the call args have a function pointer?
+        //// If yes, now's the time to check it.
+        //CNS_DEBUG("Checking for Fptr args in function.");
+        //
+        //std::for_each(call.arg_begin(), call.arg_end(),
+            //[&] (auto const *arg) -> void{
+            //CNS_DEBUG("start fparg finder.");
+            //FOUT << "[DEBUG](preprocess<call>) Arg: " << String(context, *arg) << "\n";
+            //auto const *argType = arg->getType().getTypePtrOrNull();
+            //if(!argType) {
+                //CNS_DEBUG("Arg Type could not be retrieved.");
+                //CNS_DEBUG("end fparg finder.");
+                //return;
+            //}
+            //
+            //if(argType->isFunctionPointerType()) {
+                //CNS_DEBUG("Found FPtr arg.");
+            //
+                ///*
+                //auto const* dt = static_cast<clang::DecltypeType const*>(argType);
+                //if(dt) {
+                    //CNS_DEBUG("DecltypeType not null");
+                    //auto const* d = dt->getAs<clang::NamedDecl>();
+                    //if(d) {
+                        //CNS_DEBUG("Really?!!!>>>>");
+                    //}
+                    //else {
+                        //CNS_DEBUG("Unsurprising. <<<< ");
+                    //}
+                //}
+                //else {
+                    //CNS_DEBUG("DecltypeType null");
+                //}
+                //auto fh = cnsHash(context, *arg);
+                //FOUT << "[DEBUG](preprocess<call> fpargfinder: cnshash(fparg) = " << fh << "\n";
+                //auto it = Functions.find(fh);
+                //auto it = std::find_if(Functions.begin(), Functions.end()
+                //if (it != Functions.end()) {
+                    //CNS_DEBUG(">>> Found fp arg match in fdb");
+                //}
+                //else {
+                    //CNS_DEBUG("<<< Didn't find fp arg match in fdb");
+                //}
+                //*/
+                //// FP Type arg.Get the decl out of it and preprocess it.
+                //auto const *dre = dyn_cast<DeclRefExpr>(arg);
+                //if(dre) {
+                    //CNS_DEBUG(">>>DeclRefExpr Arg for Fptr. Find Dom to resolve.");
+                //// at this point census probably has the dominator for this fptr.
+                //// The dominator is the functionproto or the callee decl.
+                //// Get the callee decl from functioncensus.
+                ///*
+                    //if(auto it = census.find(cnsHash(context, dre)); it != end(census)) {
+                            //// 1. get the dominator function.
+                            //// 2. find Functions(cnsHash(context, function.name))
+                            //// 3. from Functions, find the link between function args and params.
+                    //}
+                    //else {
+                        //CNS_INFO("Could not find function.");
+                        //CNS_DEBUG("end fparg finder.");
+                        //return;
+                    //}
+                    //*/
+                //}
+                //else {
+                    //CNS_DEBUG("<<>DeclRefExpr Arg not found for Fptr");
+                //}
+            //}
+            //else {
+                //CNS_DEBUG("<<<Fptr arg not found.");
+            //}
+            //
+            ////CNS_DEBUG("Arg is not a function pointer.");
+            //CNS_DEBUG("end fparg finder.");
+        //});
+        //
+        ////CNS_DEBUG("<CallExpr> end.");
+        ////return;
+    ////}
 
     if(calledFn->hasBody()) {
         auto const *body = calledFn->getBody();
@@ -1174,6 +1274,7 @@ void preprocess(
         MatchFinder m;
         m.match(*body, context);
     }
+    seenFunctions.push_back(h);
     CNS_DEBUG("<CallExpr> end.");
 }
 
@@ -1479,6 +1580,12 @@ DeclarationMatcher AssignMatcher =
                 hasDescendant(expr().bind("literal")))
             ).bind("varDecl");
 
+//  todo
+// Function matcher = 
+//    void f(int i);
+//    f(x); 
+//    matcher: Functions.push_back({f: void, i.1 -> CANCEL
+//  NO todo 
 StatementMatcher CastMatcher =
     castExpr(
             anyOf(
@@ -1597,6 +1704,8 @@ static cl::extrahelp CommonHelp(CommonOptionsParser::HelpMessage);
 // Help message for this specific tool.
 static cl::extrahelp Morehelp("\nMore help text...\n");
 
+void buildIgnoreList();
+
 int main(int argc, const char **argv) {
     auto ExpectedParser = CommonOptionsParser::create(argc, argv, MyToolCategory);
     if(!ExpectedParser) {
@@ -1613,9 +1722,18 @@ int main(int argc, const char **argv) {
     Finder.addMatcher(CastMatcher, &dumper);
     Finder.addMatcher(AssignMatcher, &dumper);
 
+    buildIgnoreList();
     FOUT.open("census-dump.txt", std::ios::out);
     //return Tool.run(newFrontendActionFactory<clang::SyntaxOnlyAction>().get());
     return Tool.run(newFrontendActionFactory(&Finder).get());
+}
+
+void buildIgnoreList() {
+    std::ifstream in;
+    in.open("cstdlib.ignore", std::ios::in);
+    for(std::string l; std::getline(in, l); ) {
+        ignoreFunctions.push_back(l.substr(l.find_last_of(',') + 1));
+    }
 }
 
 // TODO

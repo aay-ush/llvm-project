@@ -43,7 +43,7 @@ std::ofstream FOUT;
 #define CNS_LOG(sev, msg)\
     do{ FOUT << "[" << sev << "](" << __func__ << "(): " << __LINE__ << ") " << " " << msg << "\n"; }while(0)
 
-#define CNS_LOG_LEVEL_DEBUG {}
+//#define CNS_LOG_LEVEL_DEBUG {}
 #define CNS_LOG_LEVEL_INFO {}
 #define CNS_LOG_LEVEL_WARN {}
 #define CNS_LOG_LEVEL_ERROR {}
@@ -236,8 +236,11 @@ std::string String(ASTContext const &context, DeclStmt const &decl) {
 std::string String(ASTContext const &context, CallExpr const &call, unsigned parmPos) {
     CNS_DEBUG("<CallExpr, unsigned>");
     auto const *fn = getCalleeDecl(call);
-    if(!fn)
-        return "(Could not find function name!)";
+    if(!fn) {
+        CNS_DEBUG("<CallExpr, unsigned> end.");
+        //return "(Could not find function name!)";
+        return "(@Unk)";
+    }
     assert(fn);
 
     CNS_DEBUG("<CallExpr, unsigned> end.");
@@ -251,7 +254,9 @@ std::string String(ASTContext const &context, FunctionDecl const &fn, unsigned p
 
     auto const *parm = fn.getParamDecl(parmPos);
     if(!parm) {
-        ss << "(Cannot getParamDecl())";
+        //ss << "(Cannot getParamDecl())";
+        CNS_DEBUG("Cannot getParamDecl()");
+        ss << "(@Unk)";
         CNS_DEBUG("<FunctionDecl, unsigned> end.");
         return ss.str();
     }
@@ -264,7 +269,9 @@ std::string String(ASTContext const &context, FunctionDecl const &fn, unsigned p
     // Get parm id
     auto const *parmId = parm->getIdentifier();
     if(!parmId) {
-        ss << "(Cannot get parameter ID)";
+        //ss << "(Cannot get parameter ID)";
+        CNS_DEBUG("(Cannot get parameter ID)");
+        ss << "(@UID)";
         CNS_DEBUG("<FunctionDecl, unsigned> end.");
         return ss.str();
     }
@@ -279,6 +286,17 @@ std::string String(ASTContext const &context, NamedDecl const &d) {
     CNS_DEBUG("<NamedDecl>");
     CNS_DEBUG("<NamedDecl> end.");
     return d.getNameAsString();
+}
+
+std::string String(ASTContext const &context, Decl const &decl) {
+    CNS_DEBUG("<Decl>");
+    clang::LangOptions defaultOps;
+    std::string oStr;
+    llvm::raw_string_ostream stream(oStr);
+    auto policy = context.getLangOpts();
+    decl.print(stream, policy, 0, true);
+    CNS_DEBUG("<Decl> end.");
+    return stream.str();
 }
 
 // Get type name of QualType
@@ -496,7 +514,7 @@ std::string getLinkedParm(
     if(!fn) {
         CNS_INFO("fn == nullptr");
         CNS_DEBUG("<T, DeclarationName> end.");
-        return "(Not a param)";
+        return "{n/a}";
     }
 
     if(auto parmPos = getParameterMatch(*fn, name)) {
@@ -507,7 +525,7 @@ std::string getLinkedParm(
 
     CNS_WARN("parmPos nullopt.");
     CNS_DEBUG("<T, DeclarationName> end.");
-    return "(Not a param)";
+    return "{local}";
 }
 
 template<typename T>
@@ -531,7 +549,7 @@ std::string getLinkedParm(
     if(!func) {
         CNS_ERROR("<DC>No Parent function found.");
         CNS_DEBUG("<DeclContext, VarDecl> end.");
-        return "(Not a param)";
+        return "{n/a}";
     }
 
     if(auto parmPos = getParameterMatch(*func, var.getDeclName())) {
@@ -542,7 +560,7 @@ std::string getLinkedParm(
 
     CNS_ERROR("<DC>parmPos nullopt.");
     CNS_DEBUG("<DeclContext, VarDecl> end.");
-    return "(Not a param)";
+    return "{local}";
 }
 
 std::string getLinkedParm(
@@ -553,7 +571,7 @@ std::string getLinkedParm(
     if(var.isLocalVarDecl()) {
         CNS_INFO("VarDecl is local var & not parm");
         CNS_DEBUG("<Context, VarDecl> end.");
-        return "(Not a param)";
+        return "{local}";
     }
 
     CNS_INFO("VarDecl is not local var");
@@ -573,7 +591,7 @@ std::string getLinkedParm(
     }
 
     CNS_DEBUG("<Context, VarDecl> end.");
-    return "(No_Impl_Yet!)";
+    return "{No_Impl_Yet!}";
 }
 
 //--
@@ -657,6 +675,13 @@ unsigned cnsHash(ASTContext &context, clang::VarDecl const& var) {
 }
 */
 
+unsigned cnsHash(clang::ASTContext &context, clang::FunctionDecl const& func) {
+    ODRHash h;
+    h.AddFunctionDecl(&func);
+    //h.AddQualType(func.getType());
+    //h.AddIdentifierInfo(func.getIdentifier());
+    return h.CalculateHash();
+}
 // VarDecl isA ValueDecl
 unsigned cnsHash(clang::ASTContext &context, clang::ValueDecl const& var) {
     ODRHash h;

@@ -17,8 +17,8 @@ int main() {
 
     hof(pi, fp);
 
-    void (*fg)(void*) = g;
-    hof(pi, fg);
+    //void (*fg)(void*) = g;
+    hof(pi, g);
 
     return 0;
 }
