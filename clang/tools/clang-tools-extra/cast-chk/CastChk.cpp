@@ -35,6 +35,7 @@
 #include <any>
 #include <tuple>
 #include <set>
+#include <unordered_set>
 
 #include "utils.h"
 
@@ -140,6 +141,7 @@ struct OpData {
     std::string container_;
     std::string location_;
     mutable std::vector<unsigned> use_ {};
+    mutable std::unordered_set<unsigned> history_ {};
 };
 bool operator==(OpData const &lhs, OpData const &rhs) {
     return lhs.hash_ == rhs.hash_;
@@ -150,13 +152,20 @@ bool operator!=(OpData const &lhs, OpData const &rhs) {
 }
 
 void OpDebugSummary(std::ostream &os, OpData const &data) {
-    os << "[" << data.category_ << "](" << data.hash_ << ") " << data.expr_ << ": '" << data.type_ << "'"
-       << " " << data.linkedParm_ << " in " << data.container_ << "()";
+    os << data.type_ << "    [" << data.category_ << "](" << data.hash_ << ") " << data.expr_ << ": '"
+       << " " << data.linkedParm_ << " in " << data.container_ << "()"
+       << " at " << data.location_.substr(data.location_.find_last_of('/') + 1);
 }
 
 void OpSummary(std::ostream &os, OpData const &data) {
     os << "[" << data.category_ << "]" << data.expr_ << ": '" << data.type_ << "'"
        << " " << data.linkedParm_ << " at " << data.location_.substr(
+               data.location_.find_last_of('/') + 1);
+}
+
+void OpHistorySummary(std::ostream &os, OpData const &data) {
+    os << data.type_ << "    [" << data.category_ << "]" << data.expr_
+       << " :" << data.linkedParm_ << ": at " << data.location_.substr(
                data.location_.find_last_of('/') + 1);
 }
 
@@ -358,6 +367,29 @@ std::vector<unsigned> UseChain(OpData const &op) {
     return usechain;
 }
 
+void buildHistory(OpData const& op) {
+    CNS_DEBUG("");
+    for(auto const& d_: census) {
+        auto const& d = ops(d_);
+        auto it = std::find_if(begin(d.use_), end(d.use_), [&](auto const& uhash) {
+                if(uhash == op.hash_) {
+                    return true;
+                }
+                auto const& u = ops(uhash);
+                if(u.linkedParm_ == op.linkedParm_ && u.location_ == op.location_) {
+                    return true;
+                }
+                return false;
+            });
+        //if(std::find(begin(d.use_), end(d.use_), op.hash_) != std::end(d.use_)) {
+        if(it != std::end(d.use_)) {
+            CNS_DEBUG("Node history match found.");
+            op.history_.insert(d.hash_);
+        }
+    }
+    CNS_DEBUG("end.");
+}
+
 void elaborateUse(OpData const &node, std::optional<int> level) {
     CNS_DEBUG("");
     node.use_.clear();
@@ -383,23 +415,46 @@ void elaborateUse(OpData const &node, std::optional<int> level) {
 
 std::ostream& space(std::ostream &os, int indent);
 void OpSummary(std::ostream &os, OpData const &data);
+void OpHistorySummary(std::ostream &os, OpData const &data);
 
 void censusSummary() {
     CNS_DEBUG("<void>");
+
+    // build usechain
+    //for(auto const &[_, info]: census) {
+    //   auto const &[op, __] = info;
+
+        //elaborateUse(op, {});
+    //}
+    for(auto const& n: census) {
+        auto const& op = ops(n);
+        op.use_ = UseChain(op);
+    }
+
+    // build history
     for(auto const &[_, info]: census) {
         auto const &[op, __] = info;
 
-        elaborateUse(op, {1});
-        OpSummary(FOUT, op);
+        buildHistory(op);
+    }
+
+    // display summary
+    for(auto const &[_, info]: census) {
+        auto &[op, __] = info;
+
+        //OpSummary(FOUT, op);
+        OpDebugSummary(FOUT, op);
         FOUT << "\n";
         int indent = 0;
-        for(auto const& u: op.use_) {
-            space(FOUT, indent + 2);
+        for(auto const& u: op.history_) {
+            space(FOUT, indent + 4);
             //FOUT << "-> {" << u << "}";
-            FOUT << "->";
-            OpSummary(FOUT, census[u].first);
+            FOUT << "|-";
+            //OpHistorySummary(FOUT, census[u].first);
+            OpDebugSummary(FOUT, census[u].first);
             FOUT << "\n";
         }
+        FOUT << "\n\n";
     }
     CNS_DEBUG("<void> end.");
 }
@@ -1569,6 +1624,147 @@ void processVar(MatchFinder::MatchResult const &result) {
     CNS_DEBUG(" end.");
 }
 
+OpData buildOpDataHofArg(
+        clang::ASTContext &context,
+        clang::SourceManager const &sm,
+        clang::DeclRefExpr const &e) {
+
+    CNS_DEBUG("");
+    FOUT << "[INFO](buildOpDataHofArg) ref: \n"
+         << String(context, e) << "; type: "
+         << Typename(context, e) << "\n";
+
+    return {
+        cnsHash(context, e),
+        String(context, e),
+        Typename(context, e),
+        TypeCategory(context, e),
+        "(No Param match due to declrefexpr error)",
+        getContainerFunction(context, e),
+        e.getExprLoc().printToString(sm),
+        {}
+    };
+    CNS_DEBUG("end");
+}
+
+OpData buildOpDataHofCall(
+        clang::ASTContext &context,
+        clang::SourceManager const &sm,
+        clang::DeclRefExpr const& farg,
+        clang::CallExpr const &e) {
+
+    CNS_DEBUG("");
+    FOUT << "[INFO](buildOpDataHofCall) call: \n"
+         << String(context, e) << "\n";
+
+    unsigned argPos = 0;
+    auto match = std::find_if(e.arg_begin(), e.arg_end(),
+        [&] (auto const &arg) {
+        argPos++;
+        FOUT << "[DEBUG](buildOpData<call>) Argpos: " << argPos << "\n";
+        return clang::Expr::isSameComparisonOperand(arg, &farg);
+    });
+    FOUT << "[DEBUG](buildOpData<call>) final argpos: " << argPos << "\n";
+
+    std::string parmId;
+    clang::ParmVarDecl const *parm = nullptr;
+    llvm::raw_string_ostream stream(parmId);
+
+    if (match != e.arg_end() && argPos <= e.getNumArgs()) {
+        auto const *parmd = getParamDecl(context, e, argPos - 1);
+        if(parmd) {
+            parm = dyn_cast<clang::ParmVarDecl>(parmd);
+            if(parm) {
+                parm->printQualifiedName(stream);
+            }
+        }
+    }
+    assert(parm);
+    if(!parm) {
+        // Couldn't find parameter info but we can still use info from call expr.
+        auto const *c = e.getCallee();
+        //auto const *c = e.getCalleeDecl();
+        if(c) {
+        std::stringstream ss;
+        ss << "{" << String(context, *c) << ".$" << argPos - 1;
+
+        return {
+            cnsHash(context, e),
+            ss.str(),
+            "(T)", //Typename(context, castExpr),
+            "(?)", //TypeCategory(context, castExpr),
+            (argPos > e.getNumArgs()
+                ? ("(Failed to match arg)")
+                : (String(context, e, argPos - 1))),
+            getContainerFunction(context, e),
+            e.getExprLoc().printToString(sm),
+        };
+        }
+        else {
+        return {
+            cnsHash(context, e),
+            String(context, e),
+            "(T')", //Typename(context, castExpr),
+            "(?)", //TypeCategory(context, castExpr),
+            (argPos > e.getNumArgs()
+                ? ("(Failed to match arg)")
+                : (String(context, e, argPos - 1))),
+            getContainerFunction(context, e),
+            e.getExprLoc().printToString(sm),
+        };
+        }
+    }
+
+    return {
+        cnsHash(context, *parm),
+        parmId,
+        Typename(context, *parm),
+        TypeCategory(context, *parm),
+        (argPos > e.getNumArgs()
+            ? ("(Failed to match arg)")
+            : (String(context, e, argPos - 1))),
+        getContainerFunction(context, e),
+        e.getExprLoc().printToString(sm),
+    };
+    CNS_DEBUG("end");
+}
+
+void updateCensusHof(
+        clang::ASTContext &context,
+        clang::SourceManager const &sm,
+        clang::DeclRefExpr const &arg,
+        clang::CallExpr const &call) {
+
+    CNS_DEBUG("");
+    // lhs (arg)
+    //
+    auto lhs = buildOpDataHofArg(context, sm, arg);
+    auto rhs = buildOpDataHofCall(context, sm, arg, call);
+    DominatorData dom{
+        lhs,
+        String(context, call),
+        "call",
+        "TODO callee name"
+    };
+    updateCensus(lhs, rhs, dom);
+    logCensusUpdate(lhs, rhs, dom);
+    CNS_DEBUG(" end.");
+}
+
+void processHof(MatchFinder::MatchResult const &result) {
+    CNS_DEBUG("");
+    assert(result);
+    auto *context = result.Context;
+    assert(context);
+
+    auto const *fnarg = result.Nodes.getNodeAs<DeclRefExpr>("ceFnArg");
+    auto const *call = result.Nodes.getNodeAs<CallExpr>("ce");
+    assert(fnarg);
+    assert(call);
+    updateCensusHof(*context, *result.SourceManager, *fnarg, *call);
+    CNS_DEBUG(" end.");
+}
+
 //----------------------------------------------------------------------------
 // MATCHERS
 
@@ -1580,6 +1776,12 @@ DeclarationMatcher AssignMatcher =
                 hasDescendant(expr().bind("literal")))
             ).bind("varDecl");
 
+auto CallMatcher = 
+    callExpr(
+            hasDescendant(
+                unaryOperator(
+                    hasDescendant(declRefExpr().bind("ceFnArg"))
+                    ))).bind("ce");
 //  todo
 // Function matcher = 
 //    void f(int i);
@@ -1622,6 +1824,7 @@ StatementMatcher CastMatcher =
                 //hasDescendant(declRefExpr().bind("castee")))    // All castExprs will have this descendant, it is to just get the castee easily.
         ).bind("cast");
 
+
 StatementMatcher CastMatcher2 =
     castExpr(
         allOf(
@@ -1650,6 +1853,8 @@ public:
         auto const *castExpr = result.Nodes.getNodeAs<clang::CastExpr>("cast");
         // Decl with/without cast
         auto const *varDecl = result.Nodes.getNodeAs<clang::VarDecl>("varDecl");
+        // Calls for fn args
+        auto const *ce = result.Nodes.getNodeAs<clang::CallExpr>("ce");
 
         if(castExpr) {
             processCast(result);
@@ -1657,6 +1862,10 @@ public:
 
         if(varDecl) {
             processVar(result);
+        }
+
+        if(ce) {
+            processHof(result);
         }
 
         /* Dumps the whole AST!
@@ -1721,6 +1930,7 @@ int main(int argc, const char **argv) {
     MatchFinder Finder;
     Finder.addMatcher(CastMatcher, &dumper);
     Finder.addMatcher(AssignMatcher, &dumper);
+    Finder.addMatcher(CallMatcher, &dumper);
 
     buildIgnoreList();
     FOUT.open("census-dump.txt", std::ios::out);
