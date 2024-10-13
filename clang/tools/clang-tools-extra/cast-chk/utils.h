@@ -1,3 +1,6 @@
+#ifndef UTILS_H
+#define UTILS_H
+
 // Declares clang::SyntaxOnlyAction
 #include "clang/Frontend/FrontendActions.h"
 #include "clang/Tooling/CommonOptionsParser.h"
@@ -247,10 +250,18 @@ std::string String(ASTContext const &context, CallExpr const &call, unsigned par
     return String(context, *fn, parmPos);
 }
 
+std::string parmqn(ASTContext const &context, FunctionDecl const &fn, unsigned parmPos) {
+    CNS_DEBUG("");
+    std::stringstream ss;
+    ss << fn.getNameAsString() << ".$" << parmPos;
+    CNS_DEBUG("end.");
+    return ss.str();
+}
+
 std::string String(ASTContext const &context, FunctionDecl const &fn, unsigned parmPos) {
     CNS_DEBUG("<FunctionDecl, unsigned>");
     std::stringstream ss;
-    ss << "{" << fn.getNameAsString() << ".$" << parmPos << ": ";
+    ss << "" << fn.getNameAsString() << ".$" << parmPos << ": ";
 
     auto const *parm = fn.getParamDecl(parmPos);
     if(!parm) {
@@ -512,7 +523,7 @@ std::string getLinkedParm(
     //CNS_INFO("declname");
     auto const *fn = getContainerFunctionDecl(context, node);
     if(!fn) {
-        CNS_INFO("fn == nullptr");
+        CNS_INFO("Container fn == nullptr");
         CNS_DEBUG("<T, DeclarationName> end.");
         return "{n/a}";
     }
@@ -540,6 +551,44 @@ std::string getLinkedParm(
     return getLinkedParm(context, node, nameInfo.getName());
 }
 
+template<typename T>
+std::string getLinkedParmQn(
+        clang::ASTContext &context,
+        T const &node,
+        clang::DeclarationName const &name) {
+
+    CNS_DEBUG("<T, DeclarationName>");
+    //CNS_INFO("declname");
+    auto const *fn = getContainerFunctionDecl(context, node);
+    if(!fn) {
+        CNS_INFO("Container fn == nullptr");
+        CNS_DEBUG("<T, DeclarationName> end.");
+        return name.getAsString();
+    }
+
+    if(auto parmPos = getParameterMatch(*fn, name)) {
+        FOUT << "[INFO](getLinkedParmQn) parmPos: " << parmPos.value() << "; " << parmqn(context, *fn, *parmPos) << "\n";
+        CNS_DEBUG("<T, DeclarationName> end.");
+        return parmqn(context, *fn, *parmPos);
+    }
+
+    CNS_WARN("parmPos nullopt.");
+    CNS_DEBUG("<T, DeclarationName> end.");
+    return getContainerFunction(context, node) + "." + name.getAsString();
+}
+
+template<typename T>
+std::string getLinkedParmQn(
+        clang::ASTContext &context,
+        T const &node,
+        clang::DeclarationNameInfo const &nameInfo) {
+
+    CNS_DEBUG("<T, DeclarationNameInfo>");
+    //CNS_INFO("declnameinfo");
+    CNS_DEBUG("<T, DeclarationNameInfo> end.");
+    return getLinkedParmQn(context, node, nameInfo.getName());
+}
+
 std::string getLinkedParm(
         clang::DeclContext const *context,
         clang::VarDecl const &var) {
@@ -553,15 +602,65 @@ std::string getLinkedParm(
     }
 
     if(auto parmPos = getParameterMatch(*func, var.getDeclName())) {
-        FOUT << "[INFO](getLinkedParm<DC>) parmPos: " << parmPos.value() << "; " << String(context->getParentASTContext(), *func, *parmPos) << "\n";
+        FOUT << "[INFO](getLinkedParm<DC>) parmPos: " << parmPos.value() << "; " << parmqn(context->getParentASTContext(), *func, *parmPos) << "\n";
         CNS_DEBUG("<DeclContext, VarDecl> end.");
-        return String(context->getParentASTContext(), *func, *parmPos);
+        return parmqn(context->getParentASTContext(), *func, *parmPos);
     }
 
     CNS_ERROR("<DC>parmPos nullopt.");
     CNS_DEBUG("<DeclContext, VarDecl> end.");
     return "{local}";
 }
+
+std::string getLinkedParmQn(
+        clang::DeclContext const *context,
+        clang::VarDecl const &var) {
+
+    CNS_DEBUG("<DeclContext, VarDecl>");
+    auto const *func = getContainerFunctionDecl(context, var);
+    if(!func) {
+        CNS_ERROR("<DC>No Parent function found.");
+        CNS_DEBUG("<DeclContext, VarDecl> end.");
+        return "{n/a}";
+    }
+
+    if(auto parmPos = getParameterMatch(*func, var.getDeclName())) {
+        FOUT << "[INFO](getLinkedParmQn<DC>) parmPos: " << parmPos.value() << "; " << parmqn(context->getParentASTContext(), *func, *parmPos) << "\n";
+        CNS_DEBUG("<DeclContext, VarDecl> end.");
+        return parmqn(context->getParentASTContext(), *func, *parmPos);
+    }
+
+    CNS_ERROR("<DC>parmPos nullopt.");
+    CNS_DEBUG("<DeclContext, VarDecl> end.");
+    return  getContainerFunction(context->getParentASTContext(), var) + "." + String(context->getParentASTContext(), var);
+}
+
+std::string getLinkedParmQn(
+        clang::ASTContext &context,
+        clang::VarDecl const &var) {
+    CNS_DEBUG("");
+    if(var.isLocalVarDecl()) {
+        CNS_INFO("VarDecl is local var & not parm");
+        CNS_DEBUG("end.");
+        return getContainerFunction(context, var) + "." + String(context, var);
+    }
+    if(var.isLocalVarDeclOrParm()) {
+        CNS_INFO("VarDecl is probably a parm");
+        auto const *c2 = var.getDeclContext();
+        if(!c2) {
+            CNS_INFO("Using iContext.");
+            CNS_DEBUG("end.");
+            return getLinkedParmQn(context, var, var.getDeclName());
+        }
+
+        CNS_INFO("Trying with var.getDeclContext");
+        CNS_DEBUG("end.");
+        return getLinkedParmQn(c2, var);
+    }
+    CNS_DEBUG("end.");
+    return "(whatisit?)";
+}
+
 
 std::string getLinkedParm(
         clang::ASTContext &context,
@@ -737,3 +836,4 @@ unsigned cnsHash(clang::ASTContext &context, clang::DeclarationNameInfo const& n
 }
 //--
 
+#endif // UTILS_H
