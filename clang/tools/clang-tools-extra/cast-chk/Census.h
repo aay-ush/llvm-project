@@ -1,3 +1,6 @@
+#ifndef CENSUS_H
+#define CENSUS_H
+
 #include "OpData.h"
 
 //--
@@ -350,6 +353,7 @@ void censusSummary() {
         op.use_ = UseChain(op);
     }
 
+    /*
     // build history
     for(auto const &[_, info]: census) {
         auto const &[op, __] = info;
@@ -360,6 +364,7 @@ void censusSummary() {
         auto const &[op, __] = info;
         elaborateHistory(op, {2});
     }
+    */
 
     // display summary
     for(auto const &[_, info]: census) {
@@ -368,6 +373,7 @@ void censusSummary() {
         //OpSummary(FOUT, op);
         OpDebugSummary(FOUT, op);
         FOUT << "\n";
+        /*
         int indent = 0;
         for(auto const& u: op.history_) {
             space(FOUT, indent + 4);
@@ -378,6 +384,7 @@ void censusSummary() {
             FOUT << "\n";
         }
         FOUT << "\n\n";
+        */
     }
     CNS_DEBUG("<void> end.");
 }
@@ -388,3 +395,5 @@ std::ostream& space(std::ostream &os, int indent) {
     }
     return os;
 }
+
+#endif  // CENSUS_H

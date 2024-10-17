@@ -46,7 +46,7 @@ std::ofstream FOUT;
 #define CNS_LOG(sev, msg)\
     do{ FOUT << "[" << sev << "](" << __func__ << "(): " << __LINE__ << ") " << " " << msg << "\n"; }while(0)
 
-//#define CNS_LOG_LEVEL_DEBUG {}
+#define CNS_LOG_LEVEL_DEBUG {}
 #define CNS_LOG_LEVEL_INFO {}
 #define CNS_LOG_LEVEL_WARN {}
 #define CNS_LOG_LEVEL_ERROR {}
@@ -661,6 +661,68 @@ std::string getLinkedParmQn(
     return "(whatisit?)";
 }
 
+std::string getLinkedParmQn(
+        clang::ASTContext &context,
+        clang::DeclRefExpr const& dre) {
+
+    CNS_DEBUG("<dre>");
+    auto const *refd = dre.getReferencedDeclOfCallee();
+    if(refd) {
+        CNS_DEBUG("refd");
+        auto const *vd = dyn_cast<VarDecl>(refd);
+        if(vd) {
+            CNS_INFO("ReferencedDecl is VarDecl");
+            return getLinkedParmQn(context, *vd);
+        }
+    }
+
+    auto const *stmt = dre.getExprStmt();
+    auto const *decl = dre.getDecl();
+    if(!!decl) {
+        CNS_INFO("DeclRefExpr");
+        auto const *var = dyn_cast<clang::VarDecl>(decl);
+        if(var) {
+            CNS_INFO("Found VarDecl from DeclRefExpr");
+            return getLinkedParmQn(context, *var);
+        }
+        CNS_WARN("NO VarDecl from DeclRefExpr");
+        return getContainerFunction(context, *decl) + "." + String(context, dre);
+    }
+
+    if(!!stmt) {
+        CNS_INFO("Building data from Expr stmt from DeclRefExpr");
+        return getContainerFunction(context, *stmt) + "." + String(context, dre);
+    }
+
+    CNS_ERROR("DeclRefExpr has no decl or stmt.");
+    CNS_DEBUG("<dre> end.");
+    return getContainerFunction(context, dre) + "." + String(context, dre);
+}
+
+std::string getLinkedParmQn(
+        clang::ASTContext &context,
+        clang::CallExpr const& call,
+        clang::Expr const &e) {
+
+    CNS_DEBUG("");
+    auto const *fn = getContainerFunctionDecl(context, e);
+    if(!fn) {
+        CNS_INFO("Container fn == nullptr");
+        CNS_DEBUG("end.");
+        return String(context, e);
+    }
+    CNS_DEBUG("end.");
+
+    auto const * dre = dyn_cast<clang::DeclRefExpr>(&e);
+    if(dre) {
+        CNS_DEBUG("end.");
+        return getLinkedParmQn(context, *dre);
+    }
+
+    // Search for a declrefexpr in expr and getlinkedParmQn on declref
+    // or just return string
+    return fn->getNameAsString() + "." + String(context, e);
+}
 
 std::string getLinkedParm(
         clang::ASTContext &context,

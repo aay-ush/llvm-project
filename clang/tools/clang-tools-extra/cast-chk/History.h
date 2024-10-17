@@ -1,3 +1,8 @@
+#ifndef HISTORY_H
+#define HISTORY_H
+
+#include "Census.h"
+
 // History context contains substitutions for HistoryTemplate that can be used to provide history.
 // How are the parinings stored?
 // Context is extensible.
@@ -10,7 +15,7 @@
 // Context should be composable? What if ht is instantiated separately and then combined? -> implies partial instantiation -> avoid.
 // Context lives with an HT object. Each HT object has one context only. wrong. Since many versions or complete instatitations are possible.
 // Avoiding composability avoid problems where two context with different values of same parameter are combined.
-using HistoryContext = std::unordered_map<Censuskey, Censuskey>;
+using HistoryContext = std::unordered_map<CensusKey, CensusKey>;
 
 // Template: for every parameter in a function, store it's Census operand and associate it to the parameter.
 class HistoryTemplate {
@@ -23,11 +28,19 @@ class HistoryTemplate {
 
         HistoryTemplate(clang::FunctionDecl const &fn);
 
-        HistoryTemplate() = delete;
-        ~HistoryTemplate() = default;
-        HistoryTemplate(HistoryTemplate const&) = delete;
+        HistoryTemplate(){ // = delete;
+            CNS_DEBUG("");
+            CNS_DEBUG("end.");
+        }
+        ~HistoryTemplate() {// = default;
+            CNS_DEBUG("");
+            CNS_DEBUG("end.");
+        }
+        HistoryTemplate(HistoryTemplate const&) = default;
 
-        std::string name() {
+        std::string name() const {
+            CNS_DEBUG("");
+            CNS_DEBUG("end.");
             return function_;
         }
 
@@ -50,7 +63,8 @@ bool operator!=(HistoryTemplate const &a, std::string const&b) {
     return !(a.name() == b);
 }
 
-std::vector<History> instantiate(clang::ASTContext const &context, clang::CallExpr const &call) {
+std::vector<History> HistoryTemplate::instantiate(clang::ASTContext const &context, clang::CallExpr const &call) {
+    CNS_DEBUG("");
     // for each arg, add parm-arg pair to context.
     // return context
     HistoryContext hc;
@@ -67,16 +81,23 @@ std::vector<History> instantiate(clang::ASTContext const &context, clang::CallEx
                 return;
             }
 
-            auto &[op, _] = census[qn];
-            hc[params_[i++]] = op;
-            args.push_back(a);
+            //auto &[op, _] = census[qn];
+            hc[params_[i++]] = qn;
+            args.push_back(qn);
     });
 
     std::vector<History> h;
+    std::for_each(begin(params_), end(params_),
+        [&](auto const &p) {
+            h.push_back({hc, p});
+        });
+    /*
     std::transform(begin(params_), end(params_), back_inserter(h),
         [&](auto const &p) {
             return History(hc, p);
         });
+    */
+    CNS_DEBUG("end.");
     return h;
 }
 
@@ -212,88 +233,128 @@ class History {
     public:
         // Could be type or container.$param or container.local
         //std::string history() const;
-        History history(int ilevel) // iLevel > 0
+        //History history(int ilevel); // iLevel > 0
         // operator string
 
-        History extend(History h) {
+        void extend(History const& h) {
+            CNS_DEBUG("");
             branch_.push_back(h);
+            CNS_DEBUG("end.");
         }
 
         std::string id() const {
+            CNS_DEBUG("");
             // if operand or context are not same we don't get same string.
             // works for operands without context too and allows for extension of operand history.
             std::stringstream ss;
             ss << op_;
             auto const& op = getContextResolvedOp();
             ss << "(" << op.qn_ << ")";
+            CNS_DEBUG("end.");
             return ss.str();
         }
 
         CensusKey opId() const {
+            CNS_DEBUG("");
+            CNS_DEBUG("end.");
             return op_;
         }
 
         bool hasContext() const {
-            return !context_.empty();
-        }
-
-        operator String() {
-            std::stringstream ss;
-            auto const& op = getContextResolvedOp();
-            if(op.type_.empty()) {
-                ss << op.qn_;
-            }
-            else {
-                ss << op.type_;
-            }
-            ss << " -> ";
-            std::for_each(begin(branch_), end(branch_),
-                [&](auto const& h) {
-                    ss << (String) h;
-            });
-            ss << "\n";
-            return ss.str();
+            CNS_DEBUG("");
+            CNS_DEBUG("end.");
+            return !hc_.empty();
         }
 
         explicit History(CensusKey const& op): op_(op) {}
 
         History(HistoryContext const& context, CensusKey const& op):
-            context_(context),
-            op_(op) {}
+            op_(op),
+            hc_(context) {
+
+            CNS_DEBUG("");
+            CNS_DEBUG("end.");
+        }
 
         History() = delete;
-        ~History() = default;
+        ~History(){// = default;
+            CNS_DEBUG("");
+            CNS_DEBUG("end.");
+        }
 
         // History can be extended but coying is not useful.
-        History(History const&) = delete;
-        History operator=(History) = delete;
+        History(History const&) = default;
+        History& operator=(History const&) = default;
+
+        OpData const& getContextResolvedOp() const {
+            CNS_DEBUG("");
+            // Substitute from context if applicable
+            if(hc_.find(op_) != hc_.end()) {
+                CNS_DEBUG("end.");
+                return ops(hc_.at(op_));
+            }
+
+            CNS_DEBUG("end.");
+            return ops(op_);
+        }
+
+        auto bbegin() const {
+            CNS_DEBUG("");
+            CNS_DEBUG("end.");
+            return branch_.begin();
+        }
+        auto bend() const {
+            CNS_DEBUG("");
+            CNS_DEBUG("end.");
+            return branch_.end();
+        }
 
     private:
         //std::string history_;
         CensusKey op_;
         HistoryContext hc_ {};
         // Vector since history is a tree. just like use_, history can have multiple branches.
-        std::vector<History> branch_;
-        OpData const& getContextResolvedOp() {
-            // Substitute from context if applicable
-            if(hc_.find(op.qn_) != hc_.end()) {
-                return ops(hc_[qn]);
-            }
-
-            return ops(op_);
-        }
+        std::vector<History> branch_;   // Requires copy
 };
 
+std::ostream& operator<<(std::ostream &os, History const& h) {
+    std::stringstream ss;
+    auto const& op = h.getContextResolvedOp();
+    if(op.type_.empty()) {
+        ss << op.qn_;
+    }
+    else {
+        ss << op.type_;
+    }
+    ss << " -> ";
+    std::for_each(h.bbegin(), h.bend(),
+        [&](auto const& h_) {
+            ss << h_;
+        });
+    ss << "\n";
+
+    os << ss.str();
+    return os;
+}
+
 bool operator==(History const &a, History const &b) {
+    CNS_DEBUG("");
+    CNS_DEBUG("end.");
     return a.id() == b.id();
 }
 bool operator!=(History const &a, History const &b) {
+    CNS_DEBUG("");
+    CNS_DEBUG("end.");
     return !(a == b);
 }
 bool operator==(History const &a, CensusKey const &b) {
+    CNS_DEBUG("");
+    CNS_DEBUG("end.");
     return (a.id() == b) && !(a.hasContext());
 }
 bool operator!=(History const &a, CensusKey const &b) {
+    CNS_DEBUG("");
+    CNS_DEBUG("end.");
     return !(a == b);
 }
 
@@ -315,3 +376,4 @@ History History::append(History h) {
 //    return h1.append(h2);
 //}
 
+#endif  // HISTORY_H

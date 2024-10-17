@@ -174,7 +174,7 @@ OpData buildOpData<CastSourceType::UnaryOp>(
 OpData buildOpData(
         clang::ASTContext &context,
         clang::SourceManager const &sm,
-        clang::CastExpr const &castExpr,
+        clang::Expr const &castExpr,
         clang::DeclRefExpr const &e,
         clang::Decl const& d) {
 
@@ -199,7 +199,7 @@ OpData buildOpData(
 OpData buildOpData(
         clang::ASTContext &context,
         clang::SourceManager const &sm,
-        clang::CastExpr const &castExpr,
+        clang::Expr const &castExpr,
         clang::DeclRefExpr const &e,
         clang::Stmt const& s) {
 
@@ -224,7 +224,7 @@ OpData buildOpData(
 OpData buildOpData(
         clang::ASTContext &context,
         clang::SourceManager const &sm,
-        clang::CastExpr const &castExpr,
+        clang::Expr const &castExpr,
         clang::DeclRefExpr const &e) {
 
     FOUT << "[INFO](buildOpData<DeclRef2>) ref: \n"
@@ -269,6 +269,79 @@ OpData buildOpData(
         "(No Param match due to declrefexpr error)",
         getContainerFunction(context, castExpr),
         castExpr.getExprLoc().printToString(sm),
+        String(context, e)
+    };
+}
+
+OpData buildOpDataArg(
+        clang::ASTContext &context,
+        clang::SourceManager const &sm,
+        clang::Expr const &arg,
+        clang::DeclRefExpr const &e) {
+
+    FOUT << "[INFO](buildOpData<DeclRef2>) ref: \n"
+         << String(context, e) << "; type: "
+         << Typename(context, e) << "\n";
+
+    auto const *refd = e.getReferencedDeclOfCallee();
+    if(refd) {
+        CNS_INFO("Building data from ReferencedDecl");
+        auto const *vd = dyn_cast<VarDecl>(refd);
+        if(vd) {
+            CNS_INFO("ReferencedDecl is VarDecl");
+            return buildOpData(context, sm, *vd);
+        }
+    }
+
+    auto const *stmt = e.getExprStmt();
+    auto const *decl = e.getDecl();
+    if(!!decl) {
+        CNS_INFO("Building data from Decl from DeclRefExpr");
+        auto const *var = dyn_cast<clang::VarDecl>(decl);
+        if(var) {
+            CNS_INFO("Found VarDecl from DeclRefExpr");
+            return buildOpData(context, sm, *var);
+        }
+        CNS_WARN("NO VarDecl from DeclRefExpr");
+        return {
+            cnsHash(context, *decl),
+            String(context, e),
+            Typename(context, e),
+            TypeCategory(context, e),
+            getLinkedParm(context, *decl, e.getNameInfo()),
+            getContainerFunction(context, arg),
+            arg.getExprLoc().printToString(sm),
+            //String(context, e) + "_" +
+            getLinkedParmQn(context, *decl, e.getNameInfo())
+        };
+    }
+
+    if(!!stmt) {
+        CNS_INFO("Building data from Expr stmt from DeclRefExpr");
+        //return buildOpData(context, sm, arg, e, *stmt);
+        return {
+            cnsHash(context, *stmt),
+            String(context, e),
+            Typename(context, e),
+            TypeCategory(context, e),
+            getLinkedParm(context, *stmt, e.getNameInfo()),
+            getContainerFunction(context, arg),
+            arg.getExprLoc().printToString(sm),
+            //String(context, e) + "_" +
+            getLinkedParmQn(context, *stmt, e.getNameInfo())
+        };
+    }
+
+    CNS_ERROR("DeclRefExpr has no decl or stmt.");
+
+    return {
+        cnsHash(context, e),
+        String(context, e),
+        Typename(context, e),
+        TypeCategory(context, e),
+        "(No Param match due to declrefexpr error)",
+        getContainerFunction(context, arg),
+        arg.getExprLoc().printToString(sm),
         String(context, e)
     };
 }
