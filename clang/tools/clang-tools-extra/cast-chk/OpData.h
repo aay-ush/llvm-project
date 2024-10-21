@@ -80,7 +80,7 @@ struct OpData {
     std::string qn_;
     mutable std::vector<OpID> use_ {};
     //mutable std::unordered_set<OpID> history_ {};
-    mutable std::weak_ptr<History> history_ {};
+    //mutable std::weak_ptr<History> history_ {};
 };
 bool operator==(OpData const &lhs, OpData const &rhs) {
     return lhs.qn_ == rhs.qn_;

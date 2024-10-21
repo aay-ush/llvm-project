@@ -49,91 +49,22 @@ using namespace clang;
 using namespace clang::ast_matchers;
 using namespace clang::ento;
 
+std::vector<unsigned> seenFunctions;
+std::vector<std::string> ignoreFunctions;
 
-// TODO: use TypeInfo from context to detect incompatible size casts.
-// TODO: &i -> trace to int i;
-
-// If the LHS is fn ptr, consider skipping the census update.
-//  -> Can't, since fptr can be passed as arg which are needed in census.
+// Tool workflow
+// Matcher invokes Callback with match result
+//                                      |
+//                                      v
+//                                  Cast Operands -> lhs, rhs
+// 
+// For every case/match type:
+// 1. preprocess(expression) -> e.g. run matcher on called function for call expressions
+// 2. Build operand data
+// 3. Add {lhs, {[]}} & {rhs, {[lhs]}} to census
+// 4. Add H(lhs).extend(H(rhs)) to TransformHistory; Create HistoryTemplate for functions
 //
-// TODO TODO: resolve fnptr call to (*fnptr) call. 
-//  (*comp)(a, b) -> should link a -> (*comp).$0
-//  Currently, since *comp is not resolved, parm info is not available.
 
-/*/--
-using DeclExpr = NamedType<std::string, struct Expression>;
-using ExprType = NamedType<std::string, struct ExpressionType>;
-using ExprCategory = NamedType<std::string, struct ExpressionCategory>;
-using LinkedParm = NamedType<std::string,struct LinkedParameter>;
-using FunctionName = NamedType<std::string, struct FunctionNameType>;
-using Location = NamedType<std::string, struct LocationType>;
-using ExprHash = NamedType<unsigned, struct DeclHash>;
-using LinkingExpr = NamedType<std::string, struct LinkingExpression>;
-
-//--*/
-/*
-// Function: collection of name, and parameter OpData.
-struct ParameterData {
-    unsigned argPos_;
-    std::string argType_;
-    std::string argName_;
-};
-
-struct FunctionInfo {
-    clang::DeclarationNameInfo name_;
-    std::vector<ParameterData> params_;
-};
-*/
-
-//---
-
-/*
-void buildHistory(OpData const& op) {
-    CNS_DEBUG("");
-    for(auto const& d_: census) {
-        auto const& d = ops(d_);
-        auto it = std::find_if(begin(d.use_), end(d.use_), [&](auto const& uhash) {
-                auto const& u = ops(uhash);
-                if(u.qn_ == op.qn_) {
-                    return true;
-                }
-                if(u.linkedParm_ == op.linkedParm_ && u.location_ == op.location_) {
-                    return true;
-                }
-                return false;
-            });
-        //if(std::find(begin(d.use_), end(d.use_), op.hash_) != std::end(d.use_)) {
-        if(it != std::end(d.use_)) {
-            CNS_DEBUG("Node history match found.");
-            op.history_.insert(d.qn_);
-        }
-    }
-    CNS_DEBUG("end.");
-}
-
-void elaborateHistory(OpData const &op, std::optional<int> level) {
-    CNS_DEBUG("");
-    for(;level && level.value() > 0; level = level.value() - 1) {
-        auto const th = op.history_;
-        for(auto const& i: th) {
-            std::copy(begin(ops(i).history_), end(ops(i).history_), inserter(op.history_, op.history_.begin()));
-        }
-    }
-    CNS_DEBUG("end.");
-}
-*/
-
-//---
-/*
-void preprocess(
-        clang::ASTContext &context,
-        clang::DeclStmt const &decl) {}
-*/
-
-// TODO TODO
-// Before preprocessing, check if function is meant to be filtered.
-// Filter seen functions too.
-//
 void preprocess(
         clang::ASTContext &context,
         clang::UnaryOperator const &op) {
@@ -146,156 +77,6 @@ void preprocess(
         clang::DeclRefExpr const &op) {
     CNS_DEBUG("<DeclRefExpr>");
     CNS_DEBUG("<DeclRefExpr> end.");
-}
-
-/*
-void addFunction(
-        clang::ASTContext &context,
-        clang::FunctionDecl const &f) {
-
-    CNS_DEBUG("");
-    auto const nameinfo = f.getNameInfo();
-    std::vector<ParameterData> params;
-    unsigned pos = 0;
-    std::for_each(f.param_begin(), f.param_end(), [&](auto const *p) {
-            // append param data to params.
-            params.push_back({pos++, Typename(context, *p), String(context, *p)});
-        });
-    Functions.insert({cnsHash(context, nameinfo), {nameinfo, params}});
-
-    // TODO: maintain fp->f links such that fp can be resolved to f for f in Functions and valid fp.
-    CNS_DEBUG("end");
-}
-*/
-
-std::vector<unsigned> seenFunctions;
-std::vector<std::string> ignoreFunctions;
-
-void OBSOLETEpreprocess(
-        clang::ASTContext &context,
-        clang::CallExpr const &call) {
-
-    CNS_DEBUG("<CallExpr>");
-    // Trigger cast check for the called function.
-    auto const *calledFn = getCalleeDecl(call);
-    // assert still throws error for qsort. WHY?
-    assert(calledFn);
-    if(!calledFn) {
-        CNS_INFO("<CallExpr> null callee decl");
-        CNS_DEBUG("<CallExpr> end.");
-        return;
-    }
-
-    auto h = cnsHash(context, *calledFn);
-    if(std::find(begin(seenFunctions), end(seenFunctions), h) != end(seenFunctions)) {
-        FOUT << "[INFO](preprocess<CallExpr>) Skipping processed function: " << String(context, *calledFn) << "\n";
-        CNS_DEBUG("<CallExpr> end.");
-        return; // already seen
-    }
-    if(std::find(begin(ignoreFunctions), end(ignoreFunctions), calledFn->getNameAsString()) != end(ignoreFunctions)) {
-        FOUT << "[INFO](preprocess<CallExpr>) Skipping ignored function: " << String(context, *calledFn) << "\n";
-        CNS_DEBUG("<CallExpr> Adding ignored function to seen functions.");
-        //seenFunctions.push_back(cnsHash(context, *calledFn));
-        CNS_DEBUG("<CallExpr> end.");
-        return; // ignore
-    }
-    /*
-    if(calledFn) {
-        FOUT << "[INFO](preprocess) Adding function : " << String(context, *calledFn) << "\n";
-        addFunction(context, *calledFn);
-    }
-    */
-
-    ////if(!calledFn) {
-        //// Couldn't find function decl from callexpr
-        //// But maybe the call args have a function pointer?
-        //// If yes, now's the time to check it.
-        //CNS_DEBUG("Checking for Fptr args in function.");
-        //
-        //std::for_each(call.arg_begin(), call.arg_end(),
-            //[&] (auto const *arg) -> void{
-            //CNS_DEBUG("start fparg finder.");
-            //FOUT << "[DEBUG](preprocess<call>) Arg: " << String(context, *arg) << "\n";
-            //auto const *argType = arg->getType().getTypePtrOrNull();
-            //if(!argType) {
-                //CNS_DEBUG("Arg Type could not be retrieved.");
-                //CNS_DEBUG("end fparg finder.");
-                //return;
-            //}
-            //
-            //if(argType->isFunctionPointerType()) {
-                //CNS_DEBUG("Found FPtr arg.");
-            //
-                ///*
-                //auto const* dt = static_cast<clang::DecltypeType const*>(argType);
-                //if(dt) {
-                    //CNS_DEBUG("DecltypeType not null");
-                    //auto const* d = dt->getAs<clang::NamedDecl>();
-                    //if(d) {
-                        //CNS_DEBUG("Really?!!!>>>>");
-                    //}
-                    //else {
-                        //CNS_DEBUG("Unsurprising. <<<< ");
-                    //}
-                //}
-                //else {
-                    //CNS_DEBUG("DecltypeType null");
-                //}
-                //auto fh = cnsHash(context, *arg);
-                //FOUT << "[DEBUG](preprocess<call> fpargfinder: cnshash(fparg) = " << fh << "\n";
-                //auto it = Functions.find(fh);
-                //auto it = std::find_if(Functions.begin(), Functions.end()
-                //if (it != Functions.end()) {
-                    //CNS_DEBUG(">>> Found fp arg match in fdb");
-                //}
-                //else {
-                    //CNS_DEBUG("<<< Didn't find fp arg match in fdb");
-                //}
-                //*/
-                //// FP Type arg.Get the decl out of it and preprocess it.
-                //auto const *dre = dyn_cast<DeclRefExpr>(arg);
-                //if(dre) {
-                    //CNS_DEBUG(">>>DeclRefExpr Arg for Fptr. Find Dom to resolve.");
-                //// at this point census probably has the dominator for this fptr.
-                //// The dominator is the functionproto or the callee decl.
-                //// Get the callee decl from functioncensus.
-                ///*
-                    //if(auto it = census.find(cnsHash(context, dre)); it != end(census)) {
-                            //// 1. get the dominator function.
-                            //// 2. find Functions(cnsHash(context, function.name))
-                            //// 3. from Functions, find the link between function args and params.
-                    //}
-                    //else {
-                        //CNS_INFO("Could not find function.");
-                        //CNS_DEBUG("end fparg finder.");
-                        //return;
-                    //}
-                    //*/
-                //}
-                //else {
-                    //CNS_DEBUG("<<>DeclRefExpr Arg not found for Fptr");
-                //}
-            //}
-            //else {
-                //CNS_DEBUG("<<<Fptr arg not found.");
-            //}
-            //
-            ////CNS_DEBUG("Arg is not a function pointer.");
-            //CNS_DEBUG("end fparg finder.");
-        //});
-        //
-        ////CNS_DEBUG("<CallExpr> end.");
-        ////return;
-    ////}
-
-    if(calledFn->hasBody()) {
-        auto const *body = calledFn->getBody();
-        assert(body);
-        MatchFinder m;
-        m.match(*body, context);
-    }
-    seenFunctions.push_back(h);
-    CNS_DEBUG("<CallExpr> end.");
 }
 
 bool isNodeDominatorNew(
@@ -365,90 +146,6 @@ void addDomNode(OpData const &dom) {
     CNS_DEBUG(" end.");
 }
 
-bool isFptrOp(OpData const &op) {
-    CNS_INFO("");
-    FOUT << "[INFO](isFptrOp for [" << op.qn_ << "]{" << op.category_ << "} = " << (op.category_ == "FunctionPointer" || op.category_ == "FunctionProto") << "\n";
-    CNS_INFO("end.");
-    return op.category_ ==  "FunctionPointer" || op.category_ == "FunctionProto";
-}
-
-bool isSpuriousFPDom(OpData const &from, OpData const &to) {
-    // If from: FP and to: func.$0: (not void*/fp)
-    // then return false
-    // -> handle cases where fp is mistakenly matched to f.$0
-
-    if(isFptrOp(from)) {
-        return false;
-    }
-
-    if(isFptrOp(to)) { // || to.type_ == "void *") {
-        return false;
-    }
-
-    return true;
-}
-
-/*
-void resolveFptrInCensus(
-        OpData &from,
-        OpData &to) {
-
-    CNS_DEBUG("");
-    auto isFarg = isFptrOp(from);
-    auto isFparm = isFptrOp(to);
-    if(isFarg || isFparm) {
-        // g -> f.$1
-        // L : list of operands with f.$1 prefix
-        std::vector<CensusKey> opsToUpdate;
-        auto getRelatedOps = [&](auto const& cn) {
-            auto const &[k, _] = cn;
-            if(k.find(to.qn_) != std::string::npos) {
-                opsToUpdate.push_back(k);
-            }
-        };
-        std::for_each(begin(census), end(census), getRelatedOps);
-        FOUT << "[INFO](resolveFptrInCensus) Operands to update: " << opsToUpdate.size() << "\n";
-
-        // Update to.qn_ to g. g is available from 'from'.
-        std::for_each(begin(opsToUpdate), end(opsToUpdate),
-                [&](auto const &key) {
-                    auto &[op, ds_] = census[key];
-                    auto const &n = op.qn_.find(to.qn_);
-                    if(n != std::string::npos) {
-                        FOUT << "[INFO](resolveFptrInCensus) Updating: " << op.qn_ << "\n";
-                        op.qn_.replace(n, from.qn_.length() + 3, from.qn_);
-                        FOUT << "[INFO](resolveFptrInCensus) to: " << op.qn_ << "\n";
-                    }
-                    if(ds_) {
-                        auto &ds = ds_.value();
-                        std::for_each(begin(ds), end(ds), [&](auto & d) -> void{
-                            auto const &dn = key.find(to.qn_);
-                                if(dn != std::string::npos) {
-                                    FOUT << "[INFO](resolveFptrInCensus)(Domupdate) Updating: " << d.from_.qn_ << "\n";
-                                    d.from_.qn_.replace(dn, from.qn_.length() + 3, from.qn_);
-                                    FOUT << "[INFO](resolveFptrInCensus)(Domupdate) to: " << d.from_.qn_ << "\n";
-                                }
-                            });
-                    }
-                    auto const &nn = op.linkedParm_.find(to.qn_);
-                    if(nn != std::string::npos) {
-                        FOUT << "[INFO](resolveFptrInCensus) Updating: " << op.linkedParm_ << "\n";
-                        op.linkedParm_.replace(nn, from.qn_.length() + 3, from.qn_);
-                        FOUT << "[INFO](resolveFptrInCensus) to: " << op.linkedParm_ << "\n";
-                        // TODO update usechain algorithm to ensure qn is used instead of key.
-                    }
-                });
-
-        // Update prefix to g.
-        to.qn_ = from.qn_;
-        if(to.linkedParm_.find(from.qn_) != std::string::npos) {
-            to.linkedParm_.replace(to.linkedParm_.find(from.qn_), from.qn_.length(), from.qn_);
-        }
-    }
-    CNS_DEBUG("end");
-}
-*/
-
 void updateCensus(
         OpData &from,
         OpData &to,
@@ -456,15 +153,6 @@ void updateCensus(
 
     CNS_DEBUG("<from, to, dom>");
 
-    /*
-    if(isSpuriousFPDom(from, to)) {
-        CNS_WARN("Skipping spurious fptr link to non-fptr.");
-        CNS_DEBUG("<from, to, dom> end");
-        return;
-    }
-    */
-
-    //resolveFptrInCensus(from, to);
     addDomNode(from);
     auto it = census.find(to.qn_);
     if(it == std::end(census)) {
@@ -546,8 +234,8 @@ void processCast(MatchFinder::MatchResult const &result) {
     //auto const *gexpr = result.Nodes.getNodeAs<Expr>("gexpr");
 
     // Target
-    auto const *call = result.Nodes.getNodeAs<CallExpr>("call");
-    auto const *fptr = result.Nodes.getNodeAs<CallExpr>("fptr");
+    //auto const *call = result.Nodes.getNodeAs<CallExpr>("call");
+    //auto const *fptr = result.Nodes.getNodeAs<CallExpr>("fptr");
     auto const *unaryOp = result.Nodes.getNodeAs<UnaryOperator>("unaryOp");
 
     /*
@@ -558,12 +246,14 @@ void processCast(MatchFinder::MatchResult const &result) {
     if(!!unaryOp) {
         updateCensus<CastSourceType::UnaryOp>(*context, *result.SourceManager, *castExpr, *s_unaryCastee, *unaryOp);
     }
+    /*
     else if (!!call) {
         //updateCensus<CastSourceType::FunctionArg>(*context, *result.SourceManager, *castExpr, *s_callArg, *call);
     }
     else if(!!fptr) {
         //updateCensus<CastSourceType::Function>(*context, *result.SourceManager, *castExpr, *s_fptrRef, *fptr);
     }
+    */
     else if(!!binOp) {
         CNS_INFO("binop processing");
         auto const *bl = result.Nodes.getNodeAs<DeclRefExpr>("binLhs");
@@ -578,19 +268,6 @@ void processCast(MatchFinder::MatchResult const &result) {
         }
         updateCensus<CastSourceType::BinaryOp>(*context, *result.SourceManager, *castExpr, *bl, *br);
     }
-
-    /*
-    } else if(!!binop) {
-        callee = containerFn;
-        cast.second = binop;
-        castExprType = "binop";
-        dest = String(context, binop);
-    */
-    /*
-    } else if(!!gexpr) {
-        cast.second = gexpr;
-    }
-    */
 
     CNS_DEBUG(" end.");
 }
@@ -668,6 +345,7 @@ OpData buildArgOp(clang::ASTContext &context,
     CNS_DEBUG("");
     auto const *e = arg.IgnoreImplicit();
     if(!e) {
+        CNS_DEBUG("Null from IgnoreImplicit()");
         CNS_DEBUG(" end.");
         // get declref expr for arg
         return {
@@ -683,6 +361,7 @@ OpData buildArgOp(clang::ASTContext &context,
     }
     auto const *dre = dyn_cast<DeclRefExpr>(e);
     if(!dre) {
+        CNS_DEBUG("Null DRE");
         CNS_DEBUG(" end.");
         return {
             cnsHash(context, arg),
@@ -695,6 +374,7 @@ OpData buildArgOp(clang::ASTContext &context,
             getLinkedParmQn(context, call, arg)
         };
     }
+    CNS_DEBUG("Got DRE from arg.");
     CNS_DEBUG(" end.");
     return buildOpData(context, sm, arg, *dre);
 }
@@ -705,16 +385,25 @@ auto buildOpDatas(clang::ASTContext &context,
 
     // for each arg
     unsigned pos = 0;
-    OpData lhs, rhs;
     std::for_each(call.arg_begin(), call.arg_end(),
         [&](auto const *arg) {
+            CNS_DEBUG("Building lhs(Arg) opData.");
+            OpData lhs, rhs;
             // create source(arg) op
             lhs = buildArgOp(context, sm, call, *arg);
 
             // create target(param) op
+            CNS_DEBUG("Building rhs(Param) opData.");
             auto const *parmd = getParamDecl(context, call, pos);
             if(parmd) {
+                CNS_DEBUG("Got ParamDecl.");
                 auto const *parm = dyn_cast<clang::ParmVarDecl>(parmd);
+                if(!parm) {
+                    CNS_ERROR("Got ParamDecl but no ParmVarDecl.");
+                    CNS_DEBUG("end.");
+                    return;
+                }
+
                 rhs = {
                     cnsHash(context, *parm),
                     parm->getNameAsString(),
@@ -723,31 +412,43 @@ auto buildOpDatas(clang::ASTContext &context,
                     String(context, call, pos),
                     getContainerFunction(context, *arg),
                     call.getExprLoc().printToString(sm),
-                    call.getDirectCallee()->getQualifiedNameAsString() + ".$" + std::to_string(pos)
+                    (call.getDirectCallee() != nullptr)
+                        ? (call.getDirectCallee()->getQualifiedNameAsString() + ".$" + std::to_string(pos))
+                        : ("NullCallee")
                 };
             }
+
             else {
+                CNS_DEBUG("No ParamDecl.");
+
                 auto const *fn = call.getCallee();
                 if(fn) {
+                    CNS_DEBUG("Got Callee expr.");
                     std::stringstream ss;
                     ss << String(context, *fn) << ".$" << pos;
-                    //cnsHash(context, arg),
-                    //ss.str(),
-                    //"(T)" or typename(context, arg)
-                    //"(?)" or typecategory(context, arg)
-                    //String(context, call, pos)
-                    //getContainerFunction(context, arg)
-                    //call.getExprLoc().printToString(sm)
-                    //ss.str()
+                    rhs = {
+                        cnsHash(context, *arg),
+                        ss.str(),
+                        Typename(context, *arg),     // Since we can't get decl from callee expr.
+                        TypeCategory(context, *arg),
+                        String(context, call, pos),
+                        getContainerFunction(context, *arg),
+                        call.getExprLoc().printToString(sm),
+                        ss.str()
+                    };
                 }
                 else {
-                    //cnsHash(context, arg),
-                    //String(context, call),
-                    //"(T')" or typename(context, arg)
-                    //"(?)" or typecategory(context, arg)
-                    //String(context, call, pos)
-                    //call.getExprLoc().printToString(sm)
-                    //("UnkFn_" + String(context, call)
+                    CNS_DEBUG("No Callee either.");
+                    rhs = {
+                        cnsHash(context, *arg),
+                        String(context, *arg),
+                        Typename(context, *arg),
+                        TypeCategory(context, *arg),
+                        String(context, call, pos),
+                        getContainerFunction(context, *arg),
+                        call.getExprLoc().printToString(sm),
+                        "Resolve Func from callexpr_.$" + std::to_string(pos)
+                    };
                 }
             }
 
@@ -759,6 +460,7 @@ auto buildOpDatas(clang::ASTContext &context,
                 {} //getLinkedFunction(context, call, arg)
             };
             updateCensus(lhs, rhs, dom);
+            logCensusUpdate(lhs, rhs, dom);
         });
 }
 
@@ -785,6 +487,183 @@ OpData buildOpDataHofArg(
     CNS_DEBUG("end");
 }
 
+
+void addCallHistory(clang::ASTContext & context, clang::CallExpr const& call) {
+    CNS_DEBUG("");
+    auto const *calledFn = getCalleeDecl(call);
+    assert(calledFn);
+    if(!calledFn) {
+        CNS_ERROR("Null callee decl.");
+        CNS_DEBUG("end.");
+        return;
+    }
+
+    auto const& fn = calledFn->getNameAsString();
+    auto it = std::find(begin(TransformTemplates), end(TransformTemplates), fn);
+    if(it == std::end(TransformTemplates)) {
+        FOUT << "[DEBUG](addCallHistory) No template found for : " << fn << "()\n";
+        FOUT << "[DEBUG](addCallHistory) Adding new template for : " << fn << "()\n";
+        // Likely to happen.
+        // Create new template from calleeDecl and instantiate.
+        TransformTemplates.push_back({*calledFn});
+        auto it2 = std::find(begin(TransformTemplates), end(TransformTemplates), fn);
+        if(it2 == std::end(TransformTemplates)) {
+            FOUT << "[ERROR](addCallHistory) New template insert failed for: " << fn << "()\n";
+            CNS_DEBUG("end.");
+            return;
+        }
+        else {
+            it = it2;
+        }
+    }
+
+    // Instantiate template and add to history
+    auto hs = it->instantiate(context, call);
+    if(hs.size() != call.getNumArgs()) {
+        CNS_ERROR("History count does not match arg count, cannot assign history to args.");
+        CNS_DEBUG("end.");
+        return;
+    }
+
+    // For each arg operand opA, H(opA) is extended by H(A).
+    unsigned i = 0;
+    std::for_each(call.arg_begin(), call.arg_end(), [&](auto const *a) {
+            CNS_DEBUG("for_each arg");
+            // get key for a
+            auto const qn = getLinkedParmQn(context, call, *a);
+
+            // Search history of a
+            auto xt = std::find(begin(TypeTransforms), end(TypeTransforms), qn);
+            if( xt != std::end(TypeTransforms)) {
+                FOUT << "[DEBUG](addCallHistory) Found existing history for" << qn << "\n";
+                // extend history
+                if(i < hs.size()) {
+                    xt->extend(hs[i]);
+                }
+                else {
+                    CNS_ERROR("Out of bound history insert.");
+                }
+            }
+            else {
+                // add new history
+                FOUT << "[DEBUG](addCallHistory) Adding history for" << qn << "\n";
+                TypeTransforms.emplace_back(hs[i]);
+            }
+            ++i;
+        });
+    CNS_DEBUG("end.");
+}
+
+/*
+HistoryTemplate makeHistoryTemplate(
+        clang::ASTContext &context,
+        clang::FunctionDecl const &fn) {
+    CNS_DEBUG("");
+
+    auto const& fname = fn.getNameAsString();
+    TransformTemplates.push_back({*calledFn});
+
+    CNS_DEBUG("end.");
+}
+*/
+
+// For call expressions:
+void preprocess(
+        clang::ASTContext &context,
+        clang::CallExpr const &call) {
+
+    CNS_DEBUG("<CallExpr>");
+    auto const *calledFn = getCalleeDecl(call);
+    assert(calledFn);
+    if(!calledFn) {
+        CNS_ERROR("<CallExpr> null callee decl");
+        CNS_DEBUG("<CallExpr> end.");
+        return;
+    }
+
+    auto const& fn = calledFn->getNameAsString();
+    /*
+    auto it = std::find(begin(TransformTemplates), end(TransformTemplates), fn);
+    if(it != std::end(TransformTemplates)) {
+        FOUT << "[INFO](preprocess<CallExpr>) Skipping processed function: " << String(context, *calledFn) << "\n";
+        CNS_DEBUG("<CallExpr> end.");
+        return;
+    }
+    */
+
+    if(std::find(begin(ignoreFunctions), end(ignoreFunctions), fn) != end(ignoreFunctions)) {
+        FOUT << "[INFO](preprocess<CallExpr>) Skipping ignored function: " << String(context, *calledFn) << "\n";
+        CNS_INFO("<CallExpr> Adding ignored function to seen functions.");
+        CNS_DEBUG("<CallExpr> end.");
+        return; // ignore
+    }
+
+    auto h = cnsHash(context, *calledFn);
+    if(std::find(begin(seenFunctions), end(seenFunctions), h) != end(seenFunctions)) {
+        FOUT << "[INFO](preprocess<CallExpr>) Skipping seen function: " << String(context, *calledFn) << "\n";
+        CNS_DEBUG("<CallExpr> end.");
+        return; // seen
+    }
+
+    // - Process function will
+    //      - create operands for all args and params (new)
+    //      - populate census with the new operands (exists)
+    if(calledFn->hasBody()) {
+        auto const *body = calledFn->getBody();
+        assert(body);
+        MatchFinder m;
+        m.match(*body, context);
+    }
+    seenFunctions.push_back(h);
+
+    //      - create histories, templates and contexts (partially exists)
+    // TODO: make template by matching function signature through matcher
+    // At this point, function is processed, so census should have operands for its parameters.
+    //auto const& ht = HistoryTemplate(*calledFn);
+    // Perhaps that's not true TODO Check
+    auto it = std::find(begin(TransformTemplates), end(TransformTemplates), fn);
+    if(it == std::end(TransformTemplates)) {
+        FOUT << "[INFO](preprocess<CallExpr> Adding template for function: " << fn << "()\n";
+        TransformTemplates.push_back({*calledFn});
+    }
+    else {
+        FOUT << "[INFO](preprocess<CallExpr> Template for function: " << fn << "() exists.\n";
+    }
+    // TODO end
+
+    CNS_DEBUG("<CallExpr> end.");
+}
+
+// Earlier, all process functions would take ASTContext and match result as input
+// And populate Census with operands
+//
+// Now all process functions additionally populate HistoryRecords with History(operand + context)
+// For var/cast/assignment expressions:
+// - Process function will
+//      - create operands for both sides (exists)
+//      - populate census with the new operands (exists)
+//      - create histories and contexts (partially exists)
+//
+//
+void processFunctionCall(MatchFinder::MatchResult const &result) {
+    CNS_DEBUG("");
+    assert(result);
+    auto *context = result.Context;
+    assert(context);
+
+    auto const *call = result.Nodes.getNodeAs<CallExpr>("ce");
+    assert(call);
+
+    // - Preprocess call.
+    preprocess(*context, *call);
+    // update census
+    buildOpDatas(*context, *result.SourceManager, *call);
+    //
+    addCallHistory(*context, *call);
+
+    CNS_DEBUG(" end.");
+}
+/*
 OpData buildOpDataHofCall(
         clang::ASTContext &context,
         clang::SourceManager const &sm,
@@ -895,144 +774,6 @@ void updateCensusHof(
     CNS_DEBUG(" end.");
 }
 
-std::vector<HistoryTemplate> TransformTemplates;
-std::vector<History> TypeTransforms;
-
-// For call expressions:
-void preprocess(
-        clang::ASTContext &context,
-        clang::CallExpr const &call) {
-
-    CNS_DEBUG("<CallExpr>");
-    auto const *calledFn = getCalleeDecl(call);
-    assert(calledFn);
-    if(!calledFn) {
-        CNS_ERROR("<CallExpr> null callee decl");
-        CNS_DEBUG("<CallExpr> end.");
-        return;
-    }
-
-    auto const& fn = calledFn->getNameAsString();
-    auto it = std::find(begin(TransformTemplates), end(TransformTemplates), fn);
-    if(it != std::end(TransformTemplates)) {
-        FOUT << "[INFO](preprocess<CallExpr>) Skipping processed function: " << String(context, *calledFn) << "\n";
-        CNS_DEBUG("<CallExpr> end.");
-        return;
-    }
-
-    if(std::find(begin(ignoreFunctions), end(ignoreFunctions), fn) != end(ignoreFunctions)) {
-        FOUT << "[INFO](preprocess<CallExpr>) Skipping ignored function: " << String(context, *calledFn) << "\n";
-        CNS_INFO("<CallExpr> Adding ignored function to seen functions.");
-        CNS_DEBUG("<CallExpr> end.");
-        return; // ignore
-    }
-
-    auto h = cnsHash(context, *calledFn);
-    if(std::find(begin(seenFunctions), end(seenFunctions), h) != end(seenFunctions)) {
-        FOUT << "[INFO](preprocess<CallExpr>) Skipping seen function: " << String(context, *calledFn) << "\n";
-        CNS_INFO("<CallExpr> Adding seen function to seen functions.");
-        CNS_DEBUG("<CallExpr> end.");
-        return; // seen
-    }
-
-
-    // - Process function will
-    //      - create operands for all args and params (new)
-    //      - populate census with the new operands (exists)
-    if(calledFn->hasBody()) {
-        auto const *body = calledFn->getBody();
-        assert(body);
-        MatchFinder m;
-        m.match(*body, context);
-    }
-    seenFunctions.push_back(h);
-
-    //      - create histories, templates and contexts (partially exists)
-    // TODO: make template by matching function signature through matcher
-    // At this point, function is processed, so census should have operands for its parameters.
-    //auto const& ht = HistoryTemplate(*calledFn);
-    TransformTemplates.push_back({*calledFn});
-    // TODO end
-
-    CNS_DEBUG("<CallExpr> end.");
-}
-
-void addCallHistory(clang::ASTContext & context, clang::CallExpr const& call) {
-    CNS_DEBUG("");
-    auto const *calledFn = getCalleeDecl(call);
-    assert(calledFn);
-    if(!calledFn) {
-        CNS_ERROR("Null callee decl.");
-        CNS_DEBUG("end.");
-        return;
-    }
-
-    auto const& fn = calledFn->getNameAsString();
-    auto it = std::find(begin(TransformTemplates), end(TransformTemplates), fn);
-    if(it == std::end(TransformTemplates)) {
-        FOUT << "[ERROR](addCallHistory) No template found for : " << fn << "()\n";
-        CNS_DEBUG("end.");
-        return;
-    }
-
-    // Instantiate template and add to history
-    auto const hs = it->instantiate(context, call);
-    // For each arg operand opA, H(opA) is extended by H(A).
-    unsigned i = 0;
-    std::for_each(call.arg_begin(), call.arg_end(), [&](auto const *a) {
-            CNS_DEBUG("for_each arg");
-            // get key for a
-            auto const& qn = getLinkedParmQn(context, call, *a);
-            // Get H(a)
-            auto it = std::find(begin(TypeTransforms), end(TypeTransforms), qn);
-            if( it != std::end(TypeTransforms)) {
-                FOUT << "[DEBUG](addCallHistory) Found existing history for" << qn << "\n";
-                // extend history
-                if(i < hs.size()) {
-                    (*it).extend(hs[i]);
-                }
-                else {
-                    CNS_ERROR("Out of bound history insert.");
-                }
-            }
-            else {
-                FOUT << "[DEBUG](addCallHistory) Adding history for" << qn << "\n";
-                TypeTransforms.push_back(hs[i]);
-            }
-            ++i;
-        });
-    CNS_DEBUG("end.");
-}
-
-// Earlier, all process functions would take ASTContext and match result as input
-// And populate Census with operands
-//
-// Now all process functions additionally populate HistoryRecords with History(operand + context)
-// For var/cast/assignment expressions:
-// - Process function will
-//      - create operands for both sides (exists)
-//      - populate census with the new operands (exists)
-//      - create histories and contexts (partially exists)
-//
-//
-void processFunctionCall(MatchFinder::MatchResult const &result) {
-    CNS_DEBUG("");
-    assert(result);
-    auto *context = result.Context;
-    assert(context);
-
-    auto const *call = result.Nodes.getNodeAs<CallExpr>("ce");
-    assert(call);
-
-    // - Preprocess call.
-    preprocess(*context, *call);
-    // update census
-    buildOpDatas(*context, *result.SourceManager, *call);
-    addCallHistory(*context, *call);
-
-    CNS_DEBUG(" end.");
-}
-/*
 void processHof(MatchFinder::MatchResult const &result) {
     CNS_DEBUG("");
     assert(result);
@@ -1065,36 +806,10 @@ auto CallMatcher =
             //    unaryOperator(
             //        hasDescendant(declRefExpr().bind("ceFnArg"))
             //        ))).bind("ce");
-//  todo
-// Function matcher = 
-//    void f(int i);
-//    f(x); 
-//    matcher: Functions.push_back({f: void, i.1 -> CANCEL
-//  NO todo 
+
 StatementMatcher CastMatcher =
     castExpr(
             anyOf(
-                //hasAncestor(declStmt().bind("var")), // Check if needed since varDecl is also present
-                /*
-                 * Now handled through call matcher
-                allOf(
-                    unless(hasCastKind(CK_FunctionToPointerDecay)),
-                    //hasCastKind(CK_BitCast),
-                    //hasCastKind(CK_LValueToRValue),
-                    hasAncestor(
-                        callExpr().bind("call")),
-                    hasDescendant(declRefExpr().bind("arg"))),
-
-                allOf(
-                    //hasCastKind(CK_FunctionToPointerDecay),//LValueToRValue),
-                    hasAncestor(
-                        callExpr().bind("fptr")),
-                    hasCastKind(CK_LValueToRValue),
-                    hasDescendant(
-                        declRefExpr(hasType(pointerType(pointee(functionType())))).bind("callee"))),
-                 * Now handled through call matcher
-                */
-
                 hasDescendant(
                     unaryOperator(
                         hasDescendant(declRefExpr().bind("unaryCastee"))
@@ -1115,11 +830,6 @@ StatementMatcher CastMatcher =
 StatementMatcher CastMatcher2 =
     castExpr(
         allOf(
-            /*
-            anyOf(
-                hasCastKind(CK_BitCast),
-                hasCastKind(CK_LValueToRValue)),
-            */
             hasCastKind(CK_LValueToRValue),
             anyOf( // technically just any of expr or decl is needed.
                 hasAncestor(declStmt().bind("var")),
@@ -1140,19 +850,18 @@ public:
         auto const *castExpr = result.Nodes.getNodeAs<clang::CastExpr>("cast");
         // Decl with/without cast
         auto const *varDecl = result.Nodes.getNodeAs<clang::VarDecl>("varDecl");
-        // Calls for fn args
+        // Calls for fn calls
         auto const *ce = result.Nodes.getNodeAs<clang::CallExpr>("ce");
 
         if(castExpr) {
-            processCast(result);
+            //processCast(result);
         }
 
         if(varDecl) {
-            processVar(result);
+            //processVar(result);
         }
 
         if(ce) {
-            //processHof(result);
             processFunctionCall(result);
         }
 
@@ -1170,7 +879,13 @@ public:
         FOUT << "# Census summary so far:\n";
         //censusSummary(FOUT);
         censusSummary();
+        evaluateHistory();
+        FOUT << "History collection:\n";
+        std::for_each(begin(TypeTransforms), end(TypeTransforms), [&](auto const &h) {
+                FOUT << h << "\n";
+            });
         FOUT << "# Census summary end.\n";
+        FOUT << "end History collection:\n";
 
         // TODO: Emit error when a cast destination is incompatible with source/parent types.
     }

@@ -46,7 +46,7 @@ std::ofstream FOUT;
 #define CNS_LOG(sev, msg)\
     do{ FOUT << "[" << sev << "](" << __func__ << "(): " << __LINE__ << ") " << " " << msg << "\n"; }while(0)
 
-#define CNS_LOG_LEVEL_DEBUG {}
+//#define CNS_LOG_LEVEL_DEBUG {}
 #define CNS_LOG_LEVEL_INFO {}
 #define CNS_LOG_LEVEL_WARN {}
 #define CNS_LOG_LEVEL_ERROR {}
@@ -711,14 +711,15 @@ std::string getLinkedParmQn(
         CNS_DEBUG("end.");
         return String(context, e);
     }
-    CNS_DEBUG("end.");
 
     auto const * dre = dyn_cast<clang::DeclRefExpr>(&e);
     if(dre) {
+        CNS_INFO("<dre>");
         CNS_DEBUG("end.");
         return getLinkedParmQn(context, *dre);
     }
 
+    CNS_DEBUG("end.");
     // Search for a declrefexpr in expr and getlinkedParmQn on declref
     // or just return string
     return fn->getNameAsString() + "." + String(context, e);

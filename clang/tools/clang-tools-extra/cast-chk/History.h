@@ -2,6 +2,7 @@
 #define HISTORY_H
 
 #include "Census.h"
+#include "utils.h"
 
 // History context contains substitutions for HistoryTemplate that can be used to provide history.
 // How are the parinings stored?
@@ -24,7 +25,7 @@ class HistoryTemplate {
         // History instantiation requires all args to be instantiated as a unit.
         // Callexpr has an arg iterator that can be used to instantiate all args for every arg op.
         //<> instantiate(<> varargs, unsigned argPos);
-        std::vector<History> instantiate(clang::ASTContext const &context, clang::CallExpr const &call);
+        std::vector<History> instantiate(clang::ASTContext &context, clang::CallExpr const &call);
 
         HistoryTemplate(clang::FunctionDecl const &fn);
 
@@ -63,33 +64,64 @@ bool operator!=(HistoryTemplate const &a, std::string const&b) {
     return !(a.name() == b);
 }
 
-std::vector<History> HistoryTemplate::instantiate(clang::ASTContext const &context, clang::CallExpr const &call) {
-    CNS_DEBUG("");
-    // for each arg, add parm-arg pair to context.
-    // return context
-    HistoryContext hc;
+namespace {
+    HistoryContext makeHistoryContext(
+            std::vector<CensusKey> const &params,
+            clang::ASTContext &context,
+            clang::CallExpr const &call) {
 
-    unsigned i = 0;
-    std::vector<CensusKey> args;
-    std::for_each(call.arg_begin(), call.arg_end(), [&](auto const &a) {
+        CNS_DEBUG("");
+
+        HistoryContext hc;
+        std::vector<CensusKey> args;
+        unsigned i = 0;
+        std::for_each(call.arg_begin(), call.arg_end(), [&](auto const *a) {
+            CNS_DEBUG("for_each arg.");
             // get arg qn
-            CensusKey qn;
-            if(census.find(qn) == census.end()) {
+            auto const key = getLinkedParmQn(context, call, *a);
+            if(census.find(key) == census.end()) {
                 // Shouldn't really happen.
-                FOUT << "[ERROR](HistoryTemplate::instantiate) arg operand for: " << qn << " not in Census.\n";
+                FOUT << "[ERROR](HistoryTemplate::instantiate) arg operand (: " << key << ") not in Census.\n";
+                CNS_ERROR("continue.");
                 CNS_DEBUG("end.");
+                hc[params[i]] = params[i];
+                i++;
                 return;
             }
 
             //auto &[op, _] = census[qn];
-            hc[params_[i++]] = qn;
-            args.push_back(qn);
-    });
+            hc[params[i++]] = key;
+            args.push_back(key);
+            return;
+        });
+
+        FOUT << "[DEBUG](HistoryTemplate::instantiate) " << String(context, call) << " produced " << args.size() << " args.\n";
+        CNS_DEBUG("end.");
+
+        return hc;
+    }
+}
+
+std::vector<History> HistoryTemplate::instantiate(clang::ASTContext &context, clang::CallExpr const &call) {
+    CNS_DEBUG("");
+    // for each arg, add parm-arg pair to context.
+    // return context
+
+    if(params_.size() != call.getNumArgs()) {
+        CNS_ERROR("Nb(params != Nb(args), possibly template mismatch.");
+        FOUT << "[ERROR](HistoryTemplate::instantiate) FnTemplate(" << name() << ") instantiating for function call (" << String(context, call) << ") failed.\n";
+        CNS_DEBUG("end.");
+        return {};
+    }
+
+    HistoryContext hc = makeHistoryContext(params_, context, call);
 
     std::vector<History> h;
     std::for_each(begin(params_), end(params_),
         [&](auto const &p) {
-            h.push_back({hc, p});
+            CNS_DEBUG("for_each param");
+            h.emplace_back(hc, p);
+            CNS_DEBUG("end for_each param");
         });
     /*
     std::transform(begin(params_), end(params_), back_inserter(h),
@@ -109,10 +141,11 @@ std::vector<History> HistoryTemplate::instantiate(clang::ASTContext const &conte
 HistoryTemplate::HistoryTemplate(clang::FunctionDecl const &fn) {
     CNS_DEBUG("");
     function_ = fn.getNameAsString();
+    unsigned pos = 0;
     // ForEach parameter, lookup corresponding census operand
-    std::for_each(fn.param_begin(), fn.param_end(), [&](auto const&p) {
+    std::for_each(fn.param_begin(), fn.param_end(), [&](auto const *p) {
             // get qn
-            CensusKey qn;
+            auto const& qn = function_ + ".$" + std::to_string(pos++);
             if(census.find(qn) == census.end()) {
                 FOUT << "[ERROR](HistoryTemplate::HistoryTemplate) param operand for: " << qn << " not in Census.\n";
                 CNS_DEBUG("end.");
@@ -266,7 +299,10 @@ class History {
             return !hc_.empty();
         }
 
-        explicit History(CensusKey const& op): op_(op) {}
+        explicit History(CensusKey const& op): op_(op) {
+            CNS_DEBUG("");
+            CNS_DEBUG("end.");
+        }
 
         History(HistoryContext const& context, CensusKey const& op):
             op_(op),
@@ -375,5 +411,40 @@ History History::append(History h) {
 //History operator+(History const& h1, History const& h2) {
 //    return h1.append(h2);
 //}
+
+std::vector<HistoryTemplate> TransformTemplates;
+std::vector<History> TypeTransforms;
+
+void evaluateHistory() {
+    CNS_DEBUG("");
+
+    // for every operand in census
+    // History(op).extend(History(op.use_));
+
+    std::for_each(begin(census), end(census),
+        [&](auto const& node) {
+            auto const&[_, info] = node;
+            auto const&[op, __] = info;
+            auto const &key = op.qn_;
+            auto it = std::find(begin(TypeTransforms), end(TypeTransforms), key);
+            if(it != std::end(TypeTransforms)) {
+                std::for_each(begin(op.use_), end(op.use_), [&](auto const &u) {
+                    auto itu = std::find(begin(TypeTransforms), end(TypeTransforms), u);
+                    if(itu != std::end(TypeTransforms)) {
+                        it->extend(*itu);
+                    }
+                    else {
+                        FOUT << "[ERROR](evaluateHistory::itu) Could not find history for <" << u << "> to extend history of <" << key << ">\n";
+                    }
+
+                });
+            }
+            else {
+                FOUT << "[ERROR](evaluateHistory::it) Could not find history for <" << key << ">, nothing to extend.\n";
+            }
+        });
+
+    CNS_DEBUG(" end.");
+}
 
 #endif  // HISTORY_H
