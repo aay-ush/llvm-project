@@ -4,6 +4,8 @@
 #include "Census.h"
 #include "utils.h"
 
+// Bug in string copy for History (op.qn_)
+
 // History context contains substitutions for HistoryTemplate that can be used to provide history.
 // How are the parinings stored?
 // Context is extensible.
@@ -29,15 +31,17 @@ class HistoryTemplate {
 
         HistoryTemplate(clang::FunctionDecl const &fn);
 
-        HistoryTemplate(){ // = delete;
-            CNS_DEBUG("");
-            CNS_DEBUG("end.");
-        }
+        HistoryTemplate() = delete;
+        //{
+            //CNS_DEBUG("");
+            //CNS_DEBUG("end.");
+        //}
         ~HistoryTemplate() {// = default;
             CNS_DEBUG("");
             CNS_DEBUG("end.");
         }
         HistoryTemplate(HistoryTemplate const&) = default;
+        // TODO assignment
 
         std::string name() const {
             CNS_DEBUG("");
@@ -108,7 +112,7 @@ std::vector<History> HistoryTemplate::instantiate(clang::ASTContext &context, cl
     // return context
 
     if(params_.size() != call.getNumArgs()) {
-        CNS_ERROR("Nb(params != Nb(args), possibly template mismatch.");
+        CNS_ERROR("Nb(params != Nb(args), possibly unsupported variadic function or a template mismatch.");
         FOUT << "[ERROR](HistoryTemplate::instantiate) FnTemplate(" << name() << ") instantiating for function call (" << String(context, call) << ") failed.\n";
         CNS_DEBUG("end.");
         return {};
@@ -119,9 +123,9 @@ std::vector<History> HistoryTemplate::instantiate(clang::ASTContext &context, cl
     std::vector<History> h;
     std::for_each(begin(params_), end(params_),
         [&](auto const &p) {
-            CNS_DEBUG("for_each param");
+            CNS_DEBUG("for_each param step");
             h.emplace_back(hc, p);
-            CNS_DEBUG("end for_each param");
+            CNS_DEBUG("end for_each param step");
         });
     /*
     std::transform(begin(params_), end(params_), back_inserter(h),
@@ -269,7 +273,7 @@ class History {
         //History history(int ilevel); // iLevel > 0
         // operator string
 
-        void extend(History const& h) {
+        void extend(History h) {
             CNS_DEBUG("");
             branch_.push_back(h);
             CNS_DEBUG("end.");
@@ -301,6 +305,7 @@ class History {
 
         explicit History(CensusKey const& op): op_(op) {
             CNS_DEBUG("");
+            FOUT << "[INFO](History::explicit) Init: " << op_ << "\n";
             CNS_DEBUG("end.");
         }
 
@@ -309,17 +314,26 @@ class History {
             hc_(context) {
 
             CNS_DEBUG("");
+            FOUT << "[INFO](History::History(c,k)) Init: " << op_ << "(" << getContextResolvedOp().qn_ << ")\n";
             CNS_DEBUG("end.");
         }
 
         History() = delete;
         ~History(){// = default;
             CNS_DEBUG("");
+            FOUT << "[INFO](History::~History()) end: " << op_ << "(" << getContextResolvedOp().qn_<< ")\n";
             CNS_DEBUG("end.");
         }
 
-        // History can be extended but coying is not useful.
-        History(History const&) = default;
+        // History is extended by copying this history to another history. Supports branching.
+        History(History const& h): // = default;
+            op_(h.op_),
+            hc_(h.hc_),
+            branch_(h.branch_) {
+            CNS_DEBUG("");
+            FOUT << "[INFO](History::History(h)) Init: " << op_ << "(" << getContextResolvedOp().qn_ << "): [" << branch_.size() << "]\n";
+            CNS_DEBUG("end.");
+        }
         History& operator=(History const&) = default;
 
         OpData const& getContextResolvedOp() const {
@@ -344,9 +358,11 @@ class History {
             CNS_DEBUG("end.");
             return branch_.end();
         }
+        auto branch() const {
+            return branch_;
+        }
 
     private:
-        //std::string history_;
         CensusKey op_;
         HistoryContext hc_ {};
         // Vector since history is a tree. just like use_, history can have multiple branches.
@@ -360,9 +376,9 @@ std::ostream& operator<<(std::ostream &os, History const& h) {
         ss << op.qn_;
     }
     else {
-        ss << op.type_;
+        ss << op.type_ << "(" << op.qn_ << ": " << op.use_.size() << ")";
     }
-    ss << " -> ";
+    ss << " -[" << h.branch().size() << "]-> ";
     std::for_each(h.bbegin(), h.bend(),
         [&](auto const& h_) {
             ss << h_;
@@ -375,8 +391,11 @@ std::ostream& operator<<(std::ostream &os, History const& h) {
 
 bool operator==(History const &a, History const &b) {
     CNS_DEBUG("");
+    FOUT << "[INFO](History::operator==<h>) a: (" << a.id() << "/ " << a.opId() << ")\n";
+    FOUT << "[INFO](History::operbtor==<h>) b: (" << b.id() << "/ " << b.opId() << ")\n";
     CNS_DEBUG("end.");
-    return a.id() == b.id();
+    // Support both context resolved history and otherwise.
+    return (a.id() == b.id()) || (a.opId() == b.opId());
 }
 bool operator!=(History const &a, History const &b) {
     CNS_DEBUG("");
@@ -385,8 +404,11 @@ bool operator!=(History const &a, History const &b) {
 }
 bool operator==(History const &a, CensusKey const &b) {
     CNS_DEBUG("");
+    FOUT << "[INFO](History::operator==<h>) a: (" << a.id() << "/ " << a.opId() << ")\n";
+    FOUT << "[INFO](History::operbtor==<ck>) b: (" << b << ")\n";
     CNS_DEBUG("end.");
-    return (a.id() == b) && !(a.hasContext());
+    return (a.id() == b) || (a.opId() == b);
+    //return (a.id() == b) && !(a.hasContext());
 }
 bool operator!=(History const &a, CensusKey const &b) {
     CNS_DEBUG("");
@@ -413,8 +435,58 @@ History History::append(History h) {
 //}
 
 std::vector<HistoryTemplate> TransformTemplates;
+// TODO change to map instead
 std::vector<History> TypeTransforms;
 
+void evaluateHistory() {
+    CNS_DEBUG("");
+    // For each operand, op, in census:
+    //  - Add H(op)
+    //  ---> Op.use_ is included in Census
+    //    => H(op.use_) is included in TypeTransforms
+    //
+    std::for_each(begin(census), end(census),
+        [&](auto const &n) {
+            auto const &key = ops(n).qn_;
+
+            auto it = std::find(begin(TypeTransforms), end(TypeTransforms), key);
+            if(it == std::end(TypeTransforms)) {
+                // Add history
+                FOUT << "[WARN](evaluateHistory::1.it) Could not find history for <" << key << ">, Adding.\n";
+                TypeTransforms.emplace_back(key);
+            }
+    });
+
+    //  - For every op, extend H(op) by H(op.use_)
+    //  Note that we cannot simply add H(op.use_), we must lookup TypeTransforms and create a copy
+    //  to not miss context.
+    std::for_each(begin(census), end(census),
+        [&](auto const &n) {
+            auto const &op = ops(n);
+            auto const &key = op.qn_;
+
+            auto itk = std::find(begin(TypeTransforms), end(TypeTransforms), key);
+            if(itk == std::end(TypeTransforms)) {
+                // No way!
+                FOUT << "[ERROR](evaluateHistory::2.itk) Cannot find history for <" << key << ">, after 1!.\n";
+                return;
+            }
+
+            std::for_each(begin(op.use_), end(op.use_),
+                [&](auto const& u) {
+                    auto itu = std::find(begin(TypeTransforms), end(TypeTransforms), u);
+                    if(itu != std::end(TypeTransforms)) {
+                        // No way!
+                        FOUT << "[ERROR](evaluateHistory::2.itu) Cannot find history for <" << u << ">, after 1!.\n";
+                        return;
+                    }
+                    itk->extend(*itu);
+            });
+    });
+    CNS_DEBUG("end.");
+}
+
+/*
 void evaluateHistory() {
     CNS_DEBUG("");
 
@@ -426,25 +498,57 @@ void evaluateHistory() {
             auto const&[_, info] = node;
             auto const&[op, __] = info;
             auto const &key = op.qn_;
+
+            // Retrieve H(key)
             auto it = std::find(begin(TypeTransforms), end(TypeTransforms), key);
             if(it != std::end(TypeTransforms)) {
+                // Extend H(key)
                 std::for_each(begin(op.use_), end(op.use_), [&](auto const &u) {
                     auto itu = std::find(begin(TypeTransforms), end(TypeTransforms), u);
                     if(itu != std::end(TypeTransforms)) {
+                        // Extend with H(u) if H(u) exists
                         it->extend(*itu);
                     }
                     else {
-                        FOUT << "[ERROR](evaluateHistory::itu) Could not find history for <" << u << "> to extend history of <" << key << ">\n";
+                        // H(u) not found
+                        FOUT << "[INFO](evaluateHistory::itu) Could not find history for <" << u << "> to extend history of <" << key << ">\n";
+                        // Add H(u)
+                        TypeTransforms.emplace_back(u);
+                        auto itu2 = std::find(begin(TypeTransforms), end(TypeTransforms), u);
+                        if(itu2 != std::end(TypeTransforms)) {
+                            it->extend(*itu2);
+                        }
                     }
 
                 });
             }
             else {
-                FOUT << "[ERROR](evaluateHistory::it) Could not find history for <" << key << ">, nothing to extend.\n";
+                // Add history
+                FOUT << "[INFO](evaluateHistory::it) Could not find history for <" << key << ">, nothing to extend.\n";
+                TypeTransforms.emplace_back(key);
+                std::for_each(begin(op.use_), end(op.use_), [&](auto const &u) {
+                    auto itu = std::find(begin(TypeTransforms), end(TypeTransforms), u);
+                    if(itu != std::end(TypeTransforms)) {
+                        // Extend with H(u) if H(u) exists
+                        it->extend(*itu);
+                    }
+                    else {
+                        // H(u) not found
+                        FOUT << "[INFO](evaluateHistory::itu) Could not find history for <" << u << "> to extend history of <" << key << ">\n";
+                        // Add H(u)
+                        TypeTransforms.emplace_back(u);
+                        auto itu2 = std::find(begin(TypeTransforms), end(TypeTransforms), u);
+                        if(itu2 != std::end(TypeTransforms)) {
+                            it->extend(*itu2);
+                        }
+                    }
+
+                });
             }
         });
 
     CNS_DEBUG(" end.");
 }
+*/
 
 #endif  // HISTORY_H

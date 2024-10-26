@@ -4,11 +4,12 @@
 #include "OpData.h"
 
 //--
+// Dominator info.
 struct DominatorData {
     OpData from_;
     std::string expr_;
     std::string exprType_;
-    std::optional<std::string> callee_;
+    //std::optional<std::string> callee_;
 };
 
 bool operator==(DominatorData const &lhs, DominatorData const &rhs) {
@@ -19,33 +20,31 @@ bool operator!=(DominatorData const &lhs, DominatorData const &rhs) {
 }
 //--
 
-using CensusDecl = clang::Decl;
-using CensusKey = std::string;
-
 using Dominators = std::vector<DominatorData>;
-using NodeInfo = std::pair<OpData, std::optional<Dominators>>;
+using UseDefInfo = std::pair<OpData, std::optional<Dominators>>;
 
-// Census stores OpData & DominatorData for every operand/node.
+// Census stores OpData & DominatorData for every operand/node. => Use + Def data
 // OpData is not necessarily the key for census.
 // OpData is computed based on information available from context at the time.
 //  => It can change with expression. For example, `int i` has same hash for `i` and `&i` but different data types, hence technically different decl data. If OpData is used as key, this difference will be missed.
-using Census = std::unordered_map<CensusKey, NodeInfo>;
+using CensusDecl = clang::Decl;
+using CensusKey = std::string;
+using Census = std::unordered_map<CensusKey, UseDefInfo>;
+
 Census census;
 using CensusNode = decltype(census)::value_type;
 
-std::pair<CensusKey, NodeInfo> makeCensusNode(
+std::pair<CensusKey, UseDefInfo> makeCensusNode(
         OpData const &node,
         DominatorData const &dom) {
     return {node.qn_, {node, {{dom}}}};
 }
 
-std::pair<CensusKey, NodeInfo> makeCensusSourceNode(OpData const &node) {
+std::pair<CensusKey, UseDefInfo> makeCensusSourceNode(OpData const &node) {
     return {node.qn_, {node, {}}};
 }
 
-NodeInfo makeNodeInfo(
-        OpData const &node,
-        DominatorData const &dom) {
+UseDefInfo makeUseDefInfo(OpData const &node, DominatorData const &dom) {
     return {node, {{dom}}};
 }
 
@@ -89,8 +88,8 @@ std::string getCastExprType(clang::DeclRefExpr const&) {
 //--
 
 void OpDebugSummary(std::ostream &os, OpData const &data) {
-    os << data.type_  //"    [" << data.category_ << "](" << data.qn_ << ") " << data.expr_ << ": '"
-       << "    (key_qn: " << data.qn_ << " )"
+    os << data.type_
+       << " (key_qn: " << data.qn_ << " )"
        << " (cat: " << data.category_ << ")"
        << " (expr: " << data.expr_ << ")"
        << " (lp: " << data.linkedParm_ << ") in " << data.container_ << "()"
@@ -103,18 +102,17 @@ void OpSummary(std::ostream &os, OpData const &data) {
                data.location_.find_last_of('/') + 1);
 }
 
+/*
 void OpHistorySummary(std::ostream &os, OpData const &data) {
     os << data.type_ << "    [" << data.category_ << "]" << data.expr_
        << " :" << data.linkedParm_ << ": at " << data.location_.substr(
                data.location_.find_last_of('/') + 1);
 }
+*/
 
 void OpTypeSummary(std::ostream &os, OpData const &data) {
     os << "'" << data.type_ << "'" << " " << data.linkedParm_;
 }
-/*
-std::unordered_map<unsigned, FunctionInfo> Functions;
-*/
 //--
 
 /*
@@ -130,7 +128,7 @@ struct std::hash<CensusDecl>
 std::hash<CensusDecl> HASH;
 */
 
-std::ostream& dump(std::ostream &os, NodeInfo const &d);
+std::ostream& dump(std::ostream &os, UseDefInfo const &d);
 std::ostream& dump(std::ostream &os, OpData const &info);
 std::ostream& dump(std::ostream &os, Dominators const &doms);
 std::ostream& dump(std::ostream &os, DominatorData const &info);
@@ -206,12 +204,21 @@ std::optional<Dominators> const& doms(CensusNode const &n) {
     return doms_;
 }
 
-OpData const& ops(CensusNode const& n) {
+OpData const& ops(CensusNode const &n) {
     CNS_DEBUG("<CensusNode>");
     auto const &[_, info] = n;
     auto const &[op, __] = info;
     //FOUT << "[DEBUG](ops<CensusNode>) Returning op (" << op.hash_ << ")\n";
     CNS_DEBUG("<CensusNode> end.");
+    return op;
+}
+
+OpData& ops(CensusNode &n) {
+    CNS_DEBUG("<CensusNode:no const>");
+    auto &[_, info] = n;
+    auto &[op, __] = info;
+    //FOUT << "[DEBUG](ops<CensusNode: no const>) Returning op (" << op.hash_ << ")\n";
+    CNS_DEBUG("<CensusNode:no const> end.");
     return op;
 }
 
@@ -232,16 +239,17 @@ OpData const& ops(CensusKey k) {
     return op;
 }
 
-CensusKey const& opHash(CensusNode const& n) {
+CensusKey const& opKey(CensusNode const& n) {
     CNS_DEBUG("");
     auto const &op = ops(n);
-    //FOUT << "[DEBUG]("opHash) Returning hash (" << op.hash_ << ")\n";
+    //FOUT << "[DEBUG]("opKey) Returning key (" << op.qn_ << ")\n";
     CNS_DEBUG(" end.");
     return op.qn_;
 }
 
 std::vector<CensusKey> UseChain(OpData const &op) {
     CNS_DEBUG("");
+    CNS_INFO("Usechain");
     auto doesOpDominate = [&op](CensusNode const &in) {
         CNS_DEBUG("");
         //FOUT << "[DEBUG](UseChain) Op.hash_ = " << op.hash_ << "\n";
@@ -263,7 +271,7 @@ std::vector<CensusKey> UseChain(OpData const &op) {
     std::vector<CensusNode> t;
     std::copy_if(std::begin(census), std::end(census), std::back_inserter(t), doesOpDominate);
     std::vector<CensusKey> usechain;
-    std::transform(std::begin(t), std::end(t), std::back_inserter(usechain), opHash);
+    std::transform(std::begin(t), std::end(t), std::back_inserter(usechain), opKey);
     CNS_DEBUG("end.");
     return usechain;
 }
@@ -292,7 +300,7 @@ void elaborateUse(OpData const &node, std::optional<int> level) {
 }
 
 //--
-std::ostream& dump(std::ostream &os, NodeInfo const &d) {
+std::ostream& dump(std::ostream &os, UseDefInfo const &d) {
     auto const &[data, dominators] = d;
     dump(os, data);
     if(!dominators) {
@@ -305,7 +313,7 @@ std::ostream& dump(std::ostream &os, NodeInfo const &d) {
 }
 
 std::ostream& dump(std::ostream &os, OpData const &info) {
-    os << "{hash: '" << info.qn_
+    os << "{key: '" << info.qn_
        << "', expr: '" << info.expr_
        << "', type: '" << info.type_
        << "', category: '" << info.category_
@@ -328,7 +336,7 @@ std::ostream& dump(std::ostream &os, DominatorData const &domInfo) {
     dump(os, domInfo.from_);
     os << "', LinkingExpr: '" << domInfo.expr_
        << "', ExprType: '" << domInfo.exprType_
-       << "', CalledFunction: '" << domInfo.callee_.value_or("(N/A)")
+       //<< "', CalledFunction: '" << domInfo.callee_.value_or("(N/A)")
        << "}\n";
 
     return os;
@@ -343,14 +351,16 @@ void censusSummary() {
     CNS_DEBUG("<void>");
 
     // build usechain
-    //for(auto const &[_, info]: census) {
-    //   auto const &[op, __] = info;
+    for(auto const &[_, info]: census) {
+       auto const &[op, __] = info;
 
-        //elaborateUse(op, {});
-    //}
+       elaborateUse(op, {});
+    }
     for(auto const& n: census) {
         auto const& op = ops(n);
+        FOUT << "[INFO](censusSummary<void>) op: " << op.qn_ << "\n";
         op.use_ = UseChain(op);
+        FOUT << "[INFO](censusSummary<void>) op.use_.size(): " << op.use_.size() << "\n";
     }
 
     /*
@@ -396,4 +406,42 @@ std::ostream& space(std::ostream &os, int indent) {
     return os;
 }
 
+/*
+std::string getLinkedFunction(
+        clang::ASTContext const &context,
+        clang::CastExpr const &castExpr,
+        clang::UnaryOperator const&) {
+
+    CNS_DEBUG("<unaryop>");
+    CNS_DEBUG("<unaryop> end.");
+    return "N/A";
+}
+
+std::string getLinkedFunction(
+        clang::ASTContext const &context,
+        clang::CastExpr const &castExpr,
+        clang::DeclRefExpr const&) {
+
+    CNS_DEBUG("<declrefexpr>");
+    CNS_DEBUG("<declrefe> end.");
+    return "N/A";
+}
+
+
+std::string getLinkedFunction(
+        clang::ASTContext &context,
+        clang::CastExpr const &castExpr,
+        clang::CallExpr const &call) {
+
+    CNS_DEBUG("<callexpr>");
+    auto const *calledFn = getCalleeDecl(call);
+    assert(calledFn);
+    if(!calledFn) {
+        return "";
+    }
+
+    CNS_DEBUG("<callexpr> end.");
+    return calledFn->getNameAsString();
+}
+*/
 #endif  // CENSUS_H

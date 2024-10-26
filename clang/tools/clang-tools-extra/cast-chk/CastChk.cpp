@@ -105,7 +105,7 @@ void appendNodeDominator(
     auto &[_, doms_] = census[node.qn_];
     if(!doms_) {
         CNS_INFO("Dominator Initialized.");
-        census[node.qn_] = makeNodeInfo(node, dom);
+        census[node.qn_] = makeUseDefInfo(node, dom);
     } else {
         CNS_INFO("Appending to dominators.");
         auto &doms = doms_.value();
@@ -146,6 +146,60 @@ void addDomNode(OpData const &dom) {
     CNS_DEBUG(" end.");
 }
 
+void updateHistory(
+        OpData const &from,
+        OpData const &to) {
+    CNS_DEBUG("");
+
+    // Ensure H(to) first.
+    // Retrieve H(to)
+    auto itTo = std::find(begin(TypeTransforms), end(TypeTransforms), to.qn_);
+    if(itTo == std::end(TypeTransforms)) {
+        // Add H(to)
+        FOUT << "[INFO](updateHistory) :to: New history started for " << to.qn_ << "\n";
+        TypeTransforms.emplace_back(to.qn_);
+        // fix iterator
+        itTo = std::find(begin(TypeTransforms), end(TypeTransforms), to.qn_);
+        if(itTo == std::end(TypeTransforms)) {
+            FOUT << "[ERROR](updateHistory) :to: Could not insert history for " << to.qn_ << "\n";
+            CNS_DEBUG("end.");
+            return;
+        }
+    }
+    else {
+        FOUT << "[INFO](updateHistory) :to: History of " << to.qn_ << "already on record. No action needed.\n";
+    }
+
+    // Retrieve H(from)
+    auto itFrom = std::find(begin(TypeTransforms), end(TypeTransforms), from.qn_);
+    if(itFrom == std::end(TypeTransforms)) {
+        // Add H(from)
+        FOUT << "[INFO](updateHistory) :from: New history started for " << from.qn_ << "\n";
+        TypeTransforms.emplace_back(from.qn_);
+        // fix iterator
+        itFrom = std::find(begin(TypeTransforms), end(TypeTransforms), from.qn_);
+        if(itFrom == std::end(TypeTransforms)) {
+            FOUT << "[ERROR](updateHistory) :from: Could not insert history for " << from.qn_ << "\n";
+            CNS_DEBUG("end.");
+            return;
+        }
+    }
+
+    // Extend H(from) with H(to)
+    FOUT << "[INFO](updateHistory) :from: Extending history of " << from.qn_ << " with " << to.qn_ << "\n";
+    if(itFrom == std::end(TypeTransforms)) {
+        CNS_ERROR("From iterator is invalid. Check.");
+        return;
+    }
+    if(itTo == std::end(TypeTransforms)) {
+        CNS_ERROR("To iterator is invalid. Check.");
+        return;
+    }
+    itFrom->extend(*itTo);
+
+    CNS_DEBUG("end.");
+}
+
 void updateCensus(
         OpData &from,
         OpData &to,
@@ -159,6 +213,8 @@ void updateCensus(
         // `to` not in census
         CNS_INFO("<0> Inserting new node for 'to'.");
         census.insert(makeCensusNode(to, dom));
+
+        updateHistory(from, to);
         CNS_DEBUG("<from, to, dom> end");
         return;
     }
@@ -169,8 +225,39 @@ void updateCensus(
         CNS_INFO("<0> 'to' has new dominator.");
         appendNodeDominator(to, dom);
     }
+
+    updateHistory(from, to);
     CNS_DEBUG("<from, to, dom> end.");
 }
+
+void updateCensusNoHistory(
+        OpData &from,
+        OpData &to,
+        DominatorData const &dom) {
+
+    CNS_DEBUG("");
+
+    addDomNode(from);
+    auto it = census.find(to.qn_);
+    if(it == std::end(census)) {
+        // `to` not in census
+        CNS_INFO("Inserting new node for 'to'.");
+        census.insert(makeCensusNode(to, dom));
+        CNS_DEBUG("end.");
+        return;
+    }
+
+    CNS_INFO("'to' already in census.");
+    chkNodeDataForChange(to);
+    if(isNodeDominatorNew(to, dom)) {
+        CNS_INFO("'to' has new dominator.");
+        appendNodeDominator(to, dom);
+    }
+
+    //updateHistory(from, to);
+    CNS_DEBUG("end.");
+}
+
 
 void logCensusUpdate(
         OpData const &lhs,
@@ -185,7 +272,7 @@ void logCensusUpdate(
          << "       from: [" << lhs.category_ << "] " << lhs.type_ << "\n"
          << "         to: [" << rhs.category_ << "] " << rhs.type_ << "\n"
          << "       expr: " << "[" << dom.exprType_ << "] " << dom.expr_ << "\n"
-         << "Funcslinked: " << lhs.container_ << "() -> " << dom.callee_.value_or("(n/a)") << "()\n"
+         //<< "Funcslinked: " << lhs.container_ << "() -> " << dom.callee_.value_or("(n/a)") << "()\n"
          << "\n";
 }
 
@@ -209,7 +296,7 @@ void updateCensus(
         lhs,
         String(context, castExpr),
         {}, //getCastExprType(dest),
-        getLinkedFunction(context, castExpr, dest)
+        //{}, //getLinkedFunction(context, castExpr, dest)
     };
 
     updateCensus(lhs, rhs, dom);
@@ -286,7 +373,7 @@ void updateCensus(
     CNS_INFO("<declrefexpr, varDecl> building rhs data.");
     auto rhs = buildOpData(context, sm, dest);
 
-    DominatorData dom{lhs, {}, {}, {}};
+    DominatorData dom{lhs, {}, {}};
     updateCensus(lhs, rhs, dom);
     logCensusUpdate(lhs, rhs, dom);
     CNS_DEBUG("<declrefexpr, varDecl> end.");
@@ -457,36 +544,28 @@ auto buildOpDatas(clang::ASTContext &context,
                 lhs,
                 String(context, *arg),
                 {}, //getCastExprType(arg),
-                {} //getLinkedFunction(context, call, arg)
+                //{} //getLinkedFunction(context, call, arg)
             };
-            updateCensus(lhs, rhs, dom);
+            updateCensusNoHistory(lhs, rhs, dom);
+            // H(to) will be added through addCallHistory()
+            //updateHistory(lhs, rhs);
+            /*
+            auto itTo = std::find(begin(TypeTransforms), end(TypeTransforms), rhs.qn_);
+            if(itTo == std::end(TypeTransforms)) {
+                // Add H(to)
+                FOUT << "[INFO](updateHistory) :to: New history started for " << rhs.qn_ << "\n";
+                TypeTransforms.emplace_back(rhs.qn_);
+            }
+            */
+            auto itFrom = std::find(begin(TypeTransforms), end(TypeTransforms), lhs.qn_);
+            if(itFrom == std::end(TypeTransforms)) {
+                // Add H(from)
+                FOUT << "[INFO](updateHistory) :to: New history started for " << lhs.qn_ << "\n";
+                TypeTransforms.emplace_back(lhs.qn_);
+            }
             logCensusUpdate(lhs, rhs, dom);
         });
 }
-
-OpData buildOpDataHofArg(
-        clang::ASTContext &context,
-        clang::SourceManager const &sm,
-        clang::DeclRefExpr const &e) {
-
-    CNS_DEBUG("");
-    FOUT << "[INFO](buildOpDataHofArg) ref: \n"
-         << String(context, e) << "; type: "
-         << Typename(context, e) << "\n";
-
-    return {
-        cnsHash(context, e),
-        String(context, e),
-        Typename(context, e),
-        TypeCategory(context, e),
-        "(No Param match tried due to declrefexpr)",
-        getContainerFunction(context, e),
-        e.getExprLoc().printToString(sm),
-        String(context, e)
-    };
-    CNS_DEBUG("end");
-}
-
 
 void addCallHistory(clang::ASTContext & context, clang::CallExpr const& call) {
     CNS_DEBUG("");
@@ -663,145 +742,22 @@ void processFunctionCall(MatchFinder::MatchResult const &result) {
 
     CNS_DEBUG(" end.");
 }
-/*
-OpData buildOpDataHofCall(
-        clang::ASTContext &context,
-        clang::SourceManager const &sm,
-        clang::DeclRefExpr const& farg,
-        clang::CallExpr const &e) {
-
-    CNS_DEBUG("");
-    FOUT << "[INFO](buildOpDataHofCall) call: \n"
-         << String(context, e) << "\n";
-
-    unsigned argPos = 0;
-    auto match = std::find_if(e.arg_begin(), e.arg_end(),
-        [&] (auto const &arg) {
-        argPos++;
-        FOUT << "[DEBUG](buildOpData<call>) Argpos: " << argPos << "\n";
-        return clang::Expr::isSameComparisonOperand(arg, &farg);
-    });
-    FOUT << "[DEBUG](buildOpData<call>) final argpos: " << argPos << "\n";
-
-    std::string parmId;
-    clang::ParmVarDecl const *parm = nullptr;
-    llvm::raw_string_ostream stream(parmId);
-
-    if (match != e.arg_end() && argPos <= e.getNumArgs()) {
-        auto const *parmd = getParamDecl(context, e, argPos - 1);
-        if(parmd) {
-            parm = dyn_cast<clang::ParmVarDecl>(parmd);
-            if(parm) {
-                parm->printQualifiedName(stream);
-            }
-        }
-    }
-    assert(parm);
-    if(!parm) {
-        // Couldn't find parameter info but we can still use info from call expr.
-        auto const *c = e.getCallee();
-        //auto const *c = e.getCalleeDecl();
-        if(c) {
-        std::stringstream ss;
-        ss << String(context, *c) << ".$" << argPos - 1;
-
-        return {
-            cnsHash(context, e),
-            ss.str(),
-            "(T)", //Typename(context, castExpr),
-            "(?)", //TypeCategory(context, castExpr),
-            (argPos > e.getNumArgs()
-                ? ("(Failed to match arg)")
-                : (String(context, e, argPos - 1))),
-            getContainerFunction(context, e),
-            e.getExprLoc().printToString(sm),
-            ss.str()
-        };
-        }
-        else {
-        return {
-            cnsHash(context, e),
-            String(context, e),
-            "(T')", //Typename(context, castExpr),
-            "(?)", //TypeCategory(context, castExpr),
-            (argPos > e.getNumArgs()
-                ? ("(Failed to match arg)")
-                : (String(context, e, argPos - 1))),
-            getContainerFunction(context, e),
-            e.getExprLoc().printToString(sm),
-            String(context, e)
-        };
-        }
-    }
-
-    // CHECK TODO what is container function taken from e?
-    return {
-        cnsHash(context, *parm),
-        parmId,
-        Typename(context, *parm),
-        TypeCategory(context, *parm),
-        (argPos > e.getNumArgs()
-            ? ("(Failed to match arg)")
-            : (String(context, e, argPos - 1))),
-        getContainerFunction(context, e),
-        e.getExprLoc().printToString(sm),
-        e.getDirectCallee()
-            ? (e.getDirectCallee()->getQualifiedNameAsString() + ".$" + std::to_string(argPos - 1))
-            : (String(context, e))
-    };
-    CNS_DEBUG("end");
-}
-
-void updateCensusHof(
-        clang::ASTContext &context,
-        clang::SourceManager const &sm,
-        clang::DeclRefExpr const &arg,
-        clang::CallExpr const &call) {
-
-    CNS_DEBUG("");
-    // lhs (arg)
-    //
-    auto lhs = buildOpDataHofArg(context, sm, arg);
-    auto rhs = buildOpDataHofCall(context, sm, arg, call);
-    DominatorData dom{
-        lhs,
-        String(context, call),
-        "call",
-        "TODO callee name"
-    };
-    updateCensus(lhs, rhs, dom);
-    logCensusUpdate(lhs, rhs, dom);
-    CNS_DEBUG(" end.");
-}
-
-void processHof(MatchFinder::MatchResult const &result) {
-    CNS_DEBUG("");
-    assert(result);
-    auto *context = result.Context;
-    assert(context);
-
-    auto const *fnarg = result.Nodes.getNodeAs<DeclRefExpr>("ceFnArg");
-    auto const *call = result.Nodes.getNodeAs<CallExpr>("ce");
-    assert(fnarg);
-    assert(call);
-    updateCensusHof(*context, *result.SourceManager, *fnarg, *call);
-    CNS_DEBUG(" end.");
-}
-*/
 
 //----------------------------------------------------------------------------
 // MATCHERS
 
 // similar construct can match a function ptr. {VarDecl, DeclRefExpr}
+// to support binary operator assignment, both lhs/rhs dre in binop should be linked with lhs of '='
 DeclarationMatcher AssignMatcher =
-    varDecl(
+    //anyOf(
+        varDecl(
             anyOf(
                 hasDescendant(declRefExpr().bind("assignee")),
                 hasDescendant(expr().bind("literal")))
             ).bind("varDecl");
+        //);
 
-auto CallMatcher = 
-    callExpr().bind("ce");
+auto CallMatcher = callExpr().bind("ce");
             //hasDescendant(
             //    unaryOperator(
             //        hasDescendant(declRefExpr().bind("ceFnArg"))
@@ -817,11 +773,13 @@ StatementMatcher CastMatcher =
 
                 // lhs: declrefexpr or expr(hasDescendant(declrefexpr))
                 // rhs: declrefexpr or expr(hasDescendant(declrefexpr)) or literal
+                // Assignment involves ltor cast unless a literal is used.
                 hasParent(
                     binaryOperator(
                         isAssignmentOperator(),
                         hasLHS(expr(declRefExpr().bind("lhsref")).bind("binLhs")),
-                        hasRHS(expr(declRefExpr().bind("rhsref")).bind("binRhs"))).bind("binOp")))
+                        hasRHS(expr(declRefExpr().bind("rhsref")).bind("binRhs"))
+                        ).bind("binOp")))
 
                 //hasDescendant(declRefExpr().bind("castee")))    // All castExprs will have this descendant, it is to just get the castee easily.
         ).bind("cast");
@@ -854,11 +812,11 @@ public:
         auto const *ce = result.Nodes.getNodeAs<clang::CallExpr>("ce");
 
         if(castExpr) {
-            //processCast(result);
+            processCast(result);
         }
 
         if(varDecl) {
-            //processVar(result);
+            processVar(result);
         }
 
         if(ce) {
@@ -881,8 +839,12 @@ public:
         censusSummary();
         evaluateHistory();
         FOUT << "History collection:\n";
+        std::cout << "History collection:\n";
         std::for_each(begin(TypeTransforms), end(TypeTransforms), [&](auto const &h) {
+                FOUT << "History of (" << h.opId() << "): ";
+                std::cout << "History of (" << h.opId() << "): ";
                 FOUT << h << "\n";
+                std::cout << h << "\n";
             });
         FOUT << "# Census summary end.\n";
         FOUT << "end History collection:\n";

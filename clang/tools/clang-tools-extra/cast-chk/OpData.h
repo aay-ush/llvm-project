@@ -50,7 +50,6 @@ enum class CastSourceType {
     FunctionArg     // f((void*)&i) -> f.$0
 };
 
-using OpID = std::string;
 // OpData is built for both operands of cast/assignment for every match.
 // Using OpData we can establish dominator relationships between the operands.
 // We build 'dominated-by' information for every operand.
@@ -66,6 +65,7 @@ using OpID = std::string;
 // Challenge: Handling N-N relationships.
 // Fix: Use a placeholder history when history is not available. Update the history in second pass.
 //
+using OpID = std::string;
 
 class History;
 
@@ -101,6 +101,7 @@ OpData buildOpData(
     static_assert(impl_false<s_type>, "Unknown cast source type used");
 }
 
+// Build operand from VarDecl
 OpData buildOpData(
         clang::ASTContext &context,
         clang::SourceManager const &sm,
@@ -118,84 +119,58 @@ OpData buildOpData(
         getLinkedParm(context, var),
         getContainerFunction(context, var),
         var.getLocation().printToString(sm),
-        //getContainerFunction(context, var) + "_" +
         getLinkedParmQn(context, var)
-        //std::to_string(var.getID())
     };
 }
 
+// Build operand from ValueDecl
 OpData buildOpData(
         clang::ASTContext &context,
         clang::SourceManager const &sm,
         clang::DeclRefExpr const &e,
-        clang::ValueDecl const &d) {
+        clang::ValueDecl const &decl) {
 
     FOUT << "[INFO](buildOpData<ValueDecl>) decl: \n"
-         << String(context, d) << "; type: "
-         << Typename(context, d) << "\n";
+         << String(context, decl) << "; type: "
+         << Typename(context, decl) << "\n";
 
     return {
-        cnsHash(context, d),
-        String(context, d),
-        Typename(context, d),
-        TypeCategory(context, d),
-        getLinkedParm(context, e, d.getDeclName()),
+        cnsHash(context, decl),
+        String(context, decl),
+        Typename(context, decl),
+        TypeCategory(context, decl),
+        getLinkedParm(context, e, decl.getDeclName()),
         getContainerFunction(context, e),
-        d.getLocation().printToString(sm),
-        //getContainerFunction(context, d) + "_" +
-        getLinkedParmQn(context, e, d.getDeclName())
-        //std::to_string(d.getID())
+        decl.getLocation().printToString(sm),
+        getLinkedParmQn(context, e, decl.getDeclName())
     };
 }
 
-template<>
-OpData buildOpData<CastSourceType::UnaryOp>(
-        clang::ASTContext &context,
-        clang::SourceManager const &sm,
-        clang::CastExpr const &castExpr,
-        clang::UnaryOperator const &op) {
-
-    FOUT << "[INFO](buildOpData<UnaryOp>) op: \n"
-         << String(context, op) << "; type: "
-         << Typename(context, op) << "\n";
-
-    return {
-        cnsHash(context, op),
-        String(context, op),
-        Typename(context, op),
-        TypeCategory(context, op),
-        "(TODO param_check)",
-        getContainerFunction(context, castExpr),
-        castExpr.getExprLoc().printToString(sm),
-        String(context, op)
-    };
-}
-
+// Build operand from Decl
 OpData buildOpData(
         clang::ASTContext &context,
         clang::SourceManager const &sm,
         clang::Expr const &castExpr,
         clang::DeclRefExpr const &e,
-        clang::Decl const& d) {
+        clang::Decl const& decl) {
 
     FOUT << "[INFO](buildOpData<Decl>) decl: \n"
          << String(context, e) << "; type: "
          << Typename(context, e) << "\n";
 
     return {
-        cnsHash(context, d),
+        cnsHash(context, decl),
         String(context, e),
         Typename(context, e),
         TypeCategory(context, e),
-        getLinkedParm(context, d, e.getNameInfo()),
+        getLinkedParm(context, decl, e.getNameInfo()),
         getContainerFunction(context, castExpr),
         castExpr.getExprLoc().printToString(sm),
-        //getContainerFunction(context, d) + "_" +
-        getLinkedParmQn(context, d, e.getNameInfo())
-        //std::to_string(d.getID())
+        getLinkedParmQn(context, decl, e.getNameInfo())
     };
 }
 
+// Build OpData for DeclRef Statement.
 OpData buildOpData(
         clang::ASTContext &context,
         clang::SourceManager const &sm,
@@ -215,19 +190,19 @@ OpData buildOpData(
         getLinkedParm(context, s, e.getNameInfo()),
         getContainerFunction(context, castExpr),
         castExpr.getExprLoc().printToString(sm),
-        //String(context, e) + "_" +
         getLinkedParmQn(context, s, e.getNameInfo())
     };
 }
 
-// TODO: probably remove/rename
+// buildOpDataBinOpLHS
 OpData buildOpData(
         clang::ASTContext &context,
         clang::SourceManager const &sm,
         clang::Expr const &castExpr,
         clang::DeclRefExpr const &e) {
 
-    FOUT << "[INFO](buildOpData<DeclRef2>) ref: \n"
+    CNS_DEBUG("<DeclRef>");
+    FOUT << "[INFO](buildOpData<DeclRef>) ref: \n"
          << String(context, e) << "; type: "
          << Typename(context, e) << "\n";
 
@@ -260,6 +235,7 @@ OpData buildOpData(
     }
 
     CNS_ERROR("DeclRefExpr has no decl or stmt.");
+    CNS_DEBUG("<DeclRef> end.");
 
     return {
         cnsHash(context, e),
@@ -273,6 +249,7 @@ OpData buildOpData(
     };
 }
 
+// Build OpData for Function Call Arg. (Difference in getLnkedParmqn, no cast expression involved.)
 OpData buildOpDataArg(
         clang::ASTContext &context,
         clang::SourceManager const &sm,
@@ -311,7 +288,6 @@ OpData buildOpDataArg(
             getLinkedParm(context, *decl, e.getNameInfo()),
             getContainerFunction(context, arg),
             arg.getExprLoc().printToString(sm),
-            //String(context, e) + "_" +
             getLinkedParmQn(context, *decl, e.getNameInfo())
         };
     }
@@ -327,7 +303,6 @@ OpData buildOpDataArg(
             getLinkedParm(context, *stmt, e.getNameInfo()),
             getContainerFunction(context, arg),
             arg.getExprLoc().printToString(sm),
-            //String(context, e) + "_" +
             getLinkedParmQn(context, *stmt, e.getNameInfo())
         };
     }
@@ -346,29 +321,31 @@ OpData buildOpDataArg(
     };
 }
 
-/*
-OpData buildOpData(
+template<>
+OpData buildOpData<CastSourceType::UnaryOp>(
         clang::ASTContext &context,
         clang::SourceManager const &sm,
         clang::CastExpr const &castExpr,
-        clang::DeclStmt const &e) {
+        clang::UnaryOperator const &op) {
 
-    FOUT << "[INFO](buildOpData<Declstmt>) ds: \n"
-         << String(context, e) << "; type: "
-         << Typename(context, castExpr) << "\n";
+    FOUT << "[INFO](buildOpData<UnaryOp>) op: \n"
+         << String(context, op) << "; type: "
+         << Typename(context, op) << "\n";
 
     return {
-        cnsHash(context, e),
-        String(context, e),
-        Typename(context, castExpr),
-        TypeCategory(context, castExpr),
-        "(Not a param)",
+        cnsHash(context, op),
+        String(context, op),
+        Typename(context, op),
+        TypeCategory(context, op),
+        "(TODO param_check)",
         getContainerFunction(context, castExpr),
-        e.getEndLoc().printToString(sm),
+        castExpr.getExprLoc().printToString(sm),
+        String(context, op)
     };
 }
-*/
 
+
+/*
 template<>
 OpData buildOpData<CastSourceType::Function>(
         clang::ASTContext &context,
@@ -390,14 +367,11 @@ OpData buildOpData<CastSourceType::Function>(
         e.getDirectCallee()
             ? (getContainerFunction(context, e) + "." + e.getDirectCallee()->getQualifiedNameAsString())
             : (getContainerFunction(context, e) + "." + String(context, e))
-        /*
-        e.getDirectCallee()
-            ? (std::to_string(e.getDirectCallee()->getID()))
-            : (getContainerFunction(context, e) + "." + String(context, e))
-        */
     };
 }
+*/
 
+/*
 template<>
 OpData buildOpData<CastSourceType::FunctionArg>(
         clang::ASTContext &context,
@@ -422,14 +396,12 @@ OpData buildOpData<CastSourceType::FunctionArg>(
         return clang::Expr::isSameComparisonOperand(arg, &castExpr);
     });
     FOUT << "[DEBUG](buildOpData<call>) final argpos: " << argPos << "\n";
-    /*
-    for(auto arg = e.arg_begin(); arg != e.arg_end(); argPos++, ++arg) {
-        FOUT << "[DEBUG](buildOpData<call>) Argpos: " << argPos << "\n";
-        if(clang::Expr::isSameComparisonOperand(*arg, &castExpr))
-            break;
-    }
-    argPos += 1;
-    */
+    //for(auto arg = e.arg_begin(); arg != e.arg_end(); argPos++, ++arg) {
+    //    FOUT << "[DEBUG](buildOpData<call>) Argpos: " << argPos << "\n";
+    //    if(clang::Expr::isSameComparisonOperand(*arg, &castExpr))
+    //        break;
+    //}
+    //argPos += 1;
 
     std::string parmId;
     clang::ParmVarDecl const *parm = nullptr;
@@ -499,6 +471,7 @@ OpData buildOpData<CastSourceType::FunctionArg>(
             : (String(context, e))
     };
 }
+*/
 
 template<>
 OpData buildOpData<CastSourceType::BinaryOp>(
@@ -511,41 +484,5 @@ OpData buildOpData<CastSourceType::BinaryOp>(
     return buildOpData(context, sm, castExpr, e);
 }
 
-std::string getLinkedFunction(
-        clang::ASTContext const &context,
-        clang::CastExpr const &castExpr,
-        clang::UnaryOperator const&) {
-
-    CNS_DEBUG("<unaryop>");
-    CNS_DEBUG("<unaryop> end.");
-    return "N/A";
-}
-
-std::string getLinkedFunction(
-        clang::ASTContext const &context,
-        clang::CastExpr const &castExpr,
-        clang::DeclRefExpr const&) {
-
-    CNS_DEBUG("<declrefexpr>");
-    CNS_DEBUG("<declrefe> end.");
-    return "N/A";
-}
-
-
-std::string getLinkedFunction(
-        clang::ASTContext &context,
-        clang::CastExpr const &castExpr,
-        clang::CallExpr const &call) {
-
-    CNS_DEBUG("<callexpr>");
-    auto const *calledFn = getCalleeDecl(call);
-    assert(calledFn);
-    if(!calledFn) {
-        return "";
-    }
-
-    CNS_DEBUG("<callexpr> end.");
-    return calledFn->getNameAsString();
-}
 #endif
 
