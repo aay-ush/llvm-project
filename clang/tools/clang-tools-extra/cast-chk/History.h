@@ -305,7 +305,7 @@ class History {
 
         explicit History(CensusKey const& op): op_(op) {
             CNS_DEBUG("");
-            FOUT << "[INFO](History::explicit) Init: " << op_ << "\n";
+            //FOUT << "[INFO](History::explicit) Init: " << op_ << "\n";
             CNS_DEBUG("end.");
         }
 
@@ -314,14 +314,14 @@ class History {
             hc_(context) {
 
             CNS_DEBUG("");
-            FOUT << "[INFO](History::History(c,k)) Init: " << op_ << "(" << getContextResolvedOp().qn_ << ")\n";
+            //FOUT << "[INFO](History::History(c,k)) Init: " << op_ << "(" << getContextResolvedOp().qn_ << ")\n";
             CNS_DEBUG("end.");
         }
 
         History() = delete;
         ~History(){// = default;
             CNS_DEBUG("");
-            FOUT << "[INFO](History::~History()) end: " << op_ << "(" << getContextResolvedOp().qn_<< ")\n";
+            //FOUT << "[INFO](History::~History()) end: " << op_ << "(" << getContextResolvedOp().qn_<< ")\n";
             CNS_DEBUG("end.");
         }
 
@@ -331,7 +331,7 @@ class History {
             hc_(h.hc_),
             branch_(h.branch_) {
             CNS_DEBUG("");
-            FOUT << "[INFO](History::History(h)) Init: " << op_ << "(" << getContextResolvedOp().qn_ << "): [" << branch_.size() << "]\n";
+            //FOUT << "[INFO](History::History(h)) Init: " << op_ << "(" << getContextResolvedOp().qn_ << "): [" << branch_.size() << "]\n";
             CNS_DEBUG("end.");
         }
         History& operator=(History const&) = default;
@@ -391,8 +391,8 @@ std::ostream& operator<<(std::ostream &os, History const& h) {
 
 bool operator==(History const &a, History const &b) {
     CNS_DEBUG("");
-    FOUT << "[INFO](History::operator==<h>) a: (" << a.id() << "/ " << a.opId() << ")\n";
-    FOUT << "[INFO](History::operbtor==<h>) b: (" << b.id() << "/ " << b.opId() << ")\n";
+    //FOUT << "[INFO](History::operator==<h>) a: (" << a.id() << "/ " << a.opId() << ")\n";
+    //FOUT << "[INFO](History::operbtor==<h>) b: (" << b.id() << "/ " << b.opId() << ")\n";
     CNS_DEBUG("end.");
     // Support both context resolved history and otherwise.
     return (a.id() == b.id()) || (a.opId() == b.opId());
@@ -404,8 +404,8 @@ bool operator!=(History const &a, History const &b) {
 }
 bool operator==(History const &a, CensusKey const &b) {
     CNS_DEBUG("");
-    FOUT << "[INFO](History::operator==<h>) a: (" << a.id() << "/ " << a.opId() << ")\n";
-    FOUT << "[INFO](History::operbtor==<ck>) b: (" << b << ")\n";
+    //FOUT << "[INFO](History::operator==<h>) a: (" << a.id() << "/ " << a.opId() << ")\n";
+    //FOUT << "[INFO](History::operbtor==<ck>) b: (" << b << ")\n";
     CNS_DEBUG("end.");
     return (a.id() == b) || (a.opId() == b);
     //return (a.id() == b) && !(a.hasContext());
@@ -436,7 +436,7 @@ History History::append(History h) {
 
 std::vector<HistoryTemplate> TransformTemplates;
 // TODO change to map instead
-std::vector<History> TypeTransforms;
+std::unordered_map<CensusKey, History> TypeTransforms;
 
 void evaluateHistory() {
     CNS_DEBUG("");
@@ -449,11 +449,10 @@ void evaluateHistory() {
         [&](auto const &n) {
             auto const &key = ops(n).qn_;
 
-            auto it = std::find(begin(TypeTransforms), end(TypeTransforms), key);
-            if(it == std::end(TypeTransforms)) {
+            if(TypeTransforms.find(key) == std::end(TypeTransforms)) {
                 // Add history
                 FOUT << "[WARN](evaluateHistory::1.it) Could not find history for <" << key << ">, Adding.\n";
-                TypeTransforms.emplace_back(key);
+                TypeTransforms.insert({key, History(key)});
             }
     });
 
@@ -465,8 +464,7 @@ void evaluateHistory() {
             auto const &op = ops(n);
             auto const &key = op.qn_;
 
-            auto itk = std::find(begin(TypeTransforms), end(TypeTransforms), key);
-            if(itk == std::end(TypeTransforms)) {
+            if(TypeTransforms.find(key) == std::end(TypeTransforms)) {
                 // No way!
                 FOUT << "[ERROR](evaluateHistory::2.itk) Cannot find history for <" << key << ">, after 1!.\n";
                 return;
@@ -474,13 +472,12 @@ void evaluateHistory() {
 
             std::for_each(begin(op.use_), end(op.use_),
                 [&](auto const& u) {
-                    auto itu = std::find(begin(TypeTransforms), end(TypeTransforms), u);
-                    if(itu != std::end(TypeTransforms)) {
+                    if(TypeTransforms.find(u) == std::end(TypeTransforms)) {
                         // No way!
                         FOUT << "[ERROR](evaluateHistory::2.itu) Cannot find history for <" << u << ">, after 1!.\n";
                         return;
                     }
-                    itk->extend(*itu);
+                    TypeTransforms.at(key).extend(TypeTransforms.at(u));
             });
     });
     CNS_DEBUG("end.");

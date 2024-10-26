@@ -153,14 +153,12 @@ void updateHistory(
 
     // Ensure H(to) first.
     // Retrieve H(to)
-    auto itTo = std::find(begin(TypeTransforms), end(TypeTransforms), to.qn_);
-    if(itTo == std::end(TypeTransforms)) {
+    if(TypeTransforms.find(to.qn_) == std::end(TypeTransforms)) {
         // Add H(to)
         FOUT << "[INFO](updateHistory) :to: New history started for " << to.qn_ << "\n";
-        TypeTransforms.emplace_back(to.qn_);
-        // fix iterator
-        itTo = std::find(begin(TypeTransforms), end(TypeTransforms), to.qn_);
-        if(itTo == std::end(TypeTransforms)) {
+        TypeTransforms.insert({to.qn_, History(to.qn_)});
+        // sanity check
+        if(TypeTransforms.find(to.qn_) == std::end(TypeTransforms)) {
             FOUT << "[ERROR](updateHistory) :to: Could not insert history for " << to.qn_ << "\n";
             CNS_DEBUG("end.");
             return;
@@ -171,14 +169,12 @@ void updateHistory(
     }
 
     // Retrieve H(from)
-    auto itFrom = std::find(begin(TypeTransforms), end(TypeTransforms), from.qn_);
-    if(itFrom == std::end(TypeTransforms)) {
+    if(TypeTransforms.find(from.qn_) == std::end(TypeTransforms)) {
         // Add H(from)
         FOUT << "[INFO](updateHistory) :from: New history started for " << from.qn_ << "\n";
-        TypeTransforms.emplace_back(from.qn_);
-        // fix iterator
-        itFrom = std::find(begin(TypeTransforms), end(TypeTransforms), from.qn_);
-        if(itFrom == std::end(TypeTransforms)) {
+        TypeTransforms.insert({from.qn_, History(from.qn_)});
+        // sanity check
+        if(TypeTransforms.find(from.qn_) == std::end(TypeTransforms)) {
             FOUT << "[ERROR](updateHistory) :from: Could not insert history for " << from.qn_ << "\n";
             CNS_DEBUG("end.");
             return;
@@ -187,15 +183,7 @@ void updateHistory(
 
     // Extend H(from) with H(to)
     FOUT << "[INFO](updateHistory) :from: Extending history of " << from.qn_ << " with " << to.qn_ << "\n";
-    if(itFrom == std::end(TypeTransforms)) {
-        CNS_ERROR("From iterator is invalid. Check.");
-        return;
-    }
-    if(itTo == std::end(TypeTransforms)) {
-        CNS_ERROR("To iterator is invalid. Check.");
-        return;
-    }
-    itFrom->extend(*itTo);
+    TypeTransforms.at(from.qn_).extend(TypeTransforms.at(to.qn_));
 
     CNS_DEBUG("end.");
 }
@@ -557,11 +545,10 @@ auto buildOpDatas(clang::ASTContext &context,
                 TypeTransforms.emplace_back(rhs.qn_);
             }
             */
-            auto itFrom = std::find(begin(TypeTransforms), end(TypeTransforms), lhs.qn_);
-            if(itFrom == std::end(TypeTransforms)) {
+            if(TypeTransforms.find(lhs.qn_) == std::end(TypeTransforms)) {
                 // Add H(from)
                 FOUT << "[INFO](updateHistory) :to: New history started for " << lhs.qn_ << "\n";
-                TypeTransforms.emplace_back(lhs.qn_);
+                TypeTransforms.insert({lhs.qn_, History(lhs.qn_)});
             }
             logCensusUpdate(lhs, rhs, dom);
         });
@@ -612,12 +599,11 @@ void addCallHistory(clang::ASTContext & context, clang::CallExpr const& call) {
             auto const qn = getLinkedParmQn(context, call, *a);
 
             // Search history of a
-            auto xt = std::find(begin(TypeTransforms), end(TypeTransforms), qn);
-            if( xt != std::end(TypeTransforms)) {
+            if(TypeTransforms.find(qn) != std::end(TypeTransforms)) {
                 FOUT << "[DEBUG](addCallHistory) Found existing history for" << qn << "\n";
                 // extend history
                 if(i < hs.size()) {
-                    xt->extend(hs[i]);
+                    TypeTransforms.at(qn).extend(hs.at(i));
                 }
                 else {
                     CNS_ERROR("Out of bound history insert.");
@@ -626,7 +612,7 @@ void addCallHistory(clang::ASTContext & context, clang::CallExpr const& call) {
             else {
                 // add new history
                 FOUT << "[DEBUG](addCallHistory) Adding history for" << qn << "\n";
-                TypeTransforms.emplace_back(hs[i]);
+                TypeTransforms.insert({hs[i].opId(), hs[i]});
             }
             ++i;
         });
@@ -841,10 +827,10 @@ public:
         FOUT << "History collection:\n";
         std::cout << "History collection:\n";
         std::for_each(begin(TypeTransforms), end(TypeTransforms), [&](auto const &h) {
-                FOUT << "History of (" << h.opId() << "): ";
-                std::cout << "History of (" << h.opId() << "): ";
-                FOUT << h << "\n";
-                std::cout << h << "\n";
+                FOUT << "History of (" << h.first << "): ";
+                std::cout << "History of (" << h.first << "): ";
+                FOUT << h.second << "\n";
+                std::cout << h.second << "\n";
             });
         FOUT << "# Census summary end.\n";
         FOUT << "end History collection:\n";
