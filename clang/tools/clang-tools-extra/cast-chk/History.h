@@ -85,7 +85,7 @@ namespace {
             auto const key = getLinkedParmQn(context, call, *a);
             if(census.find(key) == census.end()) {
                 // Shouldn't really happen.
-                FOUT << "[ERROR](HistoryTemplate::instantiate) arg operand (: " << key << ") not in Census.\n";
+                FOUT << "[ERROR](makeHistoryContext) arg operand (: " << key << ") not in Census.\n";
                 CNS_ERROR("continue.");
                 CNS_DEBUG("end.");
                 hc[params[i]] = params[i];
@@ -99,42 +99,11 @@ namespace {
             return;
         });
 
-        FOUT << "[DEBUG](HistoryTemplate::instantiate) " << String(context, call) << " produced " << args.size() << " args.\n";
+        FOUT << "[DEBUG](makeHistoryContext) " << String(context, call) << " produced " << args.size() << " args.\n";
         CNS_DEBUG("end.");
 
         return hc;
     }
-}
-
-std::vector<History> HistoryTemplate::instantiate(clang::ASTContext &context, clang::CallExpr const &call) {
-    CNS_DEBUG("");
-    // for each arg, add parm-arg pair to context.
-    // return context
-
-    if(params_.size() != call.getNumArgs()) {
-        CNS_ERROR("Nb(params != Nb(args), possibly unsupported variadic function or a template mismatch.");
-        FOUT << "[ERROR](HistoryTemplate::instantiate) FnTemplate(" << name() << ") instantiating for function call (" << String(context, call) << ") failed.\n";
-        CNS_DEBUG("end.");
-        return {};
-    }
-
-    HistoryContext hc = makeHistoryContext(params_, context, call);
-
-    std::vector<History> h;
-    std::for_each(begin(params_), end(params_),
-        [&](auto const &p) {
-            CNS_DEBUG("for_each param step");
-            h.emplace_back(hc, p);
-            CNS_DEBUG("end for_each param step");
-        });
-    /*
-    std::transform(begin(params_), end(params_), back_inserter(h),
-        [&](auto const &p) {
-            return History(hc, p);
-        });
-    */
-    CNS_DEBUG("end.");
-    return h;
 }
 
 // History(a) => we know type1 -> type 2 for a or its qualified name.
@@ -152,8 +121,12 @@ HistoryTemplate::HistoryTemplate(clang::FunctionDecl const &fn) {
             auto const& qn = function_ + ".$" + std::to_string(pos++);
             if(census.find(qn) == census.end()) {
                 FOUT << "[ERROR](HistoryTemplate::HistoryTemplate) param operand for: " << qn << " not in Census.\n";
-                CNS_DEBUG("end.");
-                return;
+                FOUT << "[INFO](HistoryTemplate::HistoryTemplate) Adding  " << qn << " operand in Census.\n";
+                //CNS_DEBUG("end.");
+                //return;
+                //
+                // If a param operand doesn't exist yet, which is possible if the function is processed for the first time, just initiate it because otherwise the template will not be created.
+                census.insert(makeCensusSourceNode(buildOpData(*p)));
             }
             // TODO: what if a param is not in census but remaining are?
             params_.push_back(qn);
@@ -275,6 +248,8 @@ class History {
 
         void extend(History h) {
             CNS_DEBUG("");
+            // Extend context of input history before appending to branch
+            h.hc_.insert(hc_.begin(), hc_.end());
             branch_.push_back(h);
             CNS_DEBUG("end.");
         }
@@ -301,6 +276,16 @@ class History {
             CNS_DEBUG("");
             CNS_DEBUG("end.");
             return !hc_.empty();
+        }
+
+        History addContext(HistoryContext hc) const {
+            CNS_DEBUG("");
+            auto nhc = hc_;
+            nhc.insert(hc.begin(), hc.end());
+            auto h = History(*this);
+            h.setContext(nhc);
+            CNS_DEBUG("end.");
+            return h;
         }
 
         explicit History(CensusKey const& op): op_(op) {
@@ -361,29 +346,85 @@ class History {
         auto branch() const {
             return branch_;
         }
+        auto getContext() const {
+            return hc_;
+        }
 
     private:
         CensusKey op_;
         HistoryContext hc_ {};
         // Vector since history is a tree. just like use_, history can have multiple branches.
         std::vector<History> branch_;   // Requires copy
+
+        void setContext(HistoryContext hc) {
+            hc_ = hc;
+        }
 };
 
+std::ostream& dumpHistory(std::ostream &os, History const&h);
+
+std::ostream& operator<<(std::ostream &os, std::vector<History> const &b) {
+    os << "{";
+    std::for_each(begin(b), end(b), [&](auto const &h) {
+        dumpHistory(os, h);
+    });
+    os << "}\n";
+    return os;
+}
+std::ostream& operator<<(std::ostream &os, HistoryContext const &hc) {
+    os << "{";
+    std::for_each(begin(hc), end(hc), [&](auto const &p) {
+        os << "{" << p.first << " = " << p.second << "},\n";
+    });
+    os << "}\n";
+    return os;
+}
+std::ostream& dumpHistory(std::ostream &os, History const&h) {
+    os << "{op_ :'" << h.opId() << "',\n"
+       << " hc_ :'" << h.getContext() << "',\n"
+       << " branch: '" << h.branch() << "'\n"
+       << "}\n";
+    return os;
+}
+
+// History context applies to extension
+// => On extending history, context gets extended too.
+// => Context is applied to op.use_
+//
 std::ostream& operator<<(std::ostream &os, History const& h) {
     std::stringstream ss;
+    //// Wrong since it loses the usechain of contextless op.
+    //// First get the history(use_) of op then resolve context
     auto const& op = h.getContextResolvedOp();
     if(op.type_.empty()) {
         ss << op.qn_;
     }
     else {
-        ss << op.type_ << "(" << op.qn_ << ": " << op.use_.size() << ")";
+        ss << op.type_ ; //<< "{" << op.qn_ << "}"; //.<< ": " << op.use_.size() << ")";
     }
-    ss << " -[" << h.branch().size() << "]-> ";
+    //ss << " -[" << h.branch().size() << "]-> ";
+    ss << " -> ";
+
+    /*
+    auto const &hc_ = h.getContext();
+    std::for_each(begin(op.use_), end(op.use_),
+        [&](auto const& u) {
+            if(hc_.find(u) == std::end(hc_)) {
+                auto const &uop = ops(u);
+                ss << uop.type_ << "(" << uop.qn_ << ") -> ";
+            }
+            else {
+                auto const &uop = ops(hc_.at(u));
+                ss << uop.type_ << "(" << uop.qn_ << ") -> ";
+            }
+        });
+    */
+
     std::for_each(h.bbegin(), h.bend(),
         [&](auto const& h_) {
-            ss << h_;
+            ss << h_ << "\n |-->";
         });
-    ss << "\n";
+    //ss << "end of : (" << op.qn_  << ")\n";
 
     os << ss.str();
     return os;
@@ -435,9 +476,53 @@ History History::append(History h) {
 //}
 
 std::vector<HistoryTemplate> TransformTemplates;
-// TODO change to map instead
 std::unordered_map<CensusKey, History> TypeTransforms;
 
+std::vector<History> HistoryTemplate::instantiate(clang::ASTContext &context, clang::CallExpr const &call) {
+    CNS_DEBUG("");
+    // for each arg, add parm-arg pair to context.
+    // return context
+
+    if(params_.size() != call.getNumArgs()) {
+        CNS_ERROR("Nb(params != Nb(args), possibly unsupported variadic function or a template mismatch.");
+        FOUT << "[ERROR](HistoryTemplate::instantiate) FnTemplate(" << name() << ") instantiating for function call (" << String(context, call) << ") failed.\n";
+        CNS_DEBUG("end.");
+        return {};
+    }
+
+    HistoryContext hc = makeHistoryContext(params_, context, call);
+
+    std::vector<History> h;
+    std::for_each(begin(params_), end(params_),
+        [&](auto const &p) {
+            CNS_DEBUG("for_each param step");
+            // misses history built for parm.
+            //h.emplace_back(hc, p);
+            if(TypeTransforms.find(p) == std::end(TypeTransforms)) {
+                // Parameter history is not built yet.
+                FOUT << "[INFO](HistoryTemplate::instantiate) New history created for " << function_ << ".$" << p << "\n";
+                TypeTransforms.insert({p, History(p)});
+                h.emplace_back(hc, p);
+            }
+            else {
+                // Add hc to existing parameter history
+                FOUT << "[INFO](HistoryTemplate::instantiate) Adding history context to history of " << function_ << ".$" << p << "\n";
+                auto hp = TypeTransforms.at(p);
+                h.emplace_back(hp.addContext(hc));
+            }
+            CNS_DEBUG("end for_each param step");
+        });
+    /*
+    std::transform(begin(params_), end(params_), back_inserter(h),
+        [&](auto const &p) {
+            return History(hc, p);
+        });
+    */
+    CNS_DEBUG("end.");
+    return h;
+}
+
+// Instead of processing all census, evaluate history per history object and process only h.opId
 void evaluateHistory() {
     CNS_DEBUG("");
     // For each operand, op, in census:

@@ -458,24 +458,25 @@ auto buildOpDatas(clang::ASTContext &context,
         clang::SourceManager const &sm,
         clang::CallExpr const &call) {
 
+    CNS_INFO("");
     // for each arg
     unsigned pos = 0;
     std::for_each(call.arg_begin(), call.arg_end(),
         [&](auto const *arg) {
-            CNS_DEBUG("Building lhs(Arg) opData.");
+            CNS_INFO("Building lhs(Arg) opData.");
             OpData lhs, rhs;
             // create source(arg) op
             lhs = buildArgOp(context, sm, call, *arg);
 
             // create target(param) op
-            CNS_DEBUG("Building rhs(Param) opData.");
+            CNS_INFO("Building rhs(Param) opData.");
             auto const *parmd = getParamDecl(context, call, pos);
             if(parmd) {
-                CNS_DEBUG("Got ParamDecl.");
+                CNS_INFO("Got ParamDecl.");
                 auto const *parm = dyn_cast<clang::ParmVarDecl>(parmd);
                 if(!parm) {
                     CNS_ERROR("Got ParamDecl but no ParmVarDecl.");
-                    CNS_DEBUG("end.");
+                    CNS_INFO("end.");
                     return;
                 }
 
@@ -494,11 +495,11 @@ auto buildOpDatas(clang::ASTContext &context,
             }
 
             else {
-                CNS_DEBUG("No ParamDecl.");
+                CNS_INFO("No ParamDecl.");
 
                 auto const *fn = call.getCallee();
                 if(fn) {
-                    CNS_DEBUG("Got Callee expr.");
+                    CNS_INFO("Got Callee expr.");
                     std::stringstream ss;
                     ss << String(context, *fn) << ".$" << pos;
                     rhs = {
@@ -513,7 +514,7 @@ auto buildOpDatas(clang::ASTContext &context,
                     };
                 }
                 else {
-                    CNS_DEBUG("No Callee either.");
+                    CNS_INFO("No Callee either.");
                     rhs = {
                         cnsHash(context, *arg),
                         String(context, *arg),
@@ -547,11 +548,19 @@ auto buildOpDatas(clang::ASTContext &context,
             */
             if(TypeTransforms.find(lhs.qn_) == std::end(TypeTransforms)) {
                 // Add H(from)
-                FOUT << "[INFO](updateHistory) :to: New history started for " << lhs.qn_ << "\n";
+                FOUT << "[INFO](updateHistory) :from: New history started for " << lhs.qn_ << "\n";
                 TypeTransforms.insert({lhs.qn_, History(lhs.qn_)});
             }
+            if(TypeTransforms.find(rhs.qn_) == std::end(TypeTransforms)) {
+                // Add H(to)
+                FOUT << "[INFO](updateHistory) :to: New history started for " << rhs.qn_ << "\n";
+                TypeTransforms.insert({rhs.qn_, History(rhs.qn_)});
+                TypeTransforms.at(lhs.qn_).extend(TypeTransforms.at(rhs.qn_));
+            }
             logCensusUpdate(lhs, rhs, dom);
+            pos++;
         });
+    CNS_INFO("end.");
 }
 
 void addCallHistory(clang::ASTContext & context, clang::CallExpr const& call) {
@@ -600,9 +609,10 @@ void addCallHistory(clang::ASTContext & context, clang::CallExpr const& call) {
 
             // Search history of a
             if(TypeTransforms.find(qn) != std::end(TypeTransforms)) {
-                FOUT << "[DEBUG](addCallHistory) Found existing history for" << qn << "\n";
+                FOUT << "[DEBUG](addCallHistory) Found existing history for " << qn << "\n";
                 // extend history
                 if(i < hs.size()) {
+                    FOUT << "[INFO](addCallHistory) Extending history for " << qn << " with " << hs[i].opId() << "\n";
                     TypeTransforms.at(qn).extend(hs.at(i));
                 }
                 else {
@@ -611,8 +621,12 @@ void addCallHistory(clang::ASTContext & context, clang::CallExpr const& call) {
             }
             else {
                 // add new history
-                FOUT << "[DEBUG](addCallHistory) Adding history for" << qn << "\n";
-                TypeTransforms.insert({hs[i].opId(), hs[i]});
+                FOUT << "[DEBUG](addCallHistory) Adding new history for " << qn << "\n";
+                //TypeTransforms.insert({hs[i].opId(), hs[i]});
+                auto hqn = History(qn);
+                FOUT << "[DEBUG](addCallHistory) Extending history for " << qn << " with " << hs[i].opId() << "\n";
+                hqn.extend(hs[i]);
+                TypeTransforms.insert({qn, hqn});
             }
             ++i;
         });
@@ -711,7 +725,7 @@ void preprocess(
 //
 //
 void processFunctionCall(MatchFinder::MatchResult const &result) {
-    CNS_DEBUG("");
+    CNS_INFO("");
     assert(result);
     auto *context = result.Context;
     assert(context);
@@ -726,7 +740,7 @@ void processFunctionCall(MatchFinder::MatchResult const &result) {
     //
     addCallHistory(*context, *call);
 
-    CNS_DEBUG(" end.");
+    CNS_INFO(" end.");
 }
 
 //----------------------------------------------------------------------------
@@ -823,13 +837,14 @@ public:
         FOUT << "# Census summary so far:\n";
         //censusSummary(FOUT);
         censusSummary();
-        evaluateHistory();
+        //evaluateHistory();
         FOUT << "History collection:\n";
         std::cout << "History collection:\n";
         std::for_each(begin(TypeTransforms), end(TypeTransforms), [&](auto const &h) {
-                FOUT << "History of (" << h.first << "): ";
-                std::cout << "History of (" << h.first << "): ";
+                FOUT << "History of (" << h.first << "):\n";
+                std::cout << "History of (" << h.first << "):\n";
                 FOUT << h.second << "\n";
+                //dumpHistory(FOUT, h.second);
                 std::cout << h.second << "\n";
             });
         FOUT << "# Census summary end.\n";

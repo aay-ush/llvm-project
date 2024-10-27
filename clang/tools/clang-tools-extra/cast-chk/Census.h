@@ -354,7 +354,7 @@ void censusSummary() {
     for(auto const &[_, info]: census) {
        auto const &[op, __] = info;
 
-       elaborateUse(op, {});
+       elaborateUse(op, {1});
     }
     for(auto const& n: census) {
         auto const& op = ops(n);

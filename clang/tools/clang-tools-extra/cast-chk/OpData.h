@@ -101,6 +101,29 @@ OpData buildOpData(
     static_assert(impl_false<s_type>, "Unknown cast source type used");
 }
 
+// Build operand from ParamDecl
+OpData buildOpData(
+        clang::ParmVarDecl const &parm) {
+
+    auto &context = parm.getASTContext();
+    auto const &sm = context.getSourceManager();
+
+    FOUT << "[INFO](buildOpData<ParmVarDecl>) parm: \n"
+         << String(context, parm) << "; type: "
+         << Typename(context, parm) << "\n";
+
+    return {
+        cnsHash(context, parm),
+        String(context, parm),
+        Typename(context, parm),
+        TypeCategory(context, parm),
+        getLinkedParm(context, parm),
+        getContainerFunction(context, parm),
+        parm.getLocation().printToString(sm),
+        getLinkedParmQn(context, parm)
+    };
+}
+
 // Build operand from VarDecl
 OpData buildOpData(
         clang::ASTContext &context,
@@ -146,13 +169,13 @@ OpData buildOpData(
     };
 }
 
-// Build operand from Decl
+// Build operand from DeclRef decl
 OpData buildOpData(
         clang::ASTContext &context,
         clang::SourceManager const &sm,
         clang::Expr const &castExpr,
         clang::DeclRefExpr const &e,
-        clang::Decl const& decl) {
+        clang::ValueDecl const& decl) {
 
     FOUT << "[INFO](buildOpData<Decl>) decl: \n"
          << String(context, e) << "; type: "
@@ -160,13 +183,13 @@ OpData buildOpData(
 
     return {
         cnsHash(context, decl),
-        String(context, e),
-        Typename(context, e),
-        TypeCategory(context, e),
-        getLinkedParm(context, decl, e.getNameInfo()),
+        String(context, decl),
+        Typename(context, decl),
+        TypeCategory(context, decl),
+        getLinkedParm(context, decl, decl.getDeclName()),
         getContainerFunction(context, castExpr),
-        castExpr.getExprLoc().printToString(sm),
-        getLinkedParmQn(context, decl, e.getNameInfo())
+        decl.getLocation().printToString(sm),
+        getLinkedParmQn(context, decl, decl.getDeclName())
     };
 }
 
@@ -225,7 +248,42 @@ OpData buildOpData(
             CNS_INFO("Found VarDecl from DeclRefExpr");
             return buildOpData(context, sm, *var);
         }
-        CNS_WARN("NO VarDecl from DeclRefExpr");
+        CNS_INFO("NO VarDecl from DeclRefExpr");
+        /*
+        auto const *nd = e.getFoundDecl();
+        if(!!nd) {
+            CNS_INFO("Found getFoundDecl");
+            if(nd->isFunctionPointerType()) {
+                CNS_INFO("nd: Found function pointer decl");
+                auto const *fp = nd->getAsFunction();
+                if(!!fp) {
+                    CNS_INFO("nd: Got function pointer");
+                    return buildOpData(context, sm, castExpr, e, *fp);
+                }
+                CNS_INFO("nd: Could not extract function pointer");
+            }
+            CNS_INFO("nd: Not function pointer type");
+        }
+        else {
+            CNS_INFO("No getFoundDecl");
+        }
+        if(decl->isFunctionPointerType()) {
+            CNS_INFO("Found function pointer decl");
+            auto const *fp = decl->getAsFunction();
+            if(!!fp) {
+                CNS_INFO("Got function pointer");
+                return buildOpData(context, sm, castExpr, e, *fp);
+            }
+            CNS_INFO("Could not extract function pointer");
+        }
+        CNS_INFO("Not function pointer type");
+        */
+        auto const *fp = decl->getAsFunction();
+        if(!!fp) {
+            CNS_INFO("Got function pointer");
+            return buildOpData(context, sm, castExpr, e, *fp);
+        }
+        CNS_INFO("Not function pointer type");
         return buildOpData(context, sm, castExpr, e, *decl);
     }
 
