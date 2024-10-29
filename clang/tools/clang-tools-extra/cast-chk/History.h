@@ -254,6 +254,30 @@ class History {
             CNS_DEBUG("end.");
         }
 
+        void extend_c(History h) {
+            CNS_DEBUG("");
+            // Extend context of input history before appending to branch
+            h.hc_.insert(hc_.begin(), hc_.end());
+            // Before appending to branch:
+            //  - check if h is already in branch
+            //      - check opId, id() and branch size or maybe just id should suffice
+            //  - see if condense operation is possible.
+
+            bool found = false;
+            for(auto const &bh: branch_) {
+                if(bh.id() == h.id()) {
+                    FOUT << "[INFO](History::extend_c) History {" << h.id() << "} already part of {" << id() << "}\n";
+                    found = true;
+                    break;
+                }
+            }
+            if(!found) {
+                FOUT << "[INFO](History::extend_c) Adding History {" << h.id() << "} to {" << id() << "}\n";
+                branch_.push_back(h);
+            }
+            CNS_DEBUG("end.");
+        }
+
         std::string id() const {
             CNS_DEBUG("");
             // if operand or context are not same we don't get same string.
@@ -265,6 +289,10 @@ class History {
             CNS_DEBUG("end.");
             return ss.str();
         }
+
+        // TODO: add a condense function to use in instantiation
+        // -> If the history is instantiated, condense() can be used to get a new contextualized
+        //    history with 0 depth/single branch.
 
         CensusKey opId() const {
             CNS_DEBUG("");
@@ -311,7 +339,9 @@ class History {
         }
 
         // History is extended by copying this history to another history. Supports branching.
-        History(History const& h): // = default;
+        // Copied history should only be used in extending and should not be mixed with global history.
+        History(History const& h) = default; //: // = default;
+        /*
             op_(h.op_),
             hc_(h.hc_),
             branch_(h.branch_) {
@@ -319,6 +349,7 @@ class History {
             //FOUT << "[INFO](History::History(h)) Init: " << op_ << "(" << getContextResolvedOp().qn_ << "): [" << branch_.size() << "]\n";
             CNS_DEBUG("end.");
         }
+        */
         History& operator=(History const&) = default;
 
         OpData const& getContextResolvedOp() const {
@@ -364,19 +395,19 @@ class History {
 std::ostream& dumpHistory(std::ostream &os, History const&h);
 
 std::ostream& operator<<(std::ostream &os, std::vector<History> const &b) {
-    os << "{";
+    os << "  {";
     std::for_each(begin(b), end(b), [&](auto const &h) {
         dumpHistory(os, h);
     });
-    os << "}\n";
+    os << "  }";
     return os;
 }
 std::ostream& operator<<(std::ostream &os, HistoryContext const &hc) {
     os << "{";
     std::for_each(begin(hc), end(hc), [&](auto const &p) {
-        os << "{" << p.first << " = " << p.second << "},\n";
+        os << "  {" << p.first << " = " << p.second << "}, ";
     });
-    os << "}\n";
+    os << "}";
     return os;
 }
 std::ostream& dumpHistory(std::ostream &os, History const&h) {
@@ -400,10 +431,11 @@ std::ostream& operator<<(std::ostream &os, History const& h) {
         ss << op.qn_;
     }
     else {
-        ss << op.type_ ; //<< "{" << op.qn_ << "}"; //.<< ": " << op.use_.size() << ")";
+        ss << op.type_ << "{" << op.qn_ << "}"; //.<< ": " << op.use_.size() << ")";
     }
     //ss << " -[" << h.branch().size() << "]-> ";
-    ss << " -> ";
+    //ss << " -> ";
+    ss << "\n";
 
     /*
     auto const &hc_ = h.getContext();
@@ -422,7 +454,7 @@ std::ostream& operator<<(std::ostream &os, History const& h) {
 
     std::for_each(h.bbegin(), h.bend(),
         [&](auto const& h_) {
-            ss << h_ << "\n |-->";
+            ss << " |--> " << h_ << "\n";
         });
     //ss << "end of : (" << op.qn_  << ")\n";
 
@@ -430,13 +462,22 @@ std::ostream& operator<<(std::ostream &os, History const& h) {
     return os;
 }
 
+// Two kinds of history:
+//  - global history -> stored in TypeTransforms, the normal history
+//      that is built by using the operand and then extended with use.
+//  - contextualized history -> may or may not be part of TypeTransforms. Use in template instantiation and history extending operations. If global history with same opId exists, contextualized history will not be part of TypeTransforms.
+//
+// TODO redo: what is meant by equality for history object? When history is extended, it may be
+//   for same operand but can have a different context
+//   This equality is meant for global history only.
 bool operator==(History const &a, History const &b) {
     CNS_DEBUG("");
     //FOUT << "[INFO](History::operator==<h>) a: (" << a.id() << "/ " << a.opId() << ")\n";
     //FOUT << "[INFO](History::operbtor==<h>) b: (" << b.id() << "/ " << b.opId() << ")\n";
     CNS_DEBUG("end.");
     // Support both context resolved history and otherwise.
-    return (a.id() == b.id()) || (a.opId() == b.opId());
+    //return (a.id() == b.id()) || (a.opId() == b.opId());
+    return a.id() == b.id(); // && (a.branch() == b.branch());
 }
 bool operator!=(History const &a, History const &b) {
     CNS_DEBUG("");
@@ -448,7 +489,8 @@ bool operator==(History const &a, CensusKey const &b) {
     //FOUT << "[INFO](History::operator==<h>) a: (" << a.id() << "/ " << a.opId() << ")\n";
     //FOUT << "[INFO](History::operbtor==<ck>) b: (" << b << ")\n";
     CNS_DEBUG("end.");
-    return (a.id() == b) || (a.opId() == b);
+    return a.opId() == b;
+    //return (a.id() == b) || (a.opId() == b);
     //return (a.id() == b) && !(a.hasContext());
 }
 bool operator!=(History const &a, CensusKey const &b) {
