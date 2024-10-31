@@ -67,8 +67,54 @@ enum class CastSourceType {
 //
 using OpID = std::string;
 
-class History;
+// We need the map key to be pluggable:
+// hof(void *pv, fptr pf)
+// pv: key = hof.$0
+// pf: key = hof.$1
+//
+// hof(pi, f)
+// => pi -> hof.$0 (pv)
+//     f -> hof.$1 (pf)
+//
+// hof(void *pv, fptr pf) {
+//   pf(pv);    // => pv -> pf.$0
+// }
+// We don't know what pf.$0 is, we can extrapolate the usechain though:
+// pf -> hof.$1
+// => pv -> hof.$1.$0
+// To plug values from context above we need the key to be pluggable:
+//  pi -> hof.$0
+//  f -> hof.$1
+//  => pv -> [hof.$1].$0 = f.$0
 
+// Pluggable key:
+// Key has two components: prefix key + id
+//  - prefix key: everything before id; it is also a key.
+//  - id: $<param number> | <local variable name> | <expr>
+// Either complete key or Prefix can be plugged into but id is not pluggable.
+// i.e. P(hof.$0, pi) = pi (correct)
+//      P(hof.$0, pi) = pi.$0 (correct)
+//      P(hof.$1, pi) = hof.$pi (incorrect)
+//
+// What can be plugged? Another key
+//
+// K1{{{}, 'hof'},'$0'}
+// K2{{},'pi'}
+// K3{{{{},'hof'}, '$1'}, '$0'}
+// K4{{}, 'f'}
+// P(K1, K2) => K2
+// P(K3, K4) => {{{}, 'f'}, '$0'}
+// P(K1, K4) => K4
+// P(K1, K4.prefix) => {{{}, 'f'}, '$0'}
+//
+// What does it mean to plug a key?
+//  - Key is pluggable only if the OpData is incomplete.
+//  - Plugging implies the plugged key is instantiated as the plug.
+//    Since instantiation is temporary, it is kept with the plug.
+//    We are only interested in the history.
+//    if P(k1, k2) = k2 => K1 is plugged with k2
+//    then H(k1) = H(k2) and {P(k1, k2), H(k1)} is stored locally 
+//
 struct OpData {
     unsigned hash_ {0};
     std::string expr_;
@@ -79,9 +125,11 @@ struct OpData {
     std::string location_;
     std::string qn_;
     mutable std::vector<OpID> use_ {};
+    bool isComplete {true};
     //mutable std::unordered_set<OpID> history_ {};
     //mutable std::weak_ptr<History> history_ {};
 };
+
 bool operator==(OpData const &lhs, OpData const &rhs) {
     return lhs.qn_ == rhs.qn_;
 }
@@ -121,6 +169,31 @@ OpData buildOpData(
         getContainerFunction(context, parm),
         parm.getLocation().printToString(sm),
         getLinkedParmQn(context, parm)
+    };
+}
+
+// Build operand from argexpr
+// May need improvements to use associated declref instead
+OpData buildOpData(
+        clang::ASTContext &context,
+        clang::Expr const &arg) {
+
+    //auto &context = arg.getASTContext();
+    auto const &sm = context.getSourceManager();
+
+    FOUT << "[INFO](buildOpData<Arg expr>) arg: \n"
+         << String(context, arg) << "; type: "
+         << Typename(context, arg) << "\n";
+
+    return {
+        cnsHash(context, arg),
+        String(context, arg),
+        Typename(context, arg),
+        TypeCategory(context, arg),
+        String(context, arg), //getLinkedParm(context, arg),
+        getContainerFunction(context, arg),
+        arg.getExprLoc().printToString(sm),
+        String(context, arg), //getLinkedParmQn(context, arg),
     };
 }
 

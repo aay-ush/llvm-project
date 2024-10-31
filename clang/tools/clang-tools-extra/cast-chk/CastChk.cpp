@@ -497,11 +497,75 @@ auto buildOpDatas(clang::ASTContext &context,
             else {
                 CNS_INFO("No ParamDecl.");
 
+                // getcalleedecl() will not work
                 auto const *fn = call.getCallee();
                 if(fn) {
                     CNS_INFO("Got Callee expr.");
+                    // In case of fptr, it is likely that function decl is not available.
+                    // Get the qn of fptr
                     std::stringstream ss;
-                    ss << String(context, *fn) << ".$" << pos;
+                    auto const *fptrp = call.IgnoreImplicit();
+                    if(fptrp) {
+                        CNS_INFO("Got fptr from call expr after implicitignore.");
+                        auto const * dre = dyn_cast<clang::DeclRefExpr>(fptrp);
+                        if(dre) {
+                            CNS_INFO("Got dre from fptr.");
+                            ss << getLinkedParmQn(context, *dre);
+                        }
+                        else {
+                            CNS_INFO("No dre from fptr.");
+                            for(auto child: call.children()) {
+                                auto const *ce = dyn_cast<clang::CastExpr>(child);
+                                if(ce) {
+                                    CNS_INFO("Got castexpr from fptr.");
+                                    auto const *dre = dyn_cast<clang::DeclRefExpr>(ce->getSubExpr());
+                                    if(dre) {
+                                        CNS_INFO("Got dre from castexpr.");
+                                        ss << getLinkedParmQn(context, *dre);
+                                        break;
+                                    }
+                                    else {
+                                        CNS_INFO("No dre from castexpr.");
+                                    }
+                                }
+                                else {
+                                    CNS_INFO("No castexpr from fptr.");
+                                    auto const *dre = dyn_cast<clang::DeclRefExpr>(child);
+                                    if(dre) {
+                                        CNS_INFO("Got dre from child.");
+                                        ss << getLinkedParmQn(context, *dre);
+                                        break;
+                                    }
+                                    else {
+                                        CNS_INFO("No dre from child.");
+                                    }
+                                }
+                            }
+                            /*
+                            auto cit = call.child_begin();
+                            auto const * dre = dyn_cast<clang::DeclRefExpr>(*cit);
+                            while(cit != call.child_end()) {
+                                if(dre) {
+                                    CNS_INFO("Got dre from cit.");
+                                    ss << getLinkedParmQn(context, *dre);
+                                    break;
+                                }
+                                ++cit;
+                            }
+                            if(!dre) {
+                                CNS_INFO("No dre from children.");
+                                ss << getLinkedParmQn(context, call, *fptrp);
+                            }
+                            */
+                        }
+                    }
+                    else {
+                        CNS_INFO("No fptr from call expr after implicitignore.");
+                    }
+                    if(ss.str().empty()) {
+                        ss << String(context, *fn); // << ".$" << pos;
+                    }
+                    ss << ".$" << pos;
                     rhs = {
                         cnsHash(context, *arg),
                         ss.str(),
@@ -567,13 +631,27 @@ void addCallHistory(clang::ASTContext & context, clang::CallExpr const& call) {
     CNS_DEBUG("");
     auto const *calledFn = getCalleeDecl(call);
     assert(calledFn);
+    std::string fn;
     if(!calledFn) {
-        CNS_ERROR("Null callee decl.");
-        CNS_DEBUG("end.");
-        return;
-    }
+        CNS_ERROR("Null callee decl. Maybe an fptr.");
 
-    auto const& fn = calledFn->getNameAsString();
+        auto const *fptr = getFptrFromFptrCall(context, call);
+        if(!fptr) {
+            CNS_ERROR("No fptr either. end.");
+            return;
+        }
+
+        fn = getLinkedParmqnFromFptrCall(context, call);
+        auto it = std::find(begin(TransformTemplates), end(TransformTemplates), fn);
+        if(it == std::end(TransformTemplates)) {
+            FOUT << "[DEBUG](addCallHistory) No template found for : " << fn << "()\n";
+            FOUT << "[DEBUG](addCallHistory) Adding new template for : " << fn << "()\n";
+            TransformTemplates.push_back({context, call, *fptr});
+        }
+    }
+    else {
+        fn = calledFn->getNameAsString();
+    }
     auto it = std::find(begin(TransformTemplates), end(TransformTemplates), fn);
     if(it == std::end(TransformTemplates)) {
         FOUT << "[DEBUG](addCallHistory) No template found for : " << fn << "()\n";

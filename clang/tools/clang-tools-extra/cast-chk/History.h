@@ -20,6 +20,8 @@
 // Avoiding composability avoid problems where two context with different values of same parameter are combined.
 using HistoryContext = std::unordered_map<CensusKey, CensusKey>;
 
+class History;
+
 // Template: for every parameter in a function, store it's Census operand and associate it to the parameter.
 class HistoryTemplate {
     public:
@@ -30,6 +32,7 @@ class HistoryTemplate {
         std::vector<History> instantiate(clang::ASTContext &context, clang::CallExpr const &call);
 
         HistoryTemplate(clang::FunctionDecl const &fn);
+        HistoryTemplate(clang::ASTContext &context, clang::CallExpr const& call, clang::DeclRefExpr const &fptr);
 
         HistoryTemplate() = delete;
         //{
@@ -74,13 +77,13 @@ namespace {
             clang::ASTContext &context,
             clang::CallExpr const &call) {
 
-        CNS_DEBUG("");
+        CNS_INFO("");
 
         HistoryContext hc;
         std::vector<CensusKey> args;
         unsigned i = 0;
         std::for_each(call.arg_begin(), call.arg_end(), [&](auto const *a) {
-            CNS_DEBUG("for_each arg.");
+            CNS_INFO("for_each arg.");
             // get arg qn
             auto const key = getLinkedParmQn(context, call, *a);
             if(census.find(key) == census.end()) {
@@ -100,7 +103,7 @@ namespace {
         });
 
         FOUT << "[DEBUG](makeHistoryContext) " << String(context, call) << " produced " << args.size() << " args.\n";
-        CNS_DEBUG("end.");
+        CNS_INFO("end.");
 
         return hc;
     }
@@ -132,6 +135,32 @@ HistoryTemplate::HistoryTemplate(clang::FunctionDecl const &fn) {
             params_.push_back(qn);
         });
     CNS_DEBUG("end.");
+}
+
+HistoryTemplate::HistoryTemplate(clang::ASTContext &context, clang::CallExpr const& call, clang::DeclRefExpr const &fptr) {
+    CNS_DEBUG("<fptr>");
+    CNS_INFO("<fptr>");
+    function_ = getLinkedParmQn(context, fptr);
+    unsigned pos = 0;
+    // ForEach parameter, lookup corresponding census operand
+    std::for_each(call.arg_begin(), call.arg_end(), [&](auto const *p) {
+            // get qn
+            auto const& qn = function_ + ".$" + std::to_string(pos++);
+            if(census.find(qn) == census.end()) {
+                FOUT << "[ERROR](HistoryTemplate::HistoryTemplate<fptr>) param operand for: " << qn << " not in Census.\n";
+                FOUT << "[INFO](HistoryTemplate::HistoryTemplate<fptr>) Adding  " << qn << " operand in Census.\n";
+                //CNS_DEBUG("end.");
+                //return;
+                //
+                // If a param operand doesn't exist yet, which is possible if the function is processed for the first time, just initiate it because otherwise the template will not be created.
+                census.insert(makeCensusSourceNode(buildOpData(context, *p)));
+            }
+            // TODO: what if a param is not in census but remaining are?
+            FOUT << "[INFO](HistoryTemplate::HistoryTemplate<fptr>) Found param operand for: " << qn << " in Census.\n";
+            params_.push_back(qn);
+        });
+    CNS_DEBUG("<fptr> end.");
+    CNS_INFO("<fptr> end.");
 }
 
 // History instantiation should not change dominator info for
@@ -239,6 +268,13 @@ std::vector<OpData> HistoryTemplate::substitue(std::vector<OpData> &args) {
 // OpData can have different history based on context. So linking to history is the only way to ensure it.
 // when histories are linked, navigating history is a simple task. As is assignment, it works like a linked list.
 // Now how are the histories stored? Are they kept with the operand? Perhaps the head of the list can be stored with the operand.
+
+//#include <regex>
+
+std::string makeHistoryId(std::string key, std::string val) {
+    return key + "(" + val + ")";
+}
+
 class History {
     public:
         // Could be type or container.$param or container.local
@@ -247,11 +283,20 @@ class History {
         // operator string
 
         void extend(History h) {
-            CNS_DEBUG("");
+            CNS_INFO("");
+            FOUT << "[INFO](History::extend) Current context size for H(" << h.op_ << "): " << h.hc_.size() << "\n";
+            FOUT << "[INFO](History::extend) Extending context using H(" << op_ << "): branch(" << branch_.size() << "); context(" << hc_.size() << ")\n";
             // Extend context of input history before appending to branch
             h.hc_.insert(hc_.begin(), hc_.end());
+            FOUT << "[INFO](History::extend) New context size for H(" << h.op_ << "): " << h.hc_.size() << "\n";
+            /*
+            for(auto &bh: h.branch_) {
+                bh.hc_.insert(hc_.begin(), hc_.end());
+            }
+            //hc_ = h.hc_;
+            */
             branch_.push_back(h);
-            CNS_DEBUG("end.");
+            CNS_INFO("end.");
         }
 
         void extend_c(History h) {
@@ -354,14 +399,41 @@ class History {
 
         OpData const& getContextResolvedOp() const {
             CNS_DEBUG("");
-            // Substitute from context if applicable
-            if(hc_.find(op_) != hc_.end()) {
-                CNS_DEBUG("end.");
-                return ops(hc_.at(op_));
+            CNS_INFO("");
+            std::string rop = op_;
+            //FOUT << "[INFO](History::getContextResolvedOp) Before loop: op_{" << op_ << "} rop {" << rop << "}\n";
+            FOUT << "[INFO](History::getContextResolvedOp) Resolving op_{" << op_ << "} using context {size: } " << hc_.size() << "}\n";
+            for(unsigned i = 0; i != hc_.size(); i++) {
+                // Substitute from context if applicable
+                //FOUT << "[INFO ](History::getContextResolvedOp) i = " << i << "\n";
+                for(auto &[key, val]: hc_) {
+                    FOUT << "[INFO](History::getContextResolvedOp) key=" << key << "; val=" << val << "\n";
+                    FOUT << "[INFO](History::getContextResolvedOp) rop=" << rop << "\n";
+                    /*
+                    rop.replace(rop.find(key), key.size(), val);
+                    FOUT << "[INFO](History::getContextResolvedOp) new rop=" << rop << "\n";
+                    */
+                    if(rop == key) {
+                        FOUT << "[INFO](History::getContextResolvedOp) Key match at i=" << i << ". op_{" << op_ << "} rop {" << rop << "}\n";
+                        rop = val;
+                    }
+                    else {
+                        FOUT << "[DEBUG](History::getContextResolvedOp) i=" << i << ". Key{" << key << "} did not match rop{" << rop << "}\n";
+                    }
+                }
+                /*
+                std::regex pattern("^" + ops(op_).container_);
+                std::smatch fmatch;
+                if(std::regex_search(rop, fmatch, pattern)) {
+                    FOUT << "[DEBUG](History::getContextResolvedOp) i loop: Resolved till function scope: rop = '" << rop << "'; stopping.\n";
+                    break;
+                }
+                */
             }
+            FOUT << "[INFO](History::getContextResolvedOp) After loop: op_{" << op_ << "} rop {" << rop << "}\n";
 
-            CNS_DEBUG("end.");
-            return ops(op_);
+            CNS_INFO("end.");
+            return ops(rop);
         }
 
         auto bbegin() const {
@@ -378,6 +450,12 @@ class History {
             return branch_;
         }
         auto getContext() const {
+            return hc_;
+        }
+        auto& branch() {
+            return branch_;
+        }
+        auto& getContext() {
             return hc_;
         }
 
@@ -540,17 +618,36 @@ std::vector<History> HistoryTemplate::instantiate(clang::ASTContext &context, cl
             CNS_DEBUG("for_each param step");
             // misses history built for parm.
             //h.emplace_back(hc, p);
-            if(TypeTransforms.find(p) == std::end(TypeTransforms)) {
-                // Parameter history is not built yet.
-                FOUT << "[INFO](HistoryTemplate::instantiate) New history created for " << function_ << ".$" << p << "\n";
-                TypeTransforms.insert({p, History(p)});
-                h.emplace_back(hc, p);
+            if(TypeTransforms.find(makeHistoryId(p, hc[p])) == std::end(TypeTransforms)) {
+                if(TypeTransforms.find(p) == std::end(TypeTransforms)) {
+                    // Parameter history is not built yet.
+                    FOUT << "[INFO](HistoryTemplate::instantiate) New history created for " << function_ << "var {" << p << "}\n";
+                    TypeTransforms.insert({p, History(p)});
+                    h.emplace_back(hc, p);
+                }
+            //else {
+                // Add hc to existing parameter history
+                FOUT << "[INFO](HistoryTemplate::instantiate) Adding history context to history of " << function_ << " var {" << p << "}\n";
+                auto hp = TypeTransforms.at(p);
+                FOUT << "[INFO](HistoryTemplate::instantiate) Current context size for H(" << p << "): " << hp.getContext().size() << "\n";
+
+                auto localH = hp.addContext(hc);
+                auto & bhb = localH.branch();
+                for(auto &bh: bhb) {
+                    FOUT << "[INFO](HistoryTemplate::instantiate) Adding context to branch history for bh.op{" << bh.opId() << "}; bh.contextSize{" << bh.getContext().size() << "}\n";
+
+                    auto &bhc = bh.getContext();
+                    bhc.insert(hc.begin(), hc.end());
+
+                    FOUT << "[INFO](HistoryTemplate::instantiate) Added context to branch history for bh.op{" << bh.opId() << "}; bh.contextSize{" << bh.getContext().size() << "}\n";
+                }
+                h.push_back(localH);
+                //h.emplace_back(hp.addContext(hc));
+                FOUT << "[INFO](HistoryTemplate::instantiate) Extended context size for H(" << p << ") :" << hp.getContext().size() << "\n";
+            //}
             }
             else {
-                // Add hc to existing parameter history
-                FOUT << "[INFO](HistoryTemplate::instantiate) Adding history context to history of " << function_ << ".$" << p << "\n";
-                auto hp = TypeTransforms.at(p);
-                h.emplace_back(hp.addContext(hc));
+                FOUT << "[INFO](HistoryTemplate::instantiate) History already exists for " << function_ << "var {" << makeHistoryId(p, hc[p]) << "}\n";
             }
             CNS_DEBUG("end for_each param step");
         });

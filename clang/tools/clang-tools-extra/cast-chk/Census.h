@@ -249,7 +249,7 @@ CensusKey const& opKey(CensusNode const& n) {
 
 std::vector<CensusKey> UseChain(OpData const &op) {
     CNS_DEBUG("");
-    CNS_INFO("Usechain");
+    //CNS_INFO("Usechain");
     auto doesOpDominate = [&op](CensusNode const &in) {
         CNS_DEBUG("");
         //FOUT << "[DEBUG](UseChain) Op.hash_ = " << op.hash_ << "\n";
@@ -354,13 +354,13 @@ void censusSummary() {
     for(auto const &[_, info]: census) {
        auto const &[op, __] = info;
 
-       elaborateUse(op, {1});
+       elaborateUse(op, {3});
     }
     for(auto const& n: census) {
         auto const& op = ops(n);
-        FOUT << "[INFO](censusSummary<void>) op: " << op.qn_ << "\n";
+        //FOUT << "[INFO](censusSummary<void>) op: " << op.qn_ << "\n";
         op.use_ = UseChain(op);
-        FOUT << "[INFO](censusSummary<void>) op.use_.size(): " << op.use_.size() << "\n";
+        //FOUT << "[INFO](censusSummary<void>) op.use_.size(): " << op.use_.size() << "\n";
     }
 
     /*

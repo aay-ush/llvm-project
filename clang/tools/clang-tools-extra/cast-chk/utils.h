@@ -704,22 +704,54 @@ std::string getLinkedParmQn(
         clang::CallExpr const& call,
         clang::Expr const &e) {
 
-    CNS_DEBUG("");
+    CNS_INFO("");
     auto const *fn = getContainerFunctionDecl(context, e);
     if(!fn) {
         CNS_INFO("Container fn == nullptr");
-        CNS_DEBUG("end.");
+        CNS_INFO("end.");
         return String(context, e);
     }
 
     auto const * dre = dyn_cast<clang::DeclRefExpr>(&e);
     if(dre) {
         CNS_INFO("<dre>");
-        CNS_DEBUG("end.");
+        CNS_INFO("end.");
         return getLinkedParmQn(context, *dre);
     }
 
-    CNS_DEBUG("end.");
+    auto const *ce = dyn_cast<clang::CastExpr>(&e);
+    if(ce) {
+        CNS_INFO("Got castexpr.");
+        FOUT << "[INFO ](getLinkedParmQn<call, e>) Cast subexpr: " << String(context, *(ce->getSubExpr())) << "\n";
+        auto const *dre2 = dyn_cast<clang::DeclRefExpr>(ce->getSubExpr());
+        if(dre) {
+            CNS_INFO("Got dre from castexpr.");
+            CNS_INFO("end.");
+            return getLinkedParmQn(context, *dre2);
+        }
+        else {
+            CNS_INFO("No dre from castexpr.");
+            // See if expr matches any of the fn parameters
+            unsigned pos = 0;
+            for(auto const* p: fn->parameters()) {
+                if(p->getNameAsString() == String(context, e)) {
+                    FOUT << "[INFO ](getLinkedParmQn<call, e>) Param match found at pos: " << pos << "\n";
+                    break;
+                }
+                pos++;
+            }
+            if(pos < fn->getNumParams()) {
+                return fn->getNameAsString() + ".$" + std::to_string(pos);
+            }
+            else {
+                CNS_INFO("No param matched.");
+            }
+
+        }
+    }
+
+    CNS_INFO("Found container fn but no dre.");
+    CNS_INFO("end.");
     // Search for a declrefexpr in expr and getlinkedParmQn on declref
     // or just return string
     return fn->getNameAsString() + "." + String(context, e);
@@ -896,6 +928,66 @@ unsigned cnsHash(clang::ASTContext &context, clang::DeclarationNameInfo const& n
         h.AddQualType(t->getType());
     }
     return h.CalculateHash();
+}
+
+clang::DeclRefExpr const* getFptrFromFptrCall(clang::ASTContext &context, clang::CallExpr const &call) {
+    auto const *fptrp = call.IgnoreImplicit();
+    if(fptrp) {
+        CNS_INFO("Got fptr from call expr after implicitignore.");
+        auto const * dre = dyn_cast<clang::DeclRefExpr>(fptrp);
+        if(dre) {
+            CNS_INFO("Got dre from fptr.");
+            return dre;
+        }
+        else {
+            CNS_INFO("No dre from fptr.");
+        }
+    }
+    CNS_INFO("No fptr. Yet.");
+    for(auto child: call.children()) {
+        auto const *ce = dyn_cast<clang::CastExpr>(child);
+        if(ce) {
+            CNS_INFO("Got castexpr from fptr.");
+            auto const *dre = dyn_cast<clang::DeclRefExpr>(ce->getSubExpr());
+            if(dre) {
+                CNS_INFO("Got dre from castexpr.");
+                return dre;
+            }
+            else {
+                CNS_INFO("No dre from castexpr.");
+            }
+        }
+        else {
+            CNS_INFO("No castexpr from fptr.");
+            auto const *dre = dyn_cast<clang::DeclRefExpr>(child);
+            if(dre) {
+                CNS_INFO("Got dre from child.");
+                return dre;
+            }
+            else {
+                CNS_INFO("No dre from child.");
+            }
+        }
+    }
+
+    return nullptr;
+}
+
+std::string getLinkedParmqnFromFptrCall(clang::ASTContext &context, clang::CallExpr const &call) {
+    CNS_DEBUG("");
+    auto const *fptr = getFptrFromFptrCall(context, call);
+    if(!fptr) {
+        CNS_DEBUG("No Fptr found. Using callee expr.");
+        auto const *fn = call.getCallee();
+        if(!fn) {
+            CNS_ERROR("No callee expr found. Stringifying call.");
+            return String(context, call);
+        }
+        CNS_DEBUG("end.");
+        return String(context, *fn);
+    }
+    CNS_DEBUG("end.");
+    return getLinkedParmQn(context, *fptr);
 }
 //--
 
