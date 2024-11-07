@@ -420,7 +420,7 @@ clang::FunctionDecl const* getContainerFunctionDecl(
     while(context) {
         if(auto const *func = dyn_cast<FunctionDecl>(context)) {
             // Found the parent function
-            FOUT << "[INFO](getContainerFunction<DC>) Found parent function: " << func->getNameAsString() << "\n";
+            FOUT << "[INFO ](getContainerFunction<DC>) Found parent function: " << func->getNameAsString() << "\n";
     CNS_DEBUG("<DeclContext, VarDecl> end.");
             return func;
         }
@@ -487,7 +487,7 @@ std::optional<unsigned> getParameterMatch(clang::FunctionDecl const &fn, clang::
     auto match = std::find_if(fn.param_begin(), fn.param_end(),
         [&] (auto const &parm) -> bool {
         parmPos++;
-        FOUT << "[INFO](getParametermatch) parmPos == " << parmPos << "\n";
+        FOUT << "[INFO ](getParametermatch) parmPos == " << parmPos << "\n";
         CNS_DEBUG("<FunctionDecl, DeclarationName> end.");
         auto parmName = parm->getDeclName();
         return parmName == matchName;
@@ -499,7 +499,7 @@ std::optional<unsigned> getParameterMatch(clang::FunctionDecl const &fn, clang::
         return std::nullopt;
     }
     else {
-        FOUT << "[INFO](getParametermatch) matched parmPos: " << parmPos - 1 << "\n";
+        FOUT << "[INFO ](getParametermatch) matched parmPos: " << parmPos - 1 << "\n";
         CNS_DEBUG("<FunctionDecl, DeclarationName> end.");
         return parmPos - 1;
     }
@@ -529,7 +529,7 @@ std::string getLinkedParm(
     }
 
     if(auto parmPos = getParameterMatch(*fn, name)) {
-        FOUT << "[INFO](getLinkedParm) parmPos: " << parmPos.value() << "; " << String(context, *fn, *parmPos) << "\n";
+        FOUT << "[INFO ](getLinkedParm) parmPos: " << parmPos.value() << "; " << String(context, *fn, *parmPos) << "\n";
         CNS_DEBUG("<T, DeclarationName> end.");
         return String(context, *fn, *parmPos);
     }
@@ -551,6 +551,43 @@ std::string getLinkedParm(
     return getLinkedParm(context, node, nameInfo.getName());
 }
 
+/*
+std::string getLinkedParmQn(
+        clang::ASTContext &context,
+        clang::Stmt const &node,
+        clang::DeclarationName const &name) {
+    CNS_INFO("");
+
+    // Check if node is function type, if yes just return name as string
+    auto const *tty = name.getCXXNameType().getTypePtr();
+    if(tty && tty->isFunctionType()) {
+    //if(TypeCategory(context, node) == "FunctionProto") {
+        CNS_INFO("Function type.");
+        return name.getAsString();
+    }
+
+    CNS_INFO("Not a function type.");
+
+    CNS_INFO("end.");
+}
+std::string getLinkedParmQn(
+        clang::ASTContext &context,
+        clang::ValueDecl const &node,
+        clang::DeclarationName const &name) {
+    CNS_INFO("");
+
+    if(node.getFunctionType() != nullptr) {
+        CNS_INFO("ValueDecl is a Function type.");
+        return name.getAsString();
+    }
+
+    CNS_INFO("ValueDecl is not a Function type. Using template for qn");
+    CNS_INFO("end.");
+    return getLinkedParmQn<>(context, node, name);
+}
+
+*/
+
 template<typename T>
 std::string getLinkedParmQn(
         clang::ASTContext &context,
@@ -567,12 +604,13 @@ std::string getLinkedParmQn(
     }
 
     if(auto parmPos = getParameterMatch(*fn, name)) {
-        FOUT << "[INFO](getLinkedParmQn) parmPos: " << parmPos.value() << "; " << parmqn(context, *fn, *parmPos) << "\n";
+        FOUT << "[INFO ](getLinkedParmQn) parmPos: " << parmPos.value() << "; " << parmqn(context, *fn, *parmPos) << "\n";
         CNS_DEBUG("<T, DeclarationName> end.");
         return parmqn(context, *fn, *parmPos);
     }
 
     CNS_WARN("parmPos nullopt.");
+
     CNS_DEBUG("<T, DeclarationName> end.");
     return getContainerFunction(context, node) + "." + name.getAsString();
 }
@@ -602,7 +640,7 @@ std::string getLinkedParm(
     }
 
     if(auto parmPos = getParameterMatch(*func, var.getDeclName())) {
-        FOUT << "[INFO](getLinkedParm<DC>) parmPos: " << parmPos.value() << "; " << parmqn(context->getParentASTContext(), *func, *parmPos) << "\n";
+        FOUT << "[INFO ](getLinkedParm<DC>) parmPos: " << parmPos.value() << "; " << parmqn(context->getParentASTContext(), *func, *parmPos) << "\n";
         CNS_DEBUG("<DeclContext, VarDecl> end.");
         return parmqn(context->getParentASTContext(), *func, *parmPos);
     }
@@ -625,7 +663,7 @@ std::string getLinkedParmQn(
     }
 
     if(auto parmPos = getParameterMatch(*func, var.getDeclName())) {
-        FOUT << "[INFO](getLinkedParmQn<DC>) parmPos: " << parmPos.value() << "; " << parmqn(context->getParentASTContext(), *func, *parmPos) << "\n";
+        FOUT << "[INFO ](getLinkedParmQn<DC>) parmPos: " << parmPos.value() << "; " << parmqn(context->getParentASTContext(), *func, *parmPos) << "\n";
         CNS_DEBUG("<DeclContext, VarDecl> end.");
         return parmqn(context->getParentASTContext(), *func, *parmPos);
     }
@@ -679,17 +717,24 @@ std::string getLinkedParmQn(
     auto const *stmt = dre.getExprStmt();
     auto const *decl = dre.getDecl();
     if(!!decl) {
-        CNS_INFO("DeclRefExpr");
+        CNS_INFO("DeclRefExpr is a decl.");
         auto const *var = dyn_cast<clang::VarDecl>(decl);
         if(var) {
             CNS_INFO("Found VarDecl from DeclRefExpr");
             return getLinkedParmQn(context, *var);
         }
-        CNS_WARN("NO VarDecl from DeclRefExpr");
+        CNS_INFO("No VarDecl from DeclRefExpr");
+        if(decl->getFunctionType() != nullptr) {
+            CNS_INFO("DeclRefExpr.decl is a Function type.");
+            CNS_INFO("Using just the function name is sufficient.");
+            return String(context, *decl);
+        }
+        CNS_WARN("DeclRefExpr.decl is not a Function type either.");
         return getContainerFunction(context, *decl) + "." + String(context, dre);
     }
 
     if(!!stmt) {
+        CNS_INFO("DeclRefExpr is a stmt.");
         CNS_INFO("Building data from Expr stmt from DeclRefExpr");
         return getContainerFunction(context, *stmt) + "." + String(context, dre);
     }

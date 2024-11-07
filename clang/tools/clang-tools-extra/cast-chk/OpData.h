@@ -156,7 +156,7 @@ OpData buildOpData(
     auto &context = parm.getASTContext();
     auto const &sm = context.getSourceManager();
 
-    FOUT << "[INFO](buildOpData<ParmVarDecl>) parm: \n"
+    FOUT << "[INFO ](buildOpData<ParmVarDecl>) parm: \n"
          << String(context, parm) << "; type: "
          << Typename(context, parm) << "\n";
 
@@ -181,7 +181,7 @@ OpData buildOpData(
     //auto &context = arg.getASTContext();
     auto const &sm = context.getSourceManager();
 
-    FOUT << "[INFO](buildOpData<Arg expr>) arg: \n"
+    FOUT << "[INFO ](buildOpData<Arg expr>) arg: \n"
          << String(context, arg) << "; type: "
          << Typename(context, arg) << "\n";
 
@@ -203,7 +203,7 @@ OpData buildOpData(
         clang::SourceManager const &sm,
         clang::VarDecl const &var) {
 
-    FOUT << "[INFO](buildOpData<VarDecl>) var: \n"
+    FOUT << "[INFO ](buildOpData<VarDecl>) var: \n"
          << String(context, var) << "; type: "
          << Typename(context, var) << "\n";
 
@@ -226,7 +226,7 @@ OpData buildOpData(
         clang::DeclRefExpr const &e,
         clang::ValueDecl const &decl) {
 
-    FOUT << "[INFO](buildOpData<ValueDecl>) decl: \n"
+    FOUT << "[INFO ](buildOpData<ValueDecl>) decl: \n"
          << String(context, decl) << "; type: "
          << Typename(context, decl) << "\n";
 
@@ -238,7 +238,7 @@ OpData buildOpData(
         getLinkedParm(context, e, decl.getDeclName()),
         getContainerFunction(context, e),
         decl.getLocation().printToString(sm),
-        getLinkedParmQn(context, e, decl.getDeclName())
+        getLinkedParmQn(context, e) //, decl.getDeclName())
     };
 }
 
@@ -250,7 +250,7 @@ OpData buildOpData(
         clang::DeclRefExpr const &e,
         clang::ValueDecl const& decl) {
 
-    FOUT << "[INFO](buildOpData<Decl>) decl: \n"
+    FOUT << "[INFO ](buildOpData<Decl>) decl: \n"
          << String(context, e) << "; type: "
          << Typename(context, e) << "\n";
 
@@ -274,7 +274,7 @@ OpData buildOpData(
         clang::DeclRefExpr const &e,
         clang::Stmt const& s) {
 
-    FOUT << "[INFO](buildOpData<Stmt>) stmt: \n"
+    FOUT << "[INFO ](buildOpData<Stmt>) stmt: \n"
          << String(context, s) << "; type: "
          << Typename(context, e) << "\n";
 
@@ -298,7 +298,7 @@ OpData buildOpData(
         clang::DeclRefExpr const &e) {
 
     CNS_DEBUG("<DeclRef>");
-    FOUT << "[INFO](buildOpData<DeclRef>) ref: \n"
+    FOUT << "[INFO ](buildOpData<DeclRef>) ref: \n"
          << String(context, e) << "; type: "
          << Typename(context, e) << "\n";
 
@@ -387,7 +387,7 @@ OpData buildOpDataArg(
         clang::Expr const &arg,
         clang::DeclRefExpr const &e) {
 
-    FOUT << "[INFO](buildOpData<DeclRef2>) ref: \n"
+    FOUT << "[INFO ](buildOpData<DeclRef2>) ref: \n"
          << String(context, e) << "; type: "
          << Typename(context, e) << "\n";
 
@@ -459,7 +459,7 @@ OpData buildOpData<CastSourceType::UnaryOp>(
         clang::CastExpr const &castExpr,
         clang::UnaryOperator const &op) {
 
-    FOUT << "[INFO](buildOpData<UnaryOp>) op: \n"
+    FOUT << "[INFO ](buildOpData<UnaryOp>) op: \n"
          << String(context, op) << "; type: "
          << Typename(context, op) << "\n";
 
@@ -484,7 +484,7 @@ OpData buildOpData<CastSourceType::Function>(
         clang::CastExpr const &castExpr,
         clang::CallExpr const &e) {
 
-    FOUT << "[INFO](buildOpData<callExpr:fptr>) call: \n"
+    FOUT << "[INFO ](buildOpData<callExpr:fptr>) call: \n"
          << String(context, e) << "\n";
 
     return {
@@ -510,7 +510,7 @@ OpData buildOpData<CastSourceType::FunctionArg>(
         clang::CastExpr const &castExpr,
         clang::CallExpr const &e) {
 
-    FOUT << "[INFO](buildOpData<callExpr:farg>) call: \n"
+    FOUT << "[INFO ](buildOpData<callExpr:farg>) call: \n"
          << String(context, e) << "\n"
          << "; Cast expr: " << String(context, castExpr) << "\n";
 

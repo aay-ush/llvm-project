@@ -358,9 +358,9 @@ void censusSummary() {
     }
     for(auto const& n: census) {
         auto const& op = ops(n);
-        //FOUT << "[INFO](censusSummary<void>) op: " << op.qn_ << "\n";
+        //FOUT << "[INFO ](censusSummary<void>) op: " << op.qn_ << "\n";
         op.use_ = UseChain(op);
-        //FOUT << "[INFO](censusSummary<void>) op.use_.size(): " << op.use_.size() << "\n";
+        //FOUT << "[INFO ](censusSummary<void>) op.use_.size(): " << op.use_.size() << "\n";
     }
 
     /*

@@ -90,7 +90,7 @@ bool isNodeDominatorNew(
         return true;
     }
 
-    FOUT << "[INFO](isNodeDominatorNew) Checking current doms for this dom[" << dom.from_.qn_ << "]\n";
+    FOUT << "[INFO ](isNodeDominatorNew) Checking current doms for this dom[" << dom.from_.qn_ << "]\n";
     auto doms = doms_.value();
     CNS_DEBUG(" end.");
     return std::find(begin(doms), end(doms), dom)
@@ -155,7 +155,7 @@ void updateHistory(
     // Retrieve H(to)
     if(TypeTransforms.find(to.qn_) == std::end(TypeTransforms)) {
         // Add H(to)
-        FOUT << "[INFO](updateHistory) :to: New history started for " << to.qn_ << "\n";
+        FOUT << "[INFO ](updateHistory) :to: New history started for " << to.qn_ << "\n";
         TypeTransforms.insert({to.qn_, History(to.qn_)});
         // sanity check
         if(TypeTransforms.find(to.qn_) == std::end(TypeTransforms)) {
@@ -165,13 +165,13 @@ void updateHistory(
         }
     }
     else {
-        FOUT << "[INFO](updateHistory) :to: History of " << to.qn_ << "already on record. No action needed.\n";
+        FOUT << "[INFO ](updateHistory) :to: History of " << to.qn_ << " already on record. No action needed.\n";
     }
 
     // Retrieve H(from)
     if(TypeTransforms.find(from.qn_) == std::end(TypeTransforms)) {
         // Add H(from)
-        FOUT << "[INFO](updateHistory) :from: New history started for " << from.qn_ << "\n";
+        FOUT << "[INFO ](updateHistory) :from: New history started for " << from.qn_ << "\n";
         TypeTransforms.insert({from.qn_, History(from.qn_)});
         // sanity check
         if(TypeTransforms.find(from.qn_) == std::end(TypeTransforms)) {
@@ -181,9 +181,38 @@ void updateHistory(
         }
     }
 
-    // Extend H(from) with H(to)
-    FOUT << "[INFO](updateHistory) :from: Extending history of " << from.qn_ << " with " << to.qn_ << "\n";
-    TypeTransforms.at(from.qn_).extend(TypeTransforms.at(to.qn_));
+    if(to.category_ == "FunctionPointer") {
+        // Why ech context is not part of extended context.
+        // To history is already locally instantiated in some TT.
+        // Adding the context doesn't work as the local instantiations are not updated.
+        //  -> Update context on each branch history
+        //  -> Or in instantiation, keep a reference to global history with local context.
+        //     -> i.e. branch will keep references instead of copies.
+        //     -> seems like a better approach.
+        FOUT << "[INFO ](updateHistory) :toFP: Creating new context {key, value} = {" << to.qn_ << ", " << from.qn_ << "}\n";
+        HistoryContext hc;
+        hc[to.qn_] = from.qn_;
+
+        auto &foh = TypeTransforms.at(from.qn_);
+        auto const &toh = TypeTransforms.at(to.qn_);
+        FOUT << "[INFO ](updateHistory) :toFP: Adding context to ToHistory: " << toh.idversion() << "\n";
+        auto ech = toh.addContext(hc);
+        FOUT << "[INFO ](updateHistory) :toFP: New ToHistory version: " << ech.idversion() << "\n";
+        FOUT << "[INFO ](updateHistory) :toFP: Extending history from: " << foh.idversion() << " with " << ech.idversion() << "\n";
+        //TypeTransforms.at(from.qn_).extend(ech);
+        foh.extend(ech);
+        FOUT << "[INFO ](updateHistory) :toFP: New from version: " << foh.idversion() << "\n";
+    }
+    else {
+        // Extend H(from) with H(to)
+        //FOUT << "[INFO ](updateHistory) :from: Extending history of " << from.qn_ << " with " << to.qn_ << "\n";
+        //TypeTransforms.at(from.qn_).extend(TypeTransforms.at(to.qn_));
+        auto &foh = TypeTransforms.at(from.qn_);
+        auto const &toh = TypeTransforms.at(to.qn_);
+        FOUT << "[INFO ](updateHistory) :from: Extending history " << foh.idversion() << " with " << toh.idversion() << "\n";
+        foh.extend(toh);
+        FOUT << "[INFO ](updateHistory) :from: New from version: " << foh.idversion() << "\n";
+    }
 
     CNS_DEBUG("end.");
 }
@@ -569,7 +598,7 @@ auto buildOpDatas(clang::ASTContext &context,
                     rhs = {
                         cnsHash(context, *arg),
                         ss.str(),
-                        Typename(context, *arg),     // Since we can't get decl from callee expr.
+                        "",//Typename(context, *arg),     // Since we can't get decl from callee expr.
                         TypeCategory(context, *arg),
                         String(context, call, pos),
                         getContainerFunction(context, *arg),
@@ -582,7 +611,7 @@ auto buildOpDatas(clang::ASTContext &context,
                     rhs = {
                         cnsHash(context, *arg),
                         String(context, *arg),
-                        Typename(context, *arg),
+                        "", //Typename(context, *arg),
                         TypeCategory(context, *arg),
                         String(context, call, pos),
                         getContainerFunction(context, *arg),
@@ -606,18 +635,18 @@ auto buildOpDatas(clang::ASTContext &context,
             auto itTo = std::find(begin(TypeTransforms), end(TypeTransforms), rhs.qn_);
             if(itTo == std::end(TypeTransforms)) {
                 // Add H(to)
-                FOUT << "[INFO](updateHistory) :to: New history started for " << rhs.qn_ << "\n";
+                FOUT << "[INFO ](updateHistory) :to: New history started for " << rhs.qn_ << "\n";
                 TypeTransforms.emplace_back(rhs.qn_);
             }
             */
             if(TypeTransforms.find(lhs.qn_) == std::end(TypeTransforms)) {
                 // Add H(from)
-                FOUT << "[INFO](updateHistory) :from: New history started for " << lhs.qn_ << "\n";
+                FOUT << "[INFO ](updateHistory) :from: New history started for " << lhs.qn_ << "\n";
                 TypeTransforms.insert({lhs.qn_, History(lhs.qn_)});
             }
             if(TypeTransforms.find(rhs.qn_) == std::end(TypeTransforms)) {
                 // Add H(to)
-                FOUT << "[INFO](updateHistory) :to: New history started for " << rhs.qn_ << "\n";
+                FOUT << "[INFO ](updateHistory) :to: New history started for " << rhs.qn_ << "\n";
                 TypeTransforms.insert({rhs.qn_, History(rhs.qn_)});
                 TypeTransforms.at(lhs.qn_).extend(TypeTransforms.at(rhs.qn_));
             }
@@ -685,12 +714,13 @@ void addCallHistory(clang::ASTContext & context, clang::CallExpr const& call) {
             // get key for a
             auto const qn = getLinkedParmQn(context, call, *a);
 
+            // Contextualized history = local history; arg history gets extended by local contextual parm history
             // Search history of a
             if(TypeTransforms.find(qn) != std::end(TypeTransforms)) {
                 FOUT << "[DEBUG](addCallHistory) Found existing history for " << qn << "\n";
                 // extend history
                 if(i < hs.size()) {
-                    FOUT << "[INFO](addCallHistory) Extending history for " << qn << " with " << hs[i].opId() << "\n";
+                    FOUT << "[INFO ](addCallHistory) Extending history for " << qn << " with " << hs[i].opId() << "\n";
                     TypeTransforms.at(qn).extend(hs.at(i));
                 }
                 else {
@@ -742,14 +772,14 @@ void preprocess(
     /*
     auto it = std::find(begin(TransformTemplates), end(TransformTemplates), fn);
     if(it != std::end(TransformTemplates)) {
-        FOUT << "[INFO](preprocess<CallExpr>) Skipping processed function: " << String(context, *calledFn) << "\n";
+        FOUT << "[INFO ](preprocess<CallExpr>) Skipping processed function: " << String(context, *calledFn) << "\n";
         CNS_DEBUG("<CallExpr> end.");
         return;
     }
     */
 
     if(std::find(begin(ignoreFunctions), end(ignoreFunctions), fn) != end(ignoreFunctions)) {
-        FOUT << "[INFO](preprocess<CallExpr>) Skipping ignored function: " << String(context, *calledFn) << "\n";
+        FOUT << "[INFO ](preprocess<CallExpr>) Skipping ignored function: " << String(context, *calledFn) << "\n";
         CNS_INFO("<CallExpr> Adding ignored function to seen functions.");
         CNS_DEBUG("<CallExpr> end.");
         return; // ignore
@@ -757,7 +787,7 @@ void preprocess(
 
     auto h = cnsHash(context, *calledFn);
     if(std::find(begin(seenFunctions), end(seenFunctions), h) != end(seenFunctions)) {
-        FOUT << "[INFO](preprocess<CallExpr>) Skipping seen function: " << String(context, *calledFn) << "\n";
+        FOUT << "[INFO ](preprocess<CallExpr>) Skipping seen function: " << String(context, *calledFn) << "\n";
         CNS_DEBUG("<CallExpr> end.");
         return; // seen
     }
@@ -780,11 +810,11 @@ void preprocess(
     // Perhaps that's not true TODO Check
     auto it = std::find(begin(TransformTemplates), end(TransformTemplates), fn);
     if(it == std::end(TransformTemplates)) {
-        FOUT << "[INFO](preprocess<CallExpr> Adding template for function: " << fn << "()\n";
+        FOUT << "[INFO ](preprocess<CallExpr> Adding template for function: " << fn << "()\n";
         TransformTemplates.push_back({*calledFn});
     }
     else {
-        FOUT << "[INFO](preprocess<CallExpr> Template for function: " << fn << "() exists.\n";
+        FOUT << "[INFO ](preprocess<CallExpr> Template for function: " << fn << "() exists.\n";
     }
     // TODO end
 
@@ -972,9 +1002,9 @@ int main(int argc, const char **argv) {
 
     CastMatchCallback historian;
     MatchFinder Finder;
-    Finder.addMatcher(CastMatcher, &historian);
     Finder.addMatcher(AssignMatcher, &historian);
     Finder.addMatcher(CallMatcher, &historian);
+    Finder.addMatcher(CastMatcher, &historian);
 
     buildIgnoreList();
     FOUT.open("census-dump.txt", std::ios::out);
