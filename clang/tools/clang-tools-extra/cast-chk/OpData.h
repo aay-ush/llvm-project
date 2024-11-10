@@ -168,7 +168,7 @@ OpData buildOpData(
         getLinkedParm(context, parm),
         getContainerFunction(context, parm),
         parm.getLocation().printToString(sm),
-        getLinkedParmQn(context, parm)
+        qualifiedName(context, parm)
     };
 }
 
@@ -193,7 +193,7 @@ OpData buildOpData(
         String(context, arg), //getLinkedParm(context, arg),
         getContainerFunction(context, arg),
         arg.getExprLoc().printToString(sm),
-        String(context, arg), //getLinkedParmQn(context, arg),
+        String(context, arg), //qualifiedName(context, arg),
     };
 }
 
@@ -215,7 +215,7 @@ OpData buildOpData(
         getLinkedParm(context, var),
         getContainerFunction(context, var),
         var.getLocation().printToString(sm),
-        getLinkedParmQn(context, var)
+        qualifiedName(context, var)
     };
 }
 
@@ -238,7 +238,7 @@ OpData buildOpData(
         getLinkedParm(context, e, decl.getDeclName()),
         getContainerFunction(context, e),
         decl.getLocation().printToString(sm),
-        getLinkedParmQn(context, e) //, decl.getDeclName())
+        qualifiedName(context, e) //, decl.getDeclName())
     };
 }
 
@@ -262,7 +262,7 @@ OpData buildOpData(
         getLinkedParm(context, decl, decl.getDeclName()),
         getContainerFunction(context, castExpr),
         decl.getLocation().printToString(sm),
-        getLinkedParmQn(context, decl, decl.getDeclName())
+        qualifiedName(context, decl, decl.getDeclName())
     };
 }
 
@@ -286,7 +286,7 @@ OpData buildOpData(
         getLinkedParm(context, s, e.getNameInfo()),
         getContainerFunction(context, castExpr),
         castExpr.getExprLoc().printToString(sm),
-        getLinkedParmQn(context, s, e.getNameInfo())
+        qualifiedName(context, s, e.getNameInfo())
     };
 }
 
@@ -419,7 +419,7 @@ OpData buildOpDataArg(
             getLinkedParm(context, *decl, e.getNameInfo()),
             getContainerFunction(context, arg),
             arg.getExprLoc().printToString(sm),
-            getLinkedParmQn(context, *decl, e.getNameInfo())
+            qualifiedName(context, *decl, e.getNameInfo())
         };
     }
 
@@ -434,7 +434,7 @@ OpData buildOpDataArg(
             getLinkedParm(context, *stmt, e.getNameInfo()),
             getContainerFunction(context, arg),
             arg.getExprLoc().printToString(sm),
-            getLinkedParmQn(context, *stmt, e.getNameInfo())
+            qualifiedName(context, *stmt, e.getNameInfo())
         };
     }
 

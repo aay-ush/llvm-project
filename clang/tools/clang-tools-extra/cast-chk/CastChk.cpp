@@ -156,7 +156,8 @@ void updateHistory(
     if(TypeTransforms.find(to.qn_) == std::end(TypeTransforms)) {
         // Add H(to)
         FOUT << "[INFO ](updateHistory) :to: New history started for " << to.qn_ << "\n";
-        TypeTransforms.insert({to.qn_, History(to.qn_)});
+        TypeTransforms.emplace(to.qn_, History(to.qn_));
+        //TypeTransforms.insert({to.qn_, History(to.qn_)});
         // sanity check
         if(TypeTransforms.find(to.qn_) == std::end(TypeTransforms)) {
             FOUT << "[ERROR](updateHistory) :to: Could not insert history for " << to.qn_ << "\n";
@@ -172,7 +173,8 @@ void updateHistory(
     if(TypeTransforms.find(from.qn_) == std::end(TypeTransforms)) {
         // Add H(from)
         FOUT << "[INFO ](updateHistory) :from: New history started for " << from.qn_ << "\n";
-        TypeTransforms.insert({from.qn_, History(from.qn_)});
+        TypeTransforms.emplace(from.qn_, History(from.qn_));
+        //TypeTransforms.insert({from.qn_, History(from.qn_)});
         // sanity check
         if(TypeTransforms.find(from.qn_) == std::end(TypeTransforms)) {
             FOUT << "[ERROR](updateHistory) :from: Could not insert history for " << from.qn_ << "\n";
@@ -194,13 +196,15 @@ void updateHistory(
         hc[to.qn_] = from.qn_;
 
         auto &foh = TypeTransforms.at(from.qn_);
-        auto const &toh = TypeTransforms.at(to.qn_);
+        auto &toh = TypeTransforms.at(to.qn_);
         FOUT << "[INFO ](updateHistory) :toFP: Adding context to ToHistory: " << toh.idversion() << "\n";
-        auto ech = toh.addContext(hc);
-        FOUT << "[INFO ](updateHistory) :toFP: New ToHistory version: " << ech.idversion() << "\n";
-        FOUT << "[INFO ](updateHistory) :toFP: Extending history from: " << foh.idversion() << " with " << ech.idversion() << "\n";
+        //auto ech = toh.addContext(hc);
+        toh.addContext(hc);
+        FOUT << "[INFO ](updateHistory) :toFP: New ToHistory version: " << toh.idversion() << "\n";
+        FOUT << "[INFO ](updateHistory) :toFP: Extending history from: " << foh.idversion() << " with " << toh.idversion() << "\n";
         //TypeTransforms.at(from.qn_).extend(ech);
-        foh.extend(ech);
+        //foh.extend({toh, hc}); //ech);
+        foh.extend(toh);
         FOUT << "[INFO ](updateHistory) :toFP: New from version: " << foh.idversion() << "\n";
     }
     else {
@@ -460,7 +464,7 @@ OpData buildArgOp(clang::ASTContext &context,
             String(context, arg),
             getContainerFunction(context, arg),
             call.getExprLoc().printToString(sm),
-            getLinkedParmQn(context, call, arg)
+            qualifiedName(context, call, arg)
         };
     }
     auto const *dre = dyn_cast<DeclRefExpr>(e);
@@ -475,7 +479,7 @@ OpData buildArgOp(clang::ASTContext &context,
             String(context, arg),
             getContainerFunction(context, arg),
             call.getExprLoc().printToString(sm),
-            getLinkedParmQn(context, call, arg)
+            qualifiedName(context, call, arg)
         };
     }
     CNS_DEBUG("Got DRE from arg.");
@@ -539,7 +543,7 @@ auto buildOpDatas(clang::ASTContext &context,
                         auto const * dre = dyn_cast<clang::DeclRefExpr>(fptrp);
                         if(dre) {
                             CNS_INFO("Got dre from fptr.");
-                            ss << getLinkedParmQn(context, *dre);
+                            ss << qualifiedName(context, *dre);
                         }
                         else {
                             CNS_INFO("No dre from fptr.");
@@ -550,7 +554,7 @@ auto buildOpDatas(clang::ASTContext &context,
                                     auto const *dre = dyn_cast<clang::DeclRefExpr>(ce->getSubExpr());
                                     if(dre) {
                                         CNS_INFO("Got dre from castexpr.");
-                                        ss << getLinkedParmQn(context, *dre);
+                                        ss << qualifiedName(context, *dre);
                                         break;
                                     }
                                     else {
@@ -562,7 +566,7 @@ auto buildOpDatas(clang::ASTContext &context,
                                     auto const *dre = dyn_cast<clang::DeclRefExpr>(child);
                                     if(dre) {
                                         CNS_INFO("Got dre from child.");
-                                        ss << getLinkedParmQn(context, *dre);
+                                        ss << qualifiedName(context, *dre);
                                         break;
                                     }
                                     else {
@@ -576,14 +580,14 @@ auto buildOpDatas(clang::ASTContext &context,
                             while(cit != call.child_end()) {
                                 if(dre) {
                                     CNS_INFO("Got dre from cit.");
-                                    ss << getLinkedParmQn(context, *dre);
+                                    ss << qualifiedName(context, *dre);
                                     break;
                                 }
                                 ++cit;
                             }
                             if(!dre) {
                                 CNS_INFO("No dre from children.");
-                                ss << getLinkedParmQn(context, call, *fptrp);
+                                ss << qualifiedName(context, call, *fptrp);
                             }
                             */
                         }
@@ -642,13 +646,16 @@ auto buildOpDatas(clang::ASTContext &context,
             if(TypeTransforms.find(lhs.qn_) == std::end(TypeTransforms)) {
                 // Add H(from)
                 FOUT << "[INFO ](updateHistory) :from: New history started for " << lhs.qn_ << "\n";
-                TypeTransforms.insert({lhs.qn_, History(lhs.qn_)});
+                TypeTransforms.emplace(lhs.qn_, History(lhs.qn_));
+                //TypeTransforms.insert({lhs.qn_, History(lhs.qn_)});
             }
             if(TypeTransforms.find(rhs.qn_) == std::end(TypeTransforms)) {
                 // Add H(to)
                 FOUT << "[INFO ](updateHistory) :to: New history started for " << rhs.qn_ << "\n";
-                TypeTransforms.insert({rhs.qn_, History(rhs.qn_)});
-                TypeTransforms.at(lhs.qn_).extend(TypeTransforms.at(rhs.qn_));
+                TypeTransforms.emplace(rhs.qn_, History(rhs.qn_));
+                //TypeTransforms.insert({rhs.qn_, History(rhs.qn_)});
+                // Why is this needed?
+                //TypeTransforms.at(lhs.qn_).extend(TypeTransforms.at(rhs.qn_));
             }
             logCensusUpdate(lhs, rhs, dom);
             pos++;
@@ -670,7 +677,7 @@ void addCallHistory(clang::ASTContext & context, clang::CallExpr const& call) {
             return;
         }
 
-        fn = getLinkedParmqnFromFptrCall(context, call);
+        fn = qualifiedNameFromFptrCall(context, call);
         auto it = std::find(begin(TransformTemplates), end(TransformTemplates), fn);
         if(it == std::end(TransformTemplates)) {
             FOUT << "[DEBUG](addCallHistory) No template found for : " << fn << "()\n";
@@ -712,16 +719,16 @@ void addCallHistory(clang::ASTContext & context, clang::CallExpr const& call) {
     std::for_each(call.arg_begin(), call.arg_end(), [&](auto const *a) {
             CNS_DEBUG("for_each arg");
             // get key for a
-            auto const qn = getLinkedParmQn(context, call, *a);
+            auto const argQn = qualifiedName(context, call, *a);
 
             // Contextualized history = local history; arg history gets extended by local contextual parm history
             // Search history of a
-            if(TypeTransforms.find(qn) != std::end(TypeTransforms)) {
-                FOUT << "[DEBUG](addCallHistory) Found existing history for " << qn << "\n";
+            if(TypeTransforms.find(argQn) != std::end(TypeTransforms)) {
+                FOUT << "[DEBUG](addCallHistory) Found existing history for " << argQn << "\n";
                 // extend history
                 if(i < hs.size()) {
-                    FOUT << "[INFO ](addCallHistory) Extending history for " << qn << " with " << hs[i].opId() << "\n";
-                    TypeTransforms.at(qn).extend(hs.at(i));
+                    FOUT << "[INFO ](addCallHistory) Extending history for " << argQn << " with " << hs[i].first.get().opId() << "\n";
+                    TypeTransforms.at(argQn).extend(hs.at(i));
                 }
                 else {
                     CNS_ERROR("Out of bound history insert.");
@@ -729,12 +736,13 @@ void addCallHistory(clang::ASTContext & context, clang::CallExpr const& call) {
             }
             else {
                 // add new history
-                FOUT << "[DEBUG](addCallHistory) Adding new history for " << qn << "\n";
+                FOUT << "[DEBUG](addCallHistory) Adding new history for " << argQn << "\n";
                 //TypeTransforms.insert({hs[i].opId(), hs[i]});
-                auto hqn = History(qn);
-                FOUT << "[DEBUG](addCallHistory) Extending history for " << qn << " with " << hs[i].opId() << "\n";
+                auto hqn = History(argQn);
+                FOUT << "[DEBUG](addCallHistory) Extending history for " << argQn << " with " << hs[i].first.get().opId() << "\n";
                 hqn.extend(hs[i]);
-                TypeTransforms.insert({qn, hqn});
+                TypeTransforms.emplace(argQn, std::move(hqn));
+                //TypeTransforms.insert({qn, hqn});
             }
             ++i;
         });

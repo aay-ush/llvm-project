@@ -552,7 +552,7 @@ std::string getLinkedParm(
 }
 
 /*
-std::string getLinkedParmQn(
+std::string qualifiedName(
         clang::ASTContext &context,
         clang::Stmt const &node,
         clang::DeclarationName const &name) {
@@ -570,7 +570,7 @@ std::string getLinkedParmQn(
 
     CNS_INFO("end.");
 }
-std::string getLinkedParmQn(
+std::string qualifiedName(
         clang::ASTContext &context,
         clang::ValueDecl const &node,
         clang::DeclarationName const &name) {
@@ -583,13 +583,13 @@ std::string getLinkedParmQn(
 
     CNS_INFO("ValueDecl is not a Function type. Using template for qn");
     CNS_INFO("end.");
-    return getLinkedParmQn<>(context, node, name);
+    return qualifiedName<>(context, node, name);
 }
 
 */
 
 template<typename T>
-std::string getLinkedParmQn(
+std::string qualifiedName(
         clang::ASTContext &context,
         T const &node,
         clang::DeclarationName const &name) {
@@ -604,7 +604,7 @@ std::string getLinkedParmQn(
     }
 
     if(auto parmPos = getParameterMatch(*fn, name)) {
-        FOUT << "[INFO ](getLinkedParmQn) parmPos: " << parmPos.value() << "; " << parmqn(context, *fn, *parmPos) << "\n";
+        FOUT << "[INFO ](qualifiedName) parmPos: " << parmPos.value() << "; " << parmqn(context, *fn, *parmPos) << "\n";
         CNS_DEBUG("<T, DeclarationName> end.");
         return parmqn(context, *fn, *parmPos);
     }
@@ -616,7 +616,7 @@ std::string getLinkedParmQn(
 }
 
 template<typename T>
-std::string getLinkedParmQn(
+std::string qualifiedName(
         clang::ASTContext &context,
         T const &node,
         clang::DeclarationNameInfo const &nameInfo) {
@@ -624,7 +624,7 @@ std::string getLinkedParmQn(
     CNS_DEBUG("<T, DeclarationNameInfo>");
     //CNS_INFO("declnameinfo");
     CNS_DEBUG("<T, DeclarationNameInfo> end.");
-    return getLinkedParmQn(context, node, nameInfo.getName());
+    return qualifiedName(context, node, nameInfo.getName());
 }
 
 std::string getLinkedParm(
@@ -650,7 +650,7 @@ std::string getLinkedParm(
     return "{local}";
 }
 
-std::string getLinkedParmQn(
+std::string qualifiedName(
         clang::DeclContext const *context,
         clang::VarDecl const &var) {
 
@@ -663,7 +663,7 @@ std::string getLinkedParmQn(
     }
 
     if(auto parmPos = getParameterMatch(*func, var.getDeclName())) {
-        FOUT << "[INFO ](getLinkedParmQn<DC>) parmPos: " << parmPos.value() << "; " << parmqn(context->getParentASTContext(), *func, *parmPos) << "\n";
+        FOUT << "[INFO ](qualifiedName<DC>) parmPos: " << parmPos.value() << "; " << parmqn(context->getParentASTContext(), *func, *parmPos) << "\n";
         CNS_DEBUG("<DeclContext, VarDecl> end.");
         return parmqn(context->getParentASTContext(), *func, *parmPos);
     }
@@ -673,7 +673,7 @@ std::string getLinkedParmQn(
     return  getContainerFunction(context->getParentASTContext(), var) + "." + String(context->getParentASTContext(), var);
 }
 
-std::string getLinkedParmQn(
+std::string qualifiedName(
         clang::ASTContext &context,
         clang::VarDecl const &var) {
     CNS_DEBUG("");
@@ -688,18 +688,18 @@ std::string getLinkedParmQn(
         if(!c2) {
             CNS_INFO("Using iContext.");
             CNS_DEBUG("end.");
-            return getLinkedParmQn(context, var, var.getDeclName());
+            return qualifiedName(context, var, var.getDeclName());
         }
 
         CNS_INFO("Trying with var.getDeclContext");
         CNS_DEBUG("end.");
-        return getLinkedParmQn(c2, var);
+        return qualifiedName(c2, var);
     }
     CNS_DEBUG("end.");
     return "(whatisit?)";
 }
 
-std::string getLinkedParmQn(
+std::string qualifiedName(
         clang::ASTContext &context,
         clang::DeclRefExpr const& dre) {
 
@@ -710,7 +710,7 @@ std::string getLinkedParmQn(
         auto const *vd = dyn_cast<VarDecl>(refd);
         if(vd) {
             CNS_INFO("ReferencedDecl is VarDecl");
-            return getLinkedParmQn(context, *vd);
+            return qualifiedName(context, *vd);
         }
     }
 
@@ -721,7 +721,7 @@ std::string getLinkedParmQn(
         auto const *var = dyn_cast<clang::VarDecl>(decl);
         if(var) {
             CNS_INFO("Found VarDecl from DeclRefExpr");
-            return getLinkedParmQn(context, *var);
+            return qualifiedName(context, *var);
         }
         CNS_INFO("No VarDecl from DeclRefExpr");
         if(decl->getFunctionType() != nullptr) {
@@ -744,7 +744,7 @@ std::string getLinkedParmQn(
     return getContainerFunction(context, dre) + "." + String(context, dre);
 }
 
-std::string getLinkedParmQn(
+std::string qualifiedName(
         clang::ASTContext &context,
         clang::CallExpr const& call,
         clang::Expr const &e) {
@@ -761,18 +761,18 @@ std::string getLinkedParmQn(
     if(dre) {
         CNS_INFO("<dre>");
         CNS_INFO("end.");
-        return getLinkedParmQn(context, *dre);
+        return qualifiedName(context, *dre);
     }
 
     auto const *ce = dyn_cast<clang::CastExpr>(&e);
     if(ce) {
         CNS_INFO("Got castexpr.");
-        FOUT << "[INFO ](getLinkedParmQn<call, e>) Cast subexpr: " << String(context, *(ce->getSubExpr())) << "\n";
+        FOUT << "[INFO ](qualifiedName<call, e>) Cast subexpr: " << String(context, *(ce->getSubExpr())) << "\n";
         auto const *dre2 = dyn_cast<clang::DeclRefExpr>(ce->getSubExpr());
         if(dre) {
             CNS_INFO("Got dre from castexpr.");
             CNS_INFO("end.");
-            return getLinkedParmQn(context, *dre2);
+            return qualifiedName(context, *dre2);
         }
         else {
             CNS_INFO("No dre from castexpr.");
@@ -780,7 +780,7 @@ std::string getLinkedParmQn(
             unsigned pos = 0;
             for(auto const* p: fn->parameters()) {
                 if(p->getNameAsString() == String(context, e)) {
-                    FOUT << "[INFO ](getLinkedParmQn<call, e>) Param match found at pos: " << pos << "\n";
+                    FOUT << "[INFO ](qualifiedName<call, e>) Param match found at pos: " << pos << "\n";
                     break;
                 }
                 pos++;
@@ -797,7 +797,7 @@ std::string getLinkedParmQn(
 
     CNS_INFO("Found container fn but no dre.");
     CNS_INFO("end.");
-    // Search for a declrefexpr in expr and getlinkedParmQn on declref
+    // Search for a declrefexpr in expr and qualifiedName on declref
     // or just return string
     return fn->getNameAsString() + "." + String(context, e);
 }
@@ -1018,7 +1018,7 @@ clang::DeclRefExpr const* getFptrFromFptrCall(clang::ASTContext &context, clang:
     return nullptr;
 }
 
-std::string getLinkedParmqnFromFptrCall(clang::ASTContext &context, clang::CallExpr const &call) {
+std::string qualifiedNameFromFptrCall(clang::ASTContext &context, clang::CallExpr const &call) {
     CNS_DEBUG("");
     auto const *fptr = getFptrFromFptrCall(context, call);
     if(!fptr) {
@@ -1032,7 +1032,7 @@ std::string getLinkedParmqnFromFptrCall(clang::ASTContext &context, clang::CallE
         return String(context, *fn);
     }
     CNS_DEBUG("end.");
-    return getLinkedParmQn(context, *fptr);
+    return qualifiedName(context, *fptr);
 }
 //--
 
