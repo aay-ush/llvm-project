@@ -156,7 +156,7 @@ void updateHistory(
     if(TypeTransforms.find(to.qn_) == std::end(TypeTransforms)) {
         // Add H(to)
         FOUT << "[INFO ](updateHistory) :to: New history started for " << to.qn_ << "\n";
-        TypeTransforms.emplace(to.qn_, History(to.qn_));
+        TypeTransforms.emplace(to.qn_, to.qn_);
         //TypeTransforms.insert({to.qn_, History(to.qn_)});
         // sanity check
         if(TypeTransforms.find(to.qn_) == std::end(TypeTransforms)) {
@@ -173,7 +173,7 @@ void updateHistory(
     if(TypeTransforms.find(from.qn_) == std::end(TypeTransforms)) {
         // Add H(from)
         FOUT << "[INFO ](updateHistory) :from: New history started for " << from.qn_ << "\n";
-        TypeTransforms.emplace(from.qn_, History(from.qn_));
+        TypeTransforms.emplace(from.qn_, from.qn_);
         //TypeTransforms.insert({from.qn_, History(from.qn_)});
         // sanity check
         if(TypeTransforms.find(from.qn_) == std::end(TypeTransforms)) {
@@ -482,7 +482,7 @@ OpData buildArgOp(clang::ASTContext &context,
             qualifiedName(context, call, arg)
         };
     }
-    CNS_DEBUG("Got DRE from arg.");
+    CNS_INFO("Got DRE from arg.");
     CNS_DEBUG(" end.");
     return buildOpData(context, sm, arg, *dre);
 }
@@ -646,13 +646,13 @@ auto buildOpDatas(clang::ASTContext &context,
             if(TypeTransforms.find(lhs.qn_) == std::end(TypeTransforms)) {
                 // Add H(from)
                 FOUT << "[INFO ](updateHistory) :from: New history started for " << lhs.qn_ << "\n";
-                TypeTransforms.emplace(lhs.qn_, History(lhs.qn_));
+                TypeTransforms.emplace(lhs.qn_, lhs.qn_);
                 //TypeTransforms.insert({lhs.qn_, History(lhs.qn_)});
             }
             if(TypeTransforms.find(rhs.qn_) == std::end(TypeTransforms)) {
                 // Add H(to)
                 FOUT << "[INFO ](updateHistory) :to: New history started for " << rhs.qn_ << "\n";
-                TypeTransforms.emplace(rhs.qn_, History(rhs.qn_));
+                TypeTransforms.emplace(rhs.qn_, rhs.qn_);
                 //TypeTransforms.insert({rhs.qn_, History(rhs.qn_)});
                 // Why is this needed?
                 //TypeTransforms.at(lhs.qn_).extend(TypeTransforms.at(rhs.qn_));

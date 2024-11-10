@@ -776,6 +776,24 @@ std::string qualifiedName(
         }
         else {
             CNS_INFO("No dre from castexpr.");
+            auto const * ces = ce->getSubExpr();
+            auto const * ed = ces->getReferencedDeclOfCallee();
+            if(ed) {
+                CNS_INFO("Found callee decl from cast expr.");
+                auto const * edv = dyn_cast<VarDecl>(ed);
+                auto const * edf = dyn_cast<FunctionDecl>(ed);
+                if(edv) {
+                    CNS_INFO("Found var decl from callee decl.");
+                    return qualifiedName(context, *edv);
+                }
+                else if(edf) {
+                    CNS_INFO("Found function decl from callee decl.");
+                    return edf->getNameAsString();
+                }
+                CNS_INFO("No value decl from callee decl. Stringifying decl");
+                return String(context, e);
+            }
+            CNS_INFO("No callee decl from cast expr.");
             // See if expr matches any of the fn parameters
             unsigned pos = 0;
             for(auto const* p: fn->parameters()) {
@@ -792,6 +810,24 @@ std::string qualifiedName(
                 CNS_INFO("No param matched.");
             }
 
+        }
+    }
+    else {
+        auto const * ed = e.getReferencedDeclOfCallee();
+        if(ed) {
+            CNS_INFO("Found callee decl from expr.");
+            auto const * edv = dyn_cast<VarDecl>(ed);
+            auto const * edf = dyn_cast<FunctionDecl>(ed);
+            if(edv) {
+                CNS_INFO("Found var decl from callee decl.");
+                return qualifiedName(context, *edv);
+            }
+            else if(edf) {
+                CNS_INFO("Found function decl from callee decl.");
+                return edf->getNameAsString();
+            }
+            CNS_INFO("No value decl from callee decl. Stringifying decl");
+            return String(context, e);
         }
     }
 

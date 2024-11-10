@@ -422,11 +422,11 @@ class History {
         */
 
         explicit History(CensusKey const& op): op_(op) {
-            CNS_DEBUG("");
+            CNS_DEBUG("explicit()");
             //FOUT << "[INFO ](History::explicit) Init: " << op_ << "\n";
             updateVersion();
             FOUT << "[INFO ](History::explicit) Created : " << idversion() << "\n";
-            CNS_DEBUG("end.");
+            CNS_DEBUG("explicit() end.");
         }
 
         History(HistoryContext const& context, CensusKey const& op):
@@ -638,12 +638,13 @@ std::string History::getContextResolvedOpStr(std::optional<HistoryContext const>
             auto ropp = rop.substr(0, rop.find("$") - 1);
             if(TypeTransforms.find(ropp) != TypeTransforms.end()) {
                 // Found H(ropp)
+                FOUT << "[INFO ](History::getContextResolvedOpStr) Found H(container){" << ropp << "}\n";
                 // Check if ropp has any resolution
                 auto const &hropp = TypeTransforms.at(ropp);
                 auto roppn = hropp.getContextResolvedOpStr(lc);
                 if(ropp != roppn) {
                     // Try now
-                    FOUT << "[INFO ](History::getContextResolvedOpStr) Resolved container, ropp = {" << ropp << "}\n";
+                    FOUT << "[INFO ](History::getContextResolvedOpStr) Resolved container, ropp = {" << roppn << "}\n";
                     rop = roppn + "." + rop.substr(rop.find("$"));
                     if(census.find(rop) == census.end()) {
                         FOUT << "[INFO ](History::getContextResolvedOpStr) However, rop = {" << rop << "} not in census\n";
@@ -886,7 +887,7 @@ std::vector<LocalHistory> HistoryTemplate::instantiate(clang::ASTContext &contex
             if(TypeTransforms.find(p) == std::end(TypeTransforms)) {
                 // Parameter history is not built yet.
                 FOUT << "[INFO ](HistoryTemplate::instantiate) New history created for " << function_ << " var {" << p << "}\n";
-                TypeTransforms.emplace(p, History(p));
+                TypeTransforms.emplace(p, p);
                 //TypeTransforms.insert({p, History(p)});
             }
 
@@ -917,7 +918,7 @@ void evaluateHistory() {
             if(TypeTransforms.find(key) == std::end(TypeTransforms)) {
                 // Add history
                 FOUT << "[WARN](evaluateHistory::1.it) Could not find history for <" << key << ">, Adding.\n";
-                TypeTransforms.emplace(key, History(key));
+                TypeTransforms.emplace(key, key);
                 //TypeTransforms.insert({key, History(key)});
             }
     });
