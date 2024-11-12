@@ -794,10 +794,11 @@ std::ostream& operator<<(std::ostream &os, History const& h) {
 
             space(os, indent);
             os << " |--> ";
-            dumpLocalH(os, LocalHistory(blh.first, hc), indent);
+            dumpLocalH(os, LocalHistory(blh.first, hc), indent + 2);
             os << "\n";
         });
 
+    os << "\n";
     /*
     std::vector<std::pair<std::string, std::string>> branch;
             //dumpH(os, hb_.first.get().opId(), hb_.first.get().updateCache(hcb), indent + 2);
