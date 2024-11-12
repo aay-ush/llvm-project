@@ -121,18 +121,18 @@ namespace {
 
     std::string derefIdFromContext(std::string id, HistoryContext const& hc) {
         CNS_DEBUG("");
-        FOUT << "[INFO ](History::derefIdFromContext) Resolving {" << id << "}\n";
+        //FOUT << "[INFO ](History::derefIdFromContext) Resolving {" << id << "}\n";
         for(unsigned i = 0; i != hc.size(); i++) {
             for(auto &[key, val]: hc) {
-                FOUT << "[INFO ](History::derefIdFromContext) hc[" << i << "]: [" << key << " ↦ " << val << "] ('" << id << "')\n";
+                //FOUT << "[INFO ](History::derefIdFromContext) hc[" << i << "]: [" << key << " ↦ " << val << "] ('" << id << "')\n";
                 if(key == val) {
-                    CNS_INFO("Key = value, skip");
+                    CNS_DEBUG("Key = value, skip");
                     continue;
                 }
-                FOUT << "[INFO ](History::derefIdFromContext) ('" << id << "') -> "/*<< "\n"*/;
+                //FOUT << "[INFO ](History::derefIdFromContext) ('" << id << "') -> "/*<< "\n"*/;
                 std::regex pattern("\\b" + regex_escape(key));
                 id = std::regex_replace(id, pattern, val, std::regex_constants::format_sed);
-                FOUT << "('" << id << "')\n";
+                //FOUT << "('" << id << "')\n";
             }
         }
 
@@ -470,6 +470,7 @@ class History {
         History(History && h)  = default;// = default;
 
         std::string getContextResolvedOpStr(std::optional<HistoryContext const> lc) const;
+        std::string getContextResolvedOpStr0(std::optional<HistoryContext const> lc) const;
 
         std::optional<OpData const> getContextResolvedOp(std::optional<HistoryContext const> hc) const {
             CNS_DEBUG("");
@@ -515,6 +516,10 @@ class History {
             std::stringstream ss;
             ss << "H{" << op_ << "}<" << version_ << ">";
             return ss.str();
+        }
+
+        std::string updateCache(HistoryContext const& lc) const {
+            return getContextResolvedOpStr(lc);
         }
 
     private:
@@ -622,35 +627,39 @@ void History::extend(LocalHistory const &h) {
 
 std::unordered_map<CensusKey, History> TypeTransforms;
 
+std::string History::getContextResolvedOpStr0(std::optional<HistoryContext const> lc) const {
+    return "";
+}
+
 std::string History::getContextResolvedOpStr(std::optional<HistoryContext const> lc) const {
     CNS_DEBUG("");
-    FOUT << "[INFO ](History::getContextResolvedOpStr) Resolving op_{" << op_ << "} for H{" << op_ << "}<" << version_ << ">\n";
+    //FOUT << "[INFO ](History::getContextResolvedOpStr) Resolving op_{" << op_ << "} for H{" << op_ << "}<" << version_ << ">\n";
     auto rop = derefIdFromContext(op_, hc_);
     if(lc) {
-        FOUT << "[INFO ](History::getContextResolvedOpStr) Now resolving rop{" << rop << "} for H{" << op_ << "}<" << version_ << "> using input context\n";
+        //FOUT << "[INFO ](History::getContextResolvedOpStr) Now resolving rop{" << rop << "} for H{" << op_ << "}<" << version_ << "> using input context\n";
         rop = derefIdFromContext(rop, lc.value());
     }
 
     if(op_ != rop) {
         // Check if rop exists
         if(census.find(rop) == census.end()) {
-            CNS_INFO(" New rop does not match any census node.");
+            CNS_DEBUG(" New rop does not match any census node.");
             auto ropp = rop.substr(0, rop.find("$") - 1);
             if(TypeTransforms.find(ropp) != TypeTransforms.end()) {
                 // Found H(ropp)
-                FOUT << "[INFO ](History::getContextResolvedOpStr) Found H(container){" << ropp << "}\n";
+                //FOUT << "[INFO ](History::getContextResolvedOpStr) Found H(container){" << ropp << "}\n";
                 // Check if ropp has any resolution
                 auto const &hropp = TypeTransforms.at(ropp);
                 auto roppn = hropp.getContextResolvedOpStr(lc);
                 if(ropp != roppn) {
                     // Try now
-                    FOUT << "[INFO ](History::getContextResolvedOpStr) Resolved container, ropp = {" << roppn << "}\n";
+                    //FOUT << "[INFO ](History::getContextResolvedOpStr) Resolved container, ropp = {" << roppn << "}\n";
                     rop = roppn + "." + rop.substr(rop.find("$"));
                     if(census.find(rop) == census.end()) {
-                        FOUT << "[INFO ](History::getContextResolvedOpStr) However, rop = {" << rop << "} not in census\n";
+                        //FOUT << "[INFO ](History::getContextResolvedOpStr) However, rop = {" << rop << "} not in census\n";
                     }
                     else {
-                        FOUT << "[INFO ](History::getContextResolvedOpStr) rop = {" << rop << "} found in census\n";
+                        //FOUT << "[INFO ](History::getContextResolvedOpStr) rop = {" << rop << "} found in census\n";
                     }
                 }
             }
@@ -658,19 +667,19 @@ std::string History::getContextResolvedOpStr(std::optional<HistoryContext const>
             else {
             // Try removing the container:
             auto ropn = rop.substr(rop.find(".") + 1);
-            FOUT << "[INFO ](History::getContextResolvedOpStr) removing container, ropn = {" << ropn << "}\n";
+            //FOUT << "[INFO ](History::getContextResolvedOpStr) removing container, ropn = {" << ropn << "}\n";
             if(census.find(ropn) == census.end()) {
-                CNS_INFO("Removing container did not lead to any census match.");
+                CNS_DEBUG("Removing container did not lead to any census match.");
             }
             else {
-                CNS_INFO("Removing container led to census match.");
+                CNS_DEBUG("Removing container led to census match.");
                 rop = ropn;
             }
             }
 
         }
         else {
-            CNS_INFO(" New rop found in census.");
+            CNS_DEBUG(" New rop found in census.");
         }
     }
 
@@ -710,101 +719,95 @@ std::ostream& dumpHistory(std::ostream &os, History const&h) {
 // => On extending history, context gets extended too.
 // => Context is applied to op.use_
 //
-std::ostream& operator<<(std::ostream &os, LocalHistory const& h);
-std::ostream& operator<<(std::ostream &os, History const& h) {
-    std::stringstream ss;
-    auto const& op = ops(h.opId());
+std::ostream& dumpH(std::ostream &os, std::string const& ops_, std::string const& rops, int indent = 0) {
+    //space(os, indent);
+    auto const& op = ops(ops_);
     if(op.type_.empty()) {
-        auto const& rops = h.getContextResolvedOpStr(h.getContext());
         if(census.find(rops) == std::end(census)) {
-            ss << "T" << "{" << rops << " = " << h.opId() << "}";
+            os << "T" << "{" << rops << " = " << ops_ << "}";
         }
         else {
             auto rop = ops(rops);
             if(rop.type_.empty() && (!rop.qn_.empty())) {
-                ss << "T" << "{" << rop.qn_ << "}";
+                os << "T" << "{" << rop.qn_ << "}";
             }
             else if(rop.qn_.empty()) {
-                ss << rop.type_ << "{ ~" << op.qn_ << "}";
+                os << rop.type_ << "{ ~" << op.qn_ << "}";
             }
             else {
-                ss << rop.type_ << "{" << op.qn_ << " = " << rop.qn_ << "}";
+                os << rop.type_ << "{" << op.qn_ << " = " << rop.qn_ << "}";
             }
         }
     }
     else {
-        ss << op.type_ << "{" << op.qn_ << "}";
+        os << op.type_ << "{" << op.qn_ << "}";
     }
-    ss << "\n";
-    std::for_each(h.bbegin(), h.bend(),
-        [&](auto const& hb_) {
-            auto hcb = h.getContext();
-            if(hb_.second) {
-                hcb.insert(hb_.second.value().begin(), hb_.second.value().end());
-            }
-            ss << " |--> " << LocalHistory(hb_.first, hcb) << "\n";
-        });
-
-    os << ss.str();
     return os;
 }
 
-std::ostream& operator<<(std::ostream &os, LocalHistory const& h) {
-    std::stringstream ss;
-    //// Wrong since it loses the usechain of contextless op.
-    //// First get the history(use_) of op then resolve context
-    auto const& h_ = h.first.get();
-    auto const& op = ops(h_.opId());
-    if(op.type_.empty()) {
-        //auto const& rop = h.getContextResolvedOp();
-        auto const& rops = h_.getContextResolvedOpStr(h.second);
-        if(census.find(rops) == std::end(census)) {
-            ss << "T" << "{" << rops << " = " << h_.opId() << "}";
-        }
-        else {
-            auto rop = ops(rops);
-            if(rop.type_.empty() && (!rop.qn_.empty())) {
-                ss << "T" << "{" << rop.qn_ << "}";
-            }
-            else if(rop.qn_.empty()) {
-                ss << rop.type_ << "{ ~" << op.qn_ << "}";
-            }
-            else {
-                ss << rop.type_ << "{" << op.qn_ << " = " << rop.qn_ << "}";
-            }
-        }
-        /*
-        if(op.type_.empty()) {
-            ss << op.qn_;
-        }
-        else {
-            ss << op.type_ << "{" << op.qn_ << "}"; //.<< ": " << op.use_.size() << ")";
-        }
-        */
-    }
-    else {
-        ss << op.type_ << "{" << op.qn_ << "}";
-    }
-    //ss << " -[" << h.branch().size() << "]-> ";
-    //ss << " -> ";
-    ss << "\n";
+std::ostream& dumpLocalH(std::ostream &os, LocalHistory const& lh, int indent = 0) {
+    auto const& h = lh.first.get();
+    dumpH(os, h.opId(), h.getContextResolvedOpStr(lh.second), indent);
+    os << "\n";
 
-    auto hcb = h_.getContext();
-    if(h.second) {
-        hcb.insert(h.second.value().begin(), h.second.value().end());
+    indent += 2;
+    auto hc = h.getContext();
+    // Augment history context with local context from input
+    if(lh.second) {
+        hc.insert(lh.second.value().begin(), lh.second.value().end());
     }
-    std::for_each(h_.bbegin(), h_.bend(),
-        [&](auto const& hb_) {
-            auto hcb_ = hcb;
-            if(hb_.second) {
-                hcb_.insert(hb_.second.value().begin(), hb_.second.value().end());
+
+    std::for_each(h.bbegin(), h.bend(),
+        [&](auto const& bh){
+            //auto blc = hc;
+            // Augment local context with container context + input local context
+            /*
+            if(bh.second) {
+                blc.insert(bh.second.value().begin(), bh.second.value().end());
             }
-            ss << " |--> " << LocalHistory(hb_.first, hcb) << "\n";
-            //ss << " |--> " << hb_ << "\n";
+            */
+            space(os, indent);
+            os << " |--> ";
+            //dumpH(os, bh.first.get().opId(), bh.first.get().updateCache(blc), indent + 2);
+            //dumpLocalH(os, LocalHistory(bh.first, hc), indent + 2);
+            dumpH(os, bh.first.get().opId(), bh.first.get().getContextResolvedOpStr({hc}), indent + 2);
+            //dumpLocalH(os, LocalHistory(bh.first, bh.second), indent + 2);
+            os << "\n";
         });
-    //ss << "end of : (" << op.qn_  << ")\n";
 
-    os << ss.str();
+    return os;
+}
+
+std::ostream& operator<<(std::ostream &os, History const& h) {
+    int indent = 0;
+    dumpH(os, h.opId(), h.getContextResolvedOpStr({}), indent);
+    os << "\n";
+
+    std::for_each(h.bbegin(), h.bend(),
+        [&](auto const& blh) {
+            auto hc = h.getContext();
+            // Augment local context with branch parent context
+            if(blh.second) {
+                hc.insert(blh.second.value().begin(), blh.second.value().end());
+            }
+            //ss << " |--> " << LocalHistory(hb_.first, hcb) << "\n";
+
+            space(os, indent);
+            os << " |--> ";
+            dumpLocalH(os, LocalHistory(blh.first, hc), indent);
+            os << "\n";
+        });
+
+    /*
+    std::vector<std::pair<std::string, std::string>> branch;
+            //dumpH(os, hb_.first.get().opId(), hb_.first.get().updateCache(hcb), indent + 2);
+            //branch.push_back({hb_.first.get().opId(), hb_.first.get().updateCache(hcb)});
+    std::for_each(begin(branch), end(branch),
+        [&](auto const& b) {
+            dumpH(ss, b.first, b.second);
+        });
+    */
+
     return os;
 }
 
