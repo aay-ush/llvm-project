@@ -657,24 +657,26 @@ std::string History::getContextResolvedOpStr(std::optional<HistoryContext const>
                     rop = roppn + "." + rop.substr(rop.find("$"));
                     if(census.find(rop) == census.end()) {
                         //FOUT << "[INFO ](History::getContextResolvedOpStr) However, rop = {" << rop << "} not in census\n";
+                        // Create census node for rop and add op as dominator?
                     }
                     else {
                         //FOUT << "[INFO ](History::getContextResolvedOpStr) rop = {" << rop << "} found in census\n";
+                        // Who is the dominator for this?
                     }
                 }
             }
 
             else {
-            // Try removing the container:
-            auto ropn = rop.substr(rop.find(".") + 1);
-            //FOUT << "[INFO ](History::getContextResolvedOpStr) removing container, ropn = {" << ropn << "}\n";
-            if(census.find(ropn) == census.end()) {
-                CNS_DEBUG("Removing container did not lead to any census match.");
-            }
-            else {
-                CNS_DEBUG("Removing container led to census match.");
-                rop = ropn;
-            }
+                // Try removing the container:
+                auto ropn = rop.substr(rop.find(".") + 1);
+                //FOUT << "[INFO ](History::getContextResolvedOpStr) removing container, ropn = {" << ropn << "}\n";
+                if(census.find(ropn) == census.end()) {
+                    CNS_DEBUG("Removing container did not lead to any census match.");
+                }
+                else {
+                    CNS_DEBUG("Removing container led to census match.");
+                    rop = ropn;
+                }
             }
 
         }
@@ -759,9 +761,9 @@ std::ostream& dumpLocalH(std::ostream &os, LocalHistory const& lh, int indent = 
 
     std::for_each(h.bbegin(), h.bend(),
         [&](auto const& bh){
-            //auto blc = hc;
             // Augment local context with container context + input local context
             /*
+            auto blc = hc;
             if(bh.second) {
                 blc.insert(bh.second.value().begin(), bh.second.value().end());
             }
@@ -772,7 +774,7 @@ std::ostream& dumpLocalH(std::ostream &os, LocalHistory const& lh, int indent = 
             //dumpLocalH(os, LocalHistory(bh.first, hc), indent + 2);
             dumpH(os, bh.first.get().opId(), bh.first.get().getContextResolvedOpStr({hc}), indent + 2);
             //dumpLocalH(os, LocalHistory(bh.first, bh.second), indent + 2);
-            os << "\n";
+            os << "{ " << bh.first.get().version() << "}\n";
         });
 
     return os;
@@ -781,6 +783,7 @@ std::ostream& dumpLocalH(std::ostream &os, LocalHistory const& lh, int indent = 
 std::ostream& operator<<(std::ostream &os, History const& h) {
     int indent = 0;
     dumpH(os, h.opId(), h.getContextResolvedOpStr({}), indent);
+    os << "{ " << h.version() << "}\n";
     os << "\n";
 
     std::for_each(h.bbegin(), h.bend(),
@@ -905,6 +908,109 @@ std::vector<LocalHistory> HistoryTemplate::instantiate(clang::ASTContext &contex
 
     CNS_DEBUG("end.");
     return h;
+}
+
+void elaborateHistory(History &h, std::optional<int> level) {
+    CNS_DEBUG("");
+
+    if(!level && (level.value() == 0)) {
+        return;
+    }
+    /*
+    std::vector<CensusKey> branch;
+    std::transform(h.bbegin(), h.bend(), back_inserter(branch),
+        [&](auto const &lh) {
+            return lh.first.get().opId();
+        });
+    */
+
+    auto hc = h.getContext();
+
+    std::for_each(h.bbegin(), h.bend(),
+        [&](auto &lh) {
+            auto lc = hc;
+            if(lh.second) {
+                lc.insert(lh.second.value().begin(), lh.second.value().end());
+            }
+
+            auto &lh_ = lh.first.get();
+            auto bop = lh_.getContextResolvedOpStr(lc);
+//            if(lh_.opId() != bop && h.opId() != bop) {
+                if(TypeTransforms.find(bop) != TypeTransforms.end()) {
+                    h.extend(LocalHistory(TypeTransforms.at(bop), {lc}));
+                }
+ //           }
+        });
+    /*
+    auto const &usechain = UseChain(node);
+    //FOUT << "[DEBUG](elaborateUse) Building use chain for (" << node.hash_ << ")\n";
+    for(auto const &hash: usechain) {
+        if(level && (level.value() > 0)) {
+            //FOUT << "[DEBUG](elaborateUse) Level = " << level.value() << "\n";
+            elaborateUse(ops(hash), level.value() - 1);
+        }
+
+        //FOUT << "[DEBUG](elaborateUse) Adding hash(" << hash << ")\n";
+        // Add the node 'p' from usechain
+        node.use_.push_back(hash);
+        // Add use(p)
+        if(level && (level.value() > 0)) {
+            std::copy(begin(ops(hash).use_), end(ops(hash).use_), back_inserter(node.use_));
+        }
+    }
+    */
+    CNS_DEBUG("end.");
+}
+
+void elaborateHistoryREMOVE(CensusKey key) {
+    CNS_DEBUG("");
+
+    // after call to elaborateUse(), key will have its use_ extended.
+    // This function adds H(u) for all elements in key.use_ to H(key) branch_
+    // It does not use local history because there is no local context to add.
+    // Further, it does not require local context because it is meant to track aliases
+    // within the function body.
+    // e.g.: qsort.$0 -> vl 
+    // after elaborateHistory(): qsort.$0 -> vl -> comp.$0..? (resolvable using qsort.$0 context)
+
+    if(census.find(key) == std::end(census)) {
+        FOUT << "[WARN ](elaborateHistory) Could not find node for <" << key << "> in Census.\n";
+        CNS_DEBUG("end.");
+        return;
+    }
+    if(TypeTransforms.find(key) == std::end(TypeTransforms)) {
+        FOUT << "[WARN ](elaborateHistory) Could not find History for <" << key << ">.\n";
+        CNS_DEBUG("end.");
+        return;
+    }
+
+    auto const &op = ops(key);
+    auto &h = TypeTransforms.at(key);
+
+    std::vector<CensusKey> branch;
+    std::for_each(h.bbegin(), h.bend(),
+        [&](auto const& p) {
+            branch.push_back(p.first.get().opId());
+        });
+
+    std::for_each(begin(op.use_), end(op.use_),
+        [&](auto const& u) {
+            auto it = std::find(begin(branch), end(branch), u);
+            if(it == std::end(branch)) {
+                FOUT << "[INFO ](elaborateHistory) H{" << h.version() << "} does not include <" << u << ">\n";
+                // u is not in branch
+                if(TypeTransforms.find(u) != std::end(TypeTransforms)) {
+                    FOUT << "[INFO ](elaborateHistory) Extending H{" << h.version() << "} with <" << u << ">\n";
+                    h.extend(TypeTransforms.at(u));
+                    return;
+                }
+                FOUT << "[WARN ](elaborateHistory) No history found for <" << u << ">\n";
+                return;
+            }
+            FOUT << "[INFO ](elaborateHistory) H{" << h.version() << "} already includes <" << u << ">\n";
+        });
+
+    CNS_DEBUG("end.");
 }
 
 // Instead of processing all census, evaluate history per history object and process only h.opId

@@ -664,7 +664,7 @@ auto buildOpDatas(clang::ASTContext &context,
 }
 
 void addCallHistory(clang::ASTContext & context, clang::CallExpr const& call) {
-    CNS_DEBUG("");
+    CNS_INFO("");
     auto const *calledFn = getCalleeDecl(call);
     assert(calledFn);
     std::string fn;
@@ -954,6 +954,15 @@ public:
         //censusSummary(FOUT);
         censusSummary();
         //evaluateHistory();
+        /*
+        for(auto const &[key, _]: census) {
+           elaborateHistory(key);
+        }
+        */
+        std::for_each(begin(TypeTransforms), end(TypeTransforms), [&](auto &h) {
+                elaborateHistory(h.second, {1});
+            });
+
         FOUT << "History collection:\n";
         std::cout << "History collection:\n";
         std::for_each(begin(TypeTransforms), end(TypeTransforms), [&](auto const &h) {

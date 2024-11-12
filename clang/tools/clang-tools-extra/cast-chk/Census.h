@@ -351,15 +351,18 @@ void censusSummary() {
     CNS_DEBUG("<void>");
 
     // build usechain
+    /*
     for(auto const &[_, info]: census) {
        auto const &[op, __] = info;
 
        elaborateUse(op, {3});
     }
+    */
     for(auto const& n: census) {
         auto const& op = ops(n);
         //FOUT << "[INFO ](censusSummary<void>) op: " << op.qn_ << "\n";
-        op.use_ = UseChain(op);
+        //op.use_ = UseChain(op);
+        elaborateUse(op, {3});
         //FOUT << "[INFO ](censusSummary<void>) op.use_.size(): " << op.use_.size() << "\n";
     }
 
