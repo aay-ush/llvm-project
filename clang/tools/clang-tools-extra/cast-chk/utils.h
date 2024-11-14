@@ -263,6 +263,12 @@ std::string String(ASTContext const &context, FunctionDecl const &fn, unsigned p
     std::stringstream ss;
     ss << "" << fn.getNameAsString() << ".$" << parmPos << ": ";
 
+    if(fn.getNumParams() == 0) {
+        CNS_WARN("No parameters defined for function.");
+        ss << "()";
+        return ss.str();
+    }
+
     auto const *parm = fn.getParamDecl(parmPos);
     if(!parm) {
         //ss << "(Cannot getParamDecl())";
@@ -464,6 +470,12 @@ clang::Decl const* getParamDecl(ASTContext const &context, CallExpr const &call,
         return nullptr;
     }
     assert(fn);
+
+    if(fn->getNumParams() == 0) {
+        CNS_WARN("No parameters defined for function.");
+        CNS_DEBUG("<CallExpr, unsigned> end.");
+        return nullptr;
+    }
 
     auto const *parm = fn->getParamDecl(parmPos);
     assert(parm);   // not needed
