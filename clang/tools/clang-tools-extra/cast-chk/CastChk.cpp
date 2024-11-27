@@ -959,12 +959,33 @@ public:
            elaborateHistory(key);
         }
         */
-        std::for_each(begin(TypeTransforms), end(TypeTransforms), [&](auto &h) {
-                elaborateHistory(h.second, {1});
+        std::for_each(begin(TypeTransforms), end(TypeTransforms),
+            [&](auto &h) {
+                elaborateHistory(h.second, {3});
             });
 
         FOUT << "History collection:\n";
         std::cout << "History collection:\n";
+        std::for_each(begin(TypeSummaries), end(TypeSummaries),
+            [&](auto const &s) {
+                FOUT << "History of (" << s.first << "):\n";
+                std::cout << "History of (" << s.first << "):\n";
+                FOUT << s.second << "\n";
+                std::cout << s.second << "\n";
+            });
+        /*
+        std::for_each(begin(Finality), end(Finality),
+            [&](auto const &f) {
+                FOUT << "History of (" << f.first << "):\n";
+                std::cout << "History of (" << f.first << "):\n";
+                FOUT << f << "\n";
+                //dumpHistory(FOUT, h.second);
+                std::cout << f << "\n";
+            });
+        */
+        FOUT << "# Census summary end.\n";
+        FOUT << "end History collection:\n";
+        /*
         std::for_each(begin(TypeTransforms), end(TypeTransforms), [&](auto const &h) {
                 FOUT << "History of (" << h.first << "):\n";
                 std::cout << "History of (" << h.first << "):\n";
@@ -974,6 +995,7 @@ public:
             });
         FOUT << "# Census summary end.\n";
         FOUT << "end History collection:\n";
+        */
 
         // TODO: Emit error when a cast destination is incompatible with source/parent types.
     }
