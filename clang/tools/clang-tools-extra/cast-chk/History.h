@@ -7,10 +7,8 @@
 #include <functional>
 #include <regex>
 
-// Bug in string copy for History (op.qn_)
-
 // History context contains substitutions for HistoryTemplate that can be used to provide history.
-// How are the parinings stored?
+// How are the pairings stored?
 // Context is extensible.
 // H(a) = H(f.0) => HT(f) is instatiated with f.0=a
 // Context stores 0=a
@@ -22,7 +20,6 @@
 // Context lives with an HT object. Each HT object has one context only. wrong. Since many versions or complete instatitations are possible.
 // Avoiding composability avoid problems where two context with different values of same parameter are combined.
 using HistoryContext = std::unordered_map<CensusKey, CensusKey>;
-using LocalContext = HistoryContext;
 
 class History;
 using LocalHistory = std::pair<std::reference_wrapper<History const>, std::optional<HistoryContext>>;
@@ -30,7 +27,6 @@ using LocalHistory = std::pair<std::reference_wrapper<History const>, std::optio
 // Template: for every parameter in a function, store it's Census operand and associate it to the parameter.
 class HistoryTemplate {
     public:
-        //History instantiate(OpData arg, unsigned argPos);
         // History instantiation requires all args to be instantiated as a unit.
         // Callexpr has an arg iterator that can be used to instantiate all args for every arg op.
         //<> instantiate(<> varargs, unsigned argPos);
@@ -40,14 +36,7 @@ class HistoryTemplate {
         HistoryTemplate(clang::ASTContext &context, clang::CallExpr const& call, clang::DeclRefExpr const &fptr);
 
         HistoryTemplate() = delete;
-        //{
-            //CNS_DEBUG("");
-            //CNS_DEBUG("end.");
-        //}
-        ~HistoryTemplate() {// = default;
-            CNS_DEBUG("");
-            CNS_DEBUG("end.");
-        }
+        ~HistoryTemplate() = default;
         HistoryTemplate(HistoryTemplate const&) = default;
         // TODO assignment
 
@@ -86,23 +75,7 @@ namespace {
 
         HistoryContext hc;
         std::vector<CensusKey> args;
-        /*
-        auto calleed = getCalleeDecl(call);
-        if(calleed == nullptr) {
-            FOUT << "[INFO ](makeHistoryContext) null callee decl, trying fptr callee\n";
-            calleed = getDeclFromFunctionPtr(call);
-        }
-        std::string fnprefix;
-        if(calleed) {
-            FOUT << "[INFO ](makeHistoryContext) Found callee\n";
-            fnprefix = calleed->getNameAsString() + ".$";
-            FOUT << "[INFO ](makeHistoryContext) fnprefix: {" << fnprefix << "}\n";
-        }
-        else {
-            FOUT << "[WARN ](makeHistoryContext) Callee Decl is nullptr\n";
-        }
-        */
-        std::regex pattern("^.*?\\$");
+        std::regex functionPrefix("^.*?\\$");
 
         unsigned i = 0;
         std::for_each(call.arg_begin(), call.arg_end(), [&](auto const *a) {
@@ -120,23 +93,17 @@ namespace {
             }
 
             // Avoid creating links between parameters e.g. hof.$1.$0 = hof.$0
-            //if(!fnprefix.empty()) {
-            std::smatch fnprefix_p;
-            std::smatch fnprefix_a;
-            if(std::regex_search(params[i], fnprefix_p, pattern)
-                && std::regex_search(key, fnprefix_a, pattern)) {
-                if(fnprefix_p.str() == fnprefix_a.str()) {
-                //if((params[i].find(fnprefix) != std::string::npos)
-                //    && (key.find(fnprefix) != std::string::npos)) {
-
-                    FOUT << "[INFO ](makeHistoryContext) arg operand (" << key << ") and param(" << params[i] << ") are both parameters of same function(" << fnprefix_a.str() << "), skipping\n";
+            std::smatch matchParm, matchArg;
+            if(std::regex_search(params[i], matchParm, functionPrefix)
+                && std::regex_search(key, matchArg, functionPrefix)) {
+                if(matchParm.str() == matchArg.str()) {
+                    FOUT << "[INFO ](makeHistoryContext) arg operand (" << key << ") and param(" << params[i] << ") are both parameters of same function(" << matchArg.str() << "), skipping\n";
                     hc[params[i]] = params[i];
                     i++;
                     return;
                 }
             }
 
-            //auto &[op, _] = census[qn];
             hc[params[i++]] = key;
             args.push_back(key);
             return;
@@ -186,18 +153,17 @@ HistoryTemplate::HistoryTemplate(clang::FunctionDecl const &fn) {
     unsigned pos = 0;
     // ForEach parameter, lookup corresponding census operand
     std::for_each(fn.param_begin(), fn.param_end(), [&](auto const *p) {
-            // get qn
+            // get qualifiedName
             auto const& qn = function_ + ".$" + std::to_string(pos++);
             if(census.find(qn) == census.end()) {
                 FOUT << "[ERROR](HistoryTemplate::HistoryTemplate) param operand for: " << qn << " not in Census.\n";
                 FOUT << "[INFO ](HistoryTemplate::HistoryTemplate) Adding  " << qn << " operand in Census.\n";
-                //CNS_DEBUG("end.");
-                //return;
-                //
+
                 // If a param operand doesn't exist yet, which is possible if the function is processed for the first time, just initiate it because otherwise the template will not be created.
                 census.insert(makeCensusSourceNode(buildOpData(*p)));
             }
-            // TODO: what if a param is not in census but remaining are?
+
+            // TODO: what if a param is not in census but remaining are? Unlikely since call is processed as a unit.
             params_.push_back(qn);
         });
     CNS_DEBUG("end.");
@@ -209,14 +175,11 @@ HistoryTemplate::HistoryTemplate(clang::ASTContext &context, clang::CallExpr con
     unsigned pos = 0;
     // ForEach parameter, lookup corresponding census operand
     std::for_each(call.arg_begin(), call.arg_end(), [&](auto const *p) {
-            // get qn
+            // get qualifiedName
             auto const& qn = function_ + ".$" + std::to_string(pos++);
             if(census.find(qn) == census.end()) {
                 FOUT << "[ERROR](HistoryTemplate::HistoryTemplate<fptr>) param operand for: " << qn << " not in Census.\n";
                 FOUT << "[INFO ](HistoryTemplate::HistoryTemplate<fptr>) Adding  " << qn << " operand in Census.\n";
-                //CNS_DEBUG("end.");
-                //return;
-                //
                 // If a param operand doesn't exist yet, which is possible if the function is processed for the first time, just initiate it because otherwise the template will not be created.
                 census.insert(makeCensusSourceNode(buildOpData(context, *p)));
             }
@@ -232,68 +195,6 @@ HistoryTemplate::HistoryTemplate(clang::ASTContext &context, clang::CallExpr con
 // ---> Operand cannot be changed.
 // Should Use_ be changed? Maybe. Depends on how history is elaborated.
 // No. Because the param has to be substituted not used.
-/*
-std::vector<History> HistoryTemplate::instantiate(clang::ASTContext const &context, clang::CallExpr const &call) {
-    unsigned i = 0;
-    std::vector<OpData> args;
-    std::for_each(call.arg_begin(), call.arg_end(), [&](auto const &a) {
-            // get arg qn
-            CensusKey qn;
-            if(census.find(qn) == census.end()) {
-                // Shouldn't really happen.
-                FOUT << "[ERROR](HistoryTemplate::instantiate) arg operand for: " << qn << " not in Census.\n";
-                CNS_DEBUG("end.");
-                return;
-            }
-
-            auto &[op, _] = census[qn];
-            std::shared_ptr<History> hp = op.history_.lock();
-            *hp = History(params[i++]);
-            //op_a.use_.append(params[i++]);
-            args.append(op_a);
-    });
-
-    auto targs = substitute(args);
-    std::vector<History> h;
-    std::transform(begin(targs), end(targs), back_inserter(h), History::History);
-    return h;
-}
-
-std::vector<OpData> HistoryTemplate::substitue(std::vector<OpData> &args) {
-    // for n times
-    std::vector<OpData> targs;
-    std::transform(begin(params), end(params), back_inserter(targs), ops);
-
-    // for each param operand p in params
-    for(unsigned i = 0; i != targs.size(); i++) {
-        targs[i] = args[i];
-
-        //   for each use qn u in p.use_
-        std::for_each(begin(targs[i].use_), end(targs[i].use_), [&](auto const &u) {
-            auto match = targs.find(u);
-            if( match != targs.end()) {
-                CNS_DEBUG("Param match found.");
-                if(targs.size() > PTRDIFF_MAX) {
-                    CNS_ERROR("Cannot take position of parm, array too large.");
-                    return;
-                }
-
-                unsigned pos = std::distance(targs.begin(), match);
-                if(pos >= targs.size()) {
-                    CNS_INFO("Parm pos outside of targs bounds.");
-                    return;
-                }
-
-                //      if u in param_qns at pos i
-                //          replace u with args[i]
-                targs[pos] = args[pos];
-            }
-        });
-    }
-
-    return targs;
-}
-*/
 
 // History is created from operand.
 // The operand may be an operand or placeholder.
@@ -333,10 +234,6 @@ std::vector<OpData> HistoryTemplate::substitue(std::vector<OpData> &args) {
 // when histories are linked, navigating history is a simple task. As is assignment, it works like a linked list.
 // Now how are the histories stored? Are they kept with the operand? Perhaps the head of the list can be stored with the operand.
 
-//#include <boost/regex.hpp>
-//#include <boost/xpressive/xpressive_fwd.hpp>
-//#include <boost/xpressive/regex_algorithms.hpp>
-
 std::string makeHistoryId(std::string key, std::string val) {
     return key + "(" + val + ")";
 }
@@ -356,11 +253,6 @@ std::string makeHistoryId(std::string key, std::string val) {
 //    Instead of just a branch of histories, store history-local context pair.
 class History {
     public:
-        // Could be type or container.$param or container.local
-        //std::string history() const;
-        //History history(int ilevel); // iLevel > 0
-        // operator string
-
         // Usually for aliasing
         void extend(History const &h);
 
@@ -561,9 +453,6 @@ class History {
         CensusKey op_;
         HistoryContext hc_ {};
         // Vector since history is a tree. just like use_, history can have multiple branches.
-        //
-        // Should be implemented like a virtual table. Each history item has a global (base) history that can be augmented by local/contextualized (child) histories. Every extend operation has to extend the virtual table as well.
-        //std::vector<reference_wrapper<History const>> branch_;   // Requires copy
         std::vector<LocalHistory> branch_;
         std::string version_;
         unsigned copy_{0};
@@ -1326,323 +1215,5 @@ void elaborateHistory(History &h, std::optional<int> level) {
 
     CNS_INFO("end.");
 }
-
-/*
-using FinalFormHistory = std::pair<CensusKey, std::vector<CensusKey>>;
-std::vector<FinalFormHistory> Finality;
-
-std::ostream& dumpFH(std::ostream &os, CensusKey key, unsigned indent = 0) {
-    if(key.empty()) {
-        os << "K" << "\n";
-        return os;
-    }
-    if(census.find(key) == std::end(census)) {
-        os << key << "\n";
-        return os;
-    }
-
-    auto op = ops(key);
-    if(!op.type_.empty()) {
-        os << op.type_ << "\n";
-        return os;
-    }
-
-    os << op.qn_ << "\n";
-    return os;
-}
-
-std::ostream& operator<<(std::ostream &os, FinalFormHistory const &fh) {
-    CNS_INFO("");
-    dumpFH(os, fh.first);
-//    std::for_each(begin(fh.second), end(fh.second),
-//        [&](auto const &bh) {
-    for(auto const& bh: fh.second) {
-        auto const it = std::find_if(begin(Finality), end(Finality),
-            [&](auto const &ffh) {
-                return (ffh.first != fh.first) && (ffh.first == bh);
-            });
-
-        space(os, 2);
-        if(it != std::end(Finality)) {
-            os << "|-> ";
-            os << *it << "\n";
-        }
-        else {
-            os << "|-> =";
-            if(census.find(bh) != census.end()) {
-                auto op = ops(bh);
-                if(op.type_.empty()) {
-                    os << "T(" << op.qn_ << ")\n";
-                }
-                else {
-                    os << op.type_ << "\n";
-                }
-            }
-            else {
-                os << bh << "\n";
-            }
-        }
-    }//);
-
-    CNS_INFO("end.");
-    return os;
-}
-
-CensusKey getFinalFormKey(LocalHistory const &lh, std::optional<int> level) {
-    auto const &h = lh.first.get();
-
-    if(!level || level.value() == 0 || h.branch().size() == 0) {
-        return h.getContextResolvedOpStr(lh.second);
-    }
-
-    auto hc = h.getContext();
-    if(lh.second) {
-        hc.insert(std::begin(lh.second.value()), std::end(lh.second.value()));
-    }
-
-    std::for_each(h.bbegin(), h.bend(),
-        [&](auto const &bh) {
-            return getFinalFormKey(LocalHistory(bh.first, hc), {level.value() - 1});
-        });
-
-    //return getFinalFormKey(LocalHistory(h, hc), {level.value() - 1});
-
-    // Makes no sense: passing the same context, waiting for level to get to zero
-    return getFinalFormKey(lh, {level.value() - 1});
-}
-
-CensusKey getFinalFormKey(LocalHistory const &lh, std::optional<int> level, std::vector<CensusKey> dfscache) {
-    auto const &h = lh.first.get();
-
-    if(!level || level.value() == 0) {
-        return h.getContextResolvedOpStr(lh.second);
-    }
-
-    dfscache.push_back(h.opId());
-}
-
-void elaborateHistory(History &h, std::optional<int> level) {
-    CNS_DEBUG("");
-
-    FinalFormHistory fh;
-    fh.first = h.opId();
-
-    std::transform(h.bbegin(), h.bend(), back_inserter(fh.second),
-        [&](auto const &bh) {
-            auto lc = h.getContext();
-            if(bh.second) {
-                lc.insert(std::begin(bh.second.value()), std::end(bh.second.value()));
-            }
-            return getFinalFormKey(LocalHistory(bh.first, lc), level);
-            //return getFinalFormKey(bh, level);
-        });
-
-    Finality.push_back(fh);
-    CNS_DEBUG("end.");
-}
-*/
-
-/*
-//// Just build context recursively for each branch
-//// Then resolve op to rop
-//// Then check if they are unequal => extend otherwise pass
-// -> Can't do since context is not recursive.
-//
-// The current segfault is due to invalid History reference in lh in blh.first.get().opId()
-// Anyhow, the correct way would be to create another history vector with local histories resolved and resolved copies from global history.
-void elaborateHistoryRemove2(History &h, std::optional<int> level) {
-    CNS_DEBUG("");
-
-    std::vector<CensusKey> branch;
-    std::transform(h.bbegin(), h.bend(), back_inserter(branch),
-        [&](auto const &lh) {
-            return lh.first.get().opId();
-        });
-
-    std::for_each(h.bbegin(), h.bend(),
-        [&](auto &blh) {
-            auto hc = h.getContext();
-            if(blh.second) {
-                hc.insert(blh.second.value().begin(), blh.second.value().end());
-            }
-            auto rop = elaborateHistoryRemove2(LocalHistory(blh.first, hc), level);
-            if(census.find(rop) == std::end(census)) {
-                return;
-            }
-
-            if(rop != blh.first.get().opId() && TypeTransforms.find(rop) != TypeTransforms.end()) {
-                if(std::find(begin(branch), end(branch), rop) == std::end(branch)) {
-                    h.extend(blh.first.get());
-                    branch.push_back(rop);
-                }
-            }
-        });
-
-    CNS_DEBUG("end.");
-}
-
-void elaborateHistoryREMOVE(CensusKey key) {
-    CNS_DEBUG("");
-
-    // after call to elaborateUse(), key will have its use_ extended.
-    // This function adds H(u) for all elements in key.use_ to H(key) branch_
-    // It does not use local history because there is no local context to add.
-    // Further, it does not require local context because it is meant to track aliases
-    // within the function body.
-    // e.g.: qsort.$0 -> vl 
-    // after elaborateHistory(): qsort.$0 -> vl -> comp.$0..? (resolvable using qsort.$0 context)
-
-    if(census.find(key) == std::end(census)) {
-        FOUT << "[WARN ](elaborateHistory) Could not find node for <" << key << "> in Census.\n";
-        CNS_DEBUG("end.");
-        return;
-    }
-    if(TypeTransforms.find(key) == std::end(TypeTransforms)) {
-        FOUT << "[WARN ](elaborateHistory) Could not find History for <" << key << ">.\n";
-        CNS_DEBUG("end.");
-        return;
-    }
-
-    auto const &op = ops(key);
-    auto &h = TypeTransforms.at(key);
-
-    std::vector<CensusKey> branch;
-    std::for_each(h.bbegin(), h.bend(),
-        [&](auto const& p) {
-            branch.push_back(p.first.get().opId());
-        });
-
-    std::for_each(begin(op.use_), end(op.use_),
-        [&](auto const& u) {
-            auto it = std::find(begin(branch), end(branch), u);
-            if(it == std::end(branch)) {
-                FOUT << "[INFO ](elaborateHistory) H{" << h.version() << "} does not include <" << u << ">\n";
-                // u is not in branch
-                if(TypeTransforms.find(u) != std::end(TypeTransforms)) {
-                    FOUT << "[INFO ](elaborateHistory) Extending H{" << h.version() << "} with <" << u << ">\n";
-                    h.extend(TypeTransforms.at(u));
-                    return;
-                }
-                FOUT << "[WARN ](elaborateHistory) No history found for <" << u << ">\n";
-                return;
-            }
-            FOUT << "[INFO ](elaborateHistory) H{" << h.version() << "} already includes <" << u << ">\n";
-        });
-
-    CNS_DEBUG("end.");
-}
-*/
-
-/*
-// Instead of processing all census, evaluate history per history object and process only h.opId
-void evaluateHistory() {
-    CNS_DEBUG("");
-    // For each operand, op, in census:
-    //  - Add H(op)
-    //  ---> Op.use_ is included in Census
-    //    => H(op.use_) is included in TypeTransforms
-    //
-    std::for_each(begin(census), end(census),
-        [&](auto const &n) {
-            auto const &key = ops(n).qn_;
-
-            if(TypeTransforms.find(key) == std::end(TypeTransforms)) {
-                // Add history
-                FOUT << "[WARN](evaluateHistory::1.it) Could not find history for <" << key << ">, Adding.\n";
-                TypeTransforms.emplace(key, key);
-                //TypeTransforms.insert({key, History(key)});
-            }
-    });
-
-    //  - For every op, extend H(op) by H(op.use_)
-    //  Note that we cannot simply add H(op.use_), we must lookup TypeTransforms and create a copy
-    //  to not miss context.
-    std::for_each(begin(census), end(census),
-        [&](auto const &n) {
-            auto const &op = ops(n);
-            auto const &key = op.qn_;
-
-            if(TypeTransforms.find(key) == std::end(TypeTransforms)) {
-                // No way!
-                FOUT << "[ERROR](evaluateHistory::2.itk) Cannot find history for <" << key << ">, after 1!.\n";
-                return;
-            }
-
-            std::for_each(begin(op.use_), end(op.use_),
-                [&](auto const& u) {
-                    if(TypeTransforms.find(u) == std::end(TypeTransforms)) {
-                        // No way!
-                        FOUT << "[ERROR](evaluateHistory::2.itu) Cannot find history for <" << u << ">, after 1!.\n";
-                        return;
-                    }
-                    TypeTransforms.at(key).extend(TypeTransforms.at(u));
-            });
-    });
-    CNS_DEBUG("end.");
-}
-
-void evaluateHistoryOLD() {
-    CNS_DEBUG("");
-
-    // for every operand in census
-    // History(op).extend(History(op.use_));
-
-    std::for_each(begin(census), end(census),
-        [&](auto const& node) {
-            auto const&[_, INFO ] = node;
-            auto const&[op, __] = info;
-            auto const &key = op.qn_;
-
-            // Retrieve H(key)
-            auto it = std::find(begin(TypeTransforms), end(TypeTransforms), key);
-            if(it != std::end(TypeTransforms)) {
-                // Extend H(key)
-                std::for_each(begin(op.use_), end(op.use_), [&](auto const &u) {
-                    auto itu = std::find(begin(TypeTransforms), end(TypeTransforms), u);
-                    if(itu != std::end(TypeTransforms)) {
-                        // Extend with H(u) if H(u) exists
-                        it->extend(*itu);
-                    }
-                    else {
-                        // H(u) not found
-                        FOUT << "[INFO ](evaluateHistory::itu) Could not find history for <" << u << "> to extend history of <" << key << ">\n";
-                        // Add H(u)
-                        TypeTransforms.emplace_back(u);
-                        auto itu2 = std::find(begin(TypeTransforms), end(TypeTransforms), u);
-                        if(itu2 != std::end(TypeTransforms)) {
-                            it->extend(*itu2);
-                        }
-                    }
-
-                });
-            }
-            else {
-                // Add history
-                FOUT << "[INFO ](evaluateHistory::it) Could not find history for <" << key << ">, nothing to extend.\n";
-                TypeTransforms.emplace_back(key);
-                std::for_each(begin(op.use_), end(op.use_), [&](auto const &u) {
-                    auto itu = std::find(begin(TypeTransforms), end(TypeTransforms), u);
-                    if(itu != std::end(TypeTransforms)) {
-                        // Extend with H(u) if H(u) exists
-                        it->extend(*itu);
-                    }
-                    else {
-                        // H(u) not found
-                        FOUT << "[INFO ](evaluateHistory::itu) Could not find history for <" << u << "> to extend history of <" << key << ">\n";
-                        // Add H(u)
-                        TypeTransforms.emplace_back(u);
-                        auto itu2 = std::find(begin(TypeTransforms), end(TypeTransforms), u);
-                        if(itu2 != std::end(TypeTransforms)) {
-                            it->extend(*itu2);
-                        }
-                    }
-
-                });
-            }
-        });
-
-    CNS_DEBUG(" end.");
-}
-*/
 
 #endif  // HISTORY_H

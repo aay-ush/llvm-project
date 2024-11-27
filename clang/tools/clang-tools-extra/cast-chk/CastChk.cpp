@@ -333,35 +333,16 @@ void processCast(MatchFinder::MatchResult const &result) {
     auto const *castExpr = result.Nodes.getNodeAs<CastExpr>("cast");
 
     // Source
-    //auto const *s_fptrRef = result.Nodes.getNodeAs<DeclRefExpr>("callee");
-    //auto const *s_callArg = result.Nodes.getNodeAs<DeclRefExpr>("arg");
     auto const *s_unaryCastee = result.Nodes.getNodeAs<DeclRefExpr>("unaryCastee");
 
     auto const *binOp = result.Nodes.getNodeAs<BinaryOperator>("binOp");
-    //auto const *var = result.Nodes.getNodeAs<DeclStmt>("var");
-    //auto const *gexpr = result.Nodes.getNodeAs<Expr>("gexpr");
 
     // Target
-    //auto const *call = result.Nodes.getNodeAs<CallExpr>("call");
-    //auto const *fptr = result.Nodes.getNodeAs<CallExpr>("fptr");
     auto const *unaryOp = result.Nodes.getNodeAs<UnaryOperator>("unaryOp");
 
-    /*
-    if(!!var) {
-        updateCensus(*context, *castExpr, *castSource, var, location);
-    }
-    */
     if(!!unaryOp) {
         updateCensus<CastSourceType::UnaryOp>(*context, *result.SourceManager, *castExpr, *s_unaryCastee, *unaryOp);
     }
-    /*
-    else if (!!call) {
-        //updateCensus<CastSourceType::FunctionArg>(*context, *result.SourceManager, *castExpr, *s_callArg, *call);
-    }
-    else if(!!fptr) {
-        //updateCensus<CastSourceType::Function>(*context, *result.SourceManager, *castExpr, *s_fptrRef, *fptr);
-    }
-    */
     else if(!!binOp) {
         CNS_INFO("binop processing");
         auto const *bl = result.Nodes.getNodeAs<DeclRefExpr>("binLhs");
@@ -431,16 +412,6 @@ void processVar(MatchFinder::MatchResult const &result) {
     }
 
     assert(lhsRef);
-    //auto const *lhs = lhsRef->getDecl();
-
-    // We can have FunctionDecl too?
-    /*
-    auto lhsDecl = dyn_cast<VarDecl>(lhsRef->getDecl());
-    if(!lhsDecl) {
-        CNS_INFO("dyncast LHS Decl == nullptr");
-        return;
-    }
-    */
     updateCensus(*context, *result.SourceManager, *lhsRef, *rhs);
     CNS_DEBUG(" end.");
 }
@@ -749,19 +720,6 @@ void addCallHistory(clang::ASTContext & context, clang::CallExpr const& call) {
     CNS_DEBUG("end.");
 }
 
-/*
-HistoryTemplate makeHistoryTemplate(
-        clang::ASTContext &context,
-        clang::FunctionDecl const &fn) {
-    CNS_DEBUG("");
-
-    auto const& fname = fn.getNameAsString();
-    TransformTemplates.push_back({*calledFn});
-
-    CNS_DEBUG("end.");
-}
-*/
-
 // For call expressions:
 void preprocess(
         clang::ASTContext &context,
@@ -777,14 +735,6 @@ void preprocess(
     }
 
     auto const& fn = calledFn->getNameAsString();
-    /*
-    auto it = std::find(begin(TransformTemplates), end(TransformTemplates), fn);
-    if(it != std::end(TransformTemplates)) {
-        FOUT << "[INFO ](preprocess<CallExpr>) Skipping processed function: " << String(context, *calledFn) << "\n";
-        CNS_DEBUG("<CallExpr> end.");
-        return;
-    }
-    */
 
     if(std::find(begin(ignoreFunctions), end(ignoreFunctions), fn) != end(ignoreFunctions)) {
         FOUT << "[INFO ](preprocess<CallExpr>) Skipping ignored function: " << String(context, *calledFn) << "\n";
@@ -897,7 +847,6 @@ StatementMatcher CastMatcher =
                         hasRHS(expr(declRefExpr().bind("rhsref")).bind("binRhs"))
                         ).bind("binOp")))
 
-                //hasDescendant(declRefExpr().bind("castee")))    // All castExprs will have this descendant, it is to just get the castee easily.
         ).bind("cast");
 
 
@@ -951,14 +900,8 @@ public:
         }
 
         FOUT << "# Census summary so far:\n";
-        //censusSummary(FOUT);
         censusSummary();
-        //evaluateHistory();
-        /*
-        for(auto const &[key, _]: census) {
-           elaborateHistory(key);
-        }
-        */
+
         std::for_each(begin(TypeTransforms), end(TypeTransforms),
             [&](auto &h) {
                 elaborateHistory(h.second, {3});
@@ -973,16 +916,6 @@ public:
                 FOUT << s.second << "\n";
                 std::cout << s.second << "\n";
             });
-        /*
-        std::for_each(begin(Finality), end(Finality),
-            [&](auto const &f) {
-                FOUT << "History of (" << f.first << "):\n";
-                std::cout << "History of (" << f.first << "):\n";
-                FOUT << f << "\n";
-                //dumpHistory(FOUT, h.second);
-                std::cout << f << "\n";
-            });
-        */
         FOUT << "# Census summary end.\n";
         FOUT << "end History collection:\n";
         /*
@@ -1060,14 +993,6 @@ void buildIgnoreList() {
 }
 
 // TODO
-// Add unary op handling when it is ancestor of cast.
-// - Match assignments that are not inits.
-//   - Fix BINOP
-// - Due to the changes in computing container function and resolving function pointers to calls,
-//   the old old problem (cf. CastMatcher2) of function pointers dominating var decls is back.
-//   problem can be solved by not resolving fptr. But since both fptr(p) and the call fptr(p -> f.$0) are using arg match, there is no way to distinguish arg vs ptr (so far). If fptr is not resolved, than qsort(v1, v2, compare(a, b)) will not give v1->compare.$0 e.g.
-//
 // - Qsort: Infinite loop in bsearch header
 //   - Checkout bsearch code to find the loop.
-//   - Find a way to prevent going too deep in header.
 // - Cast.c: No infinity but f1->f2->f1->f2->break instead of f1->f2->f1->break
