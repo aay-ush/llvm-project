@@ -904,7 +904,7 @@ public:
 
         std::for_each(begin(TypeTransforms), end(TypeTransforms),
             [&](auto &h) {
-                elaborateHistory(h.second, {3});
+                elaborateHistory(h.second); //, {3});
             });
 
         FOUT << "History collection:\n";
