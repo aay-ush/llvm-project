@@ -838,36 +838,42 @@ std::vector<LocalHistory> HistoryTemplate::instantiate(clang::ASTContext &contex
 class TypeSummary {
     public:
 
-    TypeSummary(History const &h); //, std::optional<unsigned> level);
+    TypeSummary(History const &h);
 
     void addNextBranch(TypeSummary const& branch) {
-        FOUT << "[INFO ](addNextBranch) {" << key_ << ";[" << nexts_.size() << "]} Adding Nexts_ branch: {" << branch.key_ << "}\n";
+        //FOUT << "[INFO ](addNextBranch) {" << key_ << ";[" << nexts_.size() << "]_" << numi_ << "} Adding Nexts_ branch: {" << branch.key_ << "}\n";
         nexts_.push_back(branch);
-        FOUT << "[INFO ](addNextBranch) {" << key_ << ";[" << nexts_.size() << "]} end\n";
+        //FOUT << "[INFO ](addNextBranch) {" << key_ << ";[" << nexts_.size() << "]_" << numi_ << "} end\n";
     }
 
-    ~TypeSummary() {
+    ~TypeSummary() = default; /*{
         CNS_DEBUG("");
-        FOUT << "[INFO ](~TypeSummary) Clearing {" << key_ << ";[" << nexts_.size() << "]}\n";
+        FOUT << "[INFO ](~TypeSummary) Clearing {" << key_ << ";[" << nexts_.size() << "]_" << numi_ << "}\n";
         key_.clear();
         nexts_.clear();
         CNS_DEBUG("end.");
     }
+    */
 
-    TypeSummary(const TypeSummary& t): key_(t.key_), nexts_(t.nexts_) {
-        FOUT << "[INFO ](TypeSummary::copy) Copy created for {" << key_ << ";[" << nexts_.size() << "]}\n";
+    TypeSummary(const TypeSummary& t) = default; /*: key_(t.key_), nexts_(t.nexts_) {
+        numi_ = num_++;
+        FOUT << "[INFO ](TypeSummary::copy) Copy created from _" << t.numi_ << "_: {" << key_ << ";[" << nexts_.size() << "]_" << numi_ << "}\n";
     }
-    TypeSummary(TypeSummary&& t): key_(std::move(t.key_)), nexts_(std::move(t.nexts_)) {
-        FOUT << "[INFO ](TypeSummary::move) Moved {" << key_ << ";[" << nexts_.size() << "]}\n";
+    */
+    TypeSummary(TypeSummary&& t) = default; /*: key_(std::move(t.key_)), nexts_(std::move(t.nexts_)) {
+        numi_ = num_++;
+        FOUT << "[INFO ](TypeSummary::move) Moved from _" << t.numi_ << "_: {" << key_ << ";[" << nexts_.size() << "]_" << numi_ << "}\n";
     }
+    */
 
-    TypeSummary& operator=(const TypeSummary& t) = delete;
+    TypeSummary& operator=(const TypeSummary& t) = default;
+    TypeSummary& operator=(TypeSummary&& t) = default;
 
     // S(a) = Typeof(a) -> S(next)
-    std::string summary(std::optional<unsigned> level, int indent = 0) const {
+    std::string summarize(std::optional<unsigned> level, int indent = 0) const {
         std::stringstream ss;
 
-        FOUT<< "{" << key_ << ";[" << nexts_.size() << "]} LEVEL = " << level.value_or(599) << "\n";
+        //FOUT<< "{" << key_ << ";[" << nexts_.size() << "]_" << numi_ << "} LEVEL = " << level.value_or(599) << "\n";
         auto const& op = ops(key_);
         if(op.type_.empty()) {
             ss << "T {" << op.qn_ << "}";
@@ -885,7 +891,7 @@ class TypeSummary {
             [&](auto const& ts) {
                 ss << "\n";
                 space(ss, indent);
-                ss << "|-> " << ts.summary({level.value() - 1}, indent + 2);
+                ss << "|-> " << ts.summarize({level.value() - 1}, indent + 2);
             });
 
         return ss.str();
@@ -893,7 +899,7 @@ class TypeSummary {
 
     std::string id() const {
         std::stringstream ss;
-        ss << key_ << ";[" << size() << "]";
+        ss << key_ << ";[" << size() << "]_" << numi_;
         return ss.str();
     }
 
@@ -904,7 +910,11 @@ class TypeSummary {
     private:
     CensusKey key_;
     std::vector<TypeSummary> nexts_;
+    static unsigned num_;
+    unsigned numi_;
 };
+
+unsigned TypeSummary::num_ = 0;
 
 /*
 bool operator==(TypeSummary lhs, CensusKey rhs) {
@@ -915,47 +925,38 @@ bool operator!=(TypeSummary lhs, CensusKey rhs) {
 }
 */
 
-TypeSummary makeTypeSummaryLH(LocalHistory const& lh); //, std::optional<unsigned> level);
+TypeSummary makeTypeSummaryLH(LocalHistory const& lh);
 
-TypeSummary::TypeSummary(History const&h) {//, std::optional<unsigned> level) {
+TypeSummary::TypeSummary(History const&h) {
     CNS_DEBUG("");
-    //FOUT << "[INFO ](TypeSummary::TypeSummary) Building summary for {" << h.opId() << "}\n"; // till level: " << level.value_or(0) << "\n";
     key_ = h.opId();
-    /*
-    auto keyr = h.getContextResolvedOpStr({});
-    if(key_ != keyr) {
-        // Might not be needed.
-        // Create type summary from H(keyr)
-    }
-    */
-
-    FOUT << "[INFO ](TypeSummary::TypeSummary) Created summary {" << key_ << ";[" << nexts_.size() << "]} for H<" << h.opId() << "} [h.branch.size=" << h.branch().size() << "]>\n";
-
+    numi_ = num_++;
+    FOUT << "[INFO ](TypeSummary::TypeSummary) Created summary {" << key_ << ";[" << nexts_.size() << "]_ " << num_ << "} for H<" << h.opId() << "} [h.branch.size=" << h.branch().size() << "]>\n";
     CNS_DEBUG("end.");
 }
 
-TypeSummary makeResolvedSummary(std::string const& ops_, std::string const& rops) {
+TypeSummary makeResolvedSummary(std::string const& keyOp, std::string const& keyRops) {
     CNS_INFO("");
-    FOUT << "[INFO ](makeResolvedSummary) Building summary for {" << ops_ << ", " << rops << "}\n";
-    auto const& op = ops(ops_);
-    FOUT << "[INFO ](makeResolvedSummary) {" << ops_ << "}: A\n";
-    TypeSummary ts (TypeTransforms.at(ops_)); //, {});
+    FOUT << "[INFO ](makeResolvedSummary) Building summary for {" << keyOp << ", " << keyRops << "}\n";
+    auto const& op = ops(keyOp);
+    FOUT << "[INFO ](makeResolvedSummary) {" << keyOp << "}: A\n";
+    TypeSummary ts (TypeTransforms.at(keyOp));
 
-    if(rops == ops_) {
-        FOUT << "[INFO ](makeResolvedSummary) {" << ops_ << "} = {" << rops << "}\n";
+    if(keyRops == keyOp) {
+        FOUT << "[INFO ](makeResolvedSummary) {" << keyOp << "} = {" << keyRops << "}\n";
         FOUT << "[INFO ](makeResolvedSummary) {" << ts.id() << "}: end.\n";
         return ts;
     }
 
     // If op is a parameter and rop is arg, return ts
     std::regex pattern("^.*?\\$");
-    if(std::regex_search(ops_, pattern)) {
-        // rop is probably arg (unless something like hof.$1.$0)
+    if(std::regex_search(keyOp, pattern)) {
+        // keyRops maybe arg (unless something like hof.$1.$0)
         // => summary of parameter should be assigned to arg --> ??
         //    not needed since that is taken care of by history
-        if(!std::regex_search(rops, pattern)) {
+        if(!std::regex_search(keyRops, pattern)) {
             // => arg
-            FOUT << "[INFO ](makeResolvedSummary) {" << ts.id() << "}: {" << rops << "} is probably an arg for param {" << ops_ << "}, stopping\n";
+            FOUT << "[INFO ](makeResolvedSummary) {" << ts.id() << "}: {" << keyRops << "} is probably an arg for param {" << keyOp << "}, stopping\n";
             FOUT << "[INFO ](makeResolvedSummary) {" << ts.id() << "}: end.\n";
             return ts;
         }
@@ -964,31 +965,31 @@ TypeSummary makeResolvedSummary(std::string const& ops_, std::string const& rops
 
     // If op.type is not empty
     if(!op.type_.empty()) {
-        FOUT << "[INFO ](makeResolvedSummary) {" << ts.id() << "} has defined type. Not using {" << rops << "}\n";
+        FOUT << "[INFO ](makeResolvedSummary) {" << ts.id() << "} has defined type. Not using {" << keyRops << "}\n";
         FOUT << "[INFO ](makeResolvedSummary) {" << ts.id() << "}: end.\n";
         return ts;
     }
 
-    if(census.find(rops) == std::end(census)) {
-        FOUT << "[INFO ](makeResolvedSummary) {" << ts.id() << "}: Cannot find rops{" << rops << "} in census\n";
+    if(census.find(keyRops) == std::end(census)) {
+        FOUT << "[INFO ](makeResolvedSummary) {" << ts.id() << "}: Cannot find keyRops{" << keyRops << "} in census\n";
         FOUT << "[INFO ](makeResolvedSummary) {" << ts.id() << "}: end.\n";
         return ts;
     }
 
     /*
-    if((ops_ != rops)
-            && std::regex_search(ops_, pattern)
-            && std::regex_search(rops, pattern)) {
+    if((keyOp != keyRops)
+            && std::regex_search(keyOp, pattern)
+            && std::regex_search(keyRops, pattern)) {
 
         // Possibly, Strongly connected components (one param to next, maybe cyclic)
         CNS_INFO("SCC possibility detected, stopping recursion.");
-        auto const &hr = TypeTransforms.at(rops);
+        auto const &hr = TypeTransforms.at(keyRops);
         std::for_each(hr.bbegin(), hr.bend(),
             [&](auto const &bh_) {
                 auto const& bh = bh_.first.get();
-                auto brops = bh.getContextResolvedOpStr(bh_.second);
-                if(bh.opId() != ops_ || brops != ops_) {
-                    auto th = makeResolvedSummary(bh.opId(), brops);
+                auto bkeyRops = bh.getContextResolvedOpStr(bh_.second);
+                if(bh.opId() != keyOp || bkeyRops != keyOp) {
+                    auto th = makeResolvedSummary(bh.opId(), bkeyRops);
                     ts.addNextBranch(th);
                 }
             });
@@ -999,17 +1000,17 @@ TypeSummary makeResolvedSummary(std::string const& ops_, std::string const& rops
     */
 
 
-    FOUT << "[INFO ](makeResolvedSummary) {" << ts.id() << "}: Found rops{" << rops << "} in census\n";
-    //auto th = TypeSummary(TypeTransforms.at(rops)); //, {});
-    FOUT << "[INFO ](makeResolvedSummary) {" << ts.id() << "}: Adding branch from resolved rops{" << rops << "}\n";
+    FOUT << "[INFO ](makeResolvedSummary) {" << ts.id() << "}: Found keyRops{" << keyRops << "} in census\n";
+    //auto th = TypeSummary(TypeTransforms.at(keyRops)); //, {});
+    FOUT << "[INFO ](makeResolvedSummary) {" << ts.id() << "}: Adding branch from resolved keyRops{" << keyRops << "}\n";
     FOUT << "[INFO ](makeResolvedSummary) {" << ts.id() << "}: B\n";
-    ts.addNextBranch(TypeTransforms.at(rops));
+    ts.addNextBranch(TypeTransforms.at(keyRops));
 
     FOUT << "[INFO ](makeResolvedSummary) {" << ts.id() << "}: end.\n";
     return ts;
 }
 
-TypeSummary makeTypeSummaryLH(LocalHistory const& lh) {//, std::optional<unsigned> level) {
+TypeSummary makeTypeSummaryLH(LocalHistory const& lh) {
     CNS_INFO("");
 
     auto const &h = lh.first.get();
@@ -1023,17 +1024,6 @@ TypeSummary makeTypeSummaryLH(LocalHistory const& lh) {//, std::optional<unsigne
         return ts;
     }
 
-    /*
-    if(!level || level.value() == 0) {
-        CNS_INFO("End of level");
-        if(h.branch().size() != 0) {
-            // Do something for branch summary TODO
-        }
-        CNS_INFO("end.");
-        return ts;
-    }
-    */
-
     FOUT << "[INFO ](makeTypeSummaryLH) {" << ts.id() << "}: Using local history context to summarize branches for {" << ts.id() << "} branch{size=" << h.branch().size() << "}\n";
     auto pc = h.getContext();
     if(lh.second) {
@@ -1042,15 +1032,15 @@ TypeSummary makeTypeSummaryLH(LocalHistory const& lh) {//, std::optional<unsigne
     }
     std::for_each(h.bbegin(), h.bend(),
         [&](auto const &bh) {
+            if(bh.first.get().opId() == hid || bh.first.get().opId() == rops) {
+                return;
+            }
             auto pcn = pc;
             if(bh.second) {
                 CNS_DEBUG("Extending parent context with branch local");
                 pcn.insert(std::begin(bh.second.value()), std::end(bh.second.value()));
             }
             FOUT << "[INFO ](makeTypeSummaryLH) {" << ts.id() << "}: Creating summary for branch: {" << bh.first.get().opId() << "}\n";
-            //auto th = makeTypeSummaryLH({bh.first.get(), pcn}); //, {level.value() - 1});
-            //FOUT << "[INFO ](makeTypeSummaryLH) Created summary: {" << th.summary({4}) << "\n}\n";
-            //ts.addNextBranch(th);
             FOUT << "[INFO ](makeTypeSummaryLH) {" << ts.id() << "}: 2.\n";
             ts.addNextBranch(makeTypeSummaryLH({bh.first.get(), pcn}));
         });
@@ -1205,7 +1195,7 @@ std::string summarize(History const&h, std::optional<unsigned> level) {
 */
 
 std::ostream& operator<<(std::ostream &os, TypeSummary const &ts) {
-    os << ts.summary({4}) << "\n";
+    os << ts.summarize({1}) << "\n";
     return os;
 }
 
@@ -1213,6 +1203,7 @@ std::ostream& operator<<(std::ostream &os, TypeSummary const &ts) {
 // Eliminate local history with history by using context.
 void elaborateHistory(History const &h) {//, std::optional<int> level) {
     CNS_INFO("");
+    TypeSummaries.clear();
     //summarize(h, level);
     std::for_each(begin(TypeTransforms), end(TypeTransforms),
         [&](auto const& h_) {
