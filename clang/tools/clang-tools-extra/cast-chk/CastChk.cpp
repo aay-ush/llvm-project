@@ -36,6 +36,7 @@
 #include <tuple>
 #include <set>
 #include <unordered_set>
+#include <cstdlib>
 
 #include "utils.h"
 #include "Census.h"
@@ -864,6 +865,8 @@ StatementMatcher CastMatcher2 =
 // TODO: Add missing cast dumps. For example in other cast types.(?).
 
 //---
+unsigned SUMMARY_DEPTH = 0;
+
 class CastMatchCallback: public MatchFinder::MatchCallback {
 public:
     void run(MatchFinder::MatchResult const &result) override {
@@ -913,8 +916,12 @@ public:
             [&](auto const &s) {
                 FOUT << "History of (" << s.first << "):\n";
                 std::cout << "History of (" << s.first << "):\n";
-                FOUT << s.second << "\n";
-                std::cout << s.second << "\n";
+                summarize(FOUT, s.second, SUMMARY_DEPTH);
+                summarize(std::cout, s.second, SUMMARY_DEPTH);
+                FOUT << "\n";
+                std::cout << "\n";
+                //FOUT << s.second << "\n";
+                //std::cout << s.second << "\n";
             });
         FOUT << "# Census summary end.\n";
         FOUT << "end History collection:\n";
@@ -962,6 +969,11 @@ static cl::extrahelp Morehelp("\nMore help text...\n");
 void buildIgnoreList();
 
 int main(int argc, const char **argv) {
+    if(argc > 1) {
+        // Make sure last arg is summary depth
+        SUMMARY_DEPTH = std::atoi(argv[argc - 1]);
+        argc = argc - 1;
+    }
     auto ExpectedParser = CommonOptionsParser::create(argc, argv, MyToolCategory);
     if(!ExpectedParser) {
         llvm::errs() << ExpectedParser.takeError();

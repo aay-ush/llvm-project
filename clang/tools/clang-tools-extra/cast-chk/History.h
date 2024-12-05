@@ -126,15 +126,15 @@ namespace {
         //FOUT << "[INFO ](History::derefIdFromContext) Resolving {" << id << "}\n";
         for(unsigned i = 0; i != hc.size(); i++) {
             for(auto &[key, val]: hc) {
-                //FOUT << "[INFO ](History::derefIdFromContext) hc[" << i << "]: [" << key << " ↦ " << val << "] ('" << id << "')\n";
+                FOUT << "[INFO ](History::derefIdFromContext) hc[" << i << "]: [" << key << " ↦ " << val << "] ('" << id << "')\n";
                 if(key == val) {
                     CNS_DEBUG("Key = value, skip");
                     continue;
                 }
-                //FOUT << "[INFO ](History::derefIdFromContext) ('" << id << "') -> "/*<< "\n"*/;
+                FOUT << "[INFO ](History::derefIdFromContext) ('" << id << "') -> "/*<< "\n"*/;
                 std::regex pattern("\\b" + regex_escape(key));
                 id = std::regex_replace(id, pattern, val, std::regex_constants::format_sed);
-                //FOUT << "('" << id << "')\n";
+                FOUT << "('" << id << "')\n";
             }
         }
 
@@ -577,14 +577,14 @@ std::string History::getContextResolvedOpStr(std::optional<HistoryContext const>
                 auto roppn = hropp.getContextResolvedOpStr(lc);
                 if(ropp != roppn) {
                     // Try now
-                    //FOUT << "[INFO ](History::getContextResolvedOpStr) Resolved container, ropp = {" << roppn << "}\n";
+                    FOUT << "[INFO ](History::getContextResolvedOpStr) Resolved container, ropp = {" << roppn << "}\n";
                     rop = roppn + "." + rop.substr(rop.find("$"));
                     if(census.find(rop) == census.end()) {
-                        //FOUT << "[INFO ](History::getContextResolvedOpStr) However, rop = {" << rop << "} not in census\n";
+                        FOUT << "[INFO ](History::getContextResolvedOpStr) However, rop = {" << rop << "} not in census\n";
                         // Create census node for rop and add op as dominator?
                     }
                     else {
-                        //FOUT << "[INFO ](History::getContextResolvedOpStr) rop = {" << rop << "} found in census\n";
+                        FOUT << "[INFO ](History::getContextResolvedOpStr) rop = {" << rop << "} found in census\n";
                         // Who is the dominator for this?
                     }
                 }
@@ -883,7 +883,7 @@ class TypeSummary {
         }
 
         if(level <= 0 && nexts_.size() > 0) {
-            ss << "...\n";
+            ss << "-> <...>\n";
             return ss.str();
         }
 
@@ -1055,6 +1055,10 @@ std::unordered_map<std::string, TypeSummary> TypeSummaries;
 std::ostream& operator<<(std::ostream &os, TypeSummary const &ts) {
     os << ts.summarize({1}) << "\n";
     return os;
+}
+
+void summarize(std::ostream &os, TypeSummary const &ts, unsigned depth = 0) {
+    os << ts.summarize({depth}) << "\n";
 }
 
 // Create copies of typetransforms. Then resolve and update history branches as needed.
