@@ -899,7 +899,7 @@ class TypeSummary {
 
     std::string id() const {
         std::stringstream ss;
-        ss << key_ << ";[" << size() << "]_" << numi_;
+        ss << key_ << ";[" << size() << "]"; //_" << numi_;
         return ss.str();
     }
 
@@ -910,11 +910,11 @@ class TypeSummary {
     private:
     CensusKey key_;
     std::vector<TypeSummary> nexts_;
-    static unsigned num_;
-    unsigned numi_;
+    //static unsigned num_;
+    //unsigned numi_;
 };
 
-unsigned TypeSummary::num_ = 0;
+//unsigned TypeSummary::num_ = 0;
 
 /*
 bool operator==(TypeSummary lhs, CensusKey rhs) {
@@ -930,8 +930,9 @@ TypeSummary makeTypeSummaryLH(LocalHistory const& lh);
 TypeSummary::TypeSummary(History const&h) {
     CNS_DEBUG("");
     key_ = h.opId();
-    numi_ = num_++;
-    FOUT << "[INFO ](TypeSummary::TypeSummary) Created summary {" << key_ << ";[" << nexts_.size() << "]_ " << num_ << "} for H<" << h.opId() << "} [h.branch.size=" << h.branch().size() << "]>\n";
+    //numi_ = num_++;
+    //FOUT << "[INFO ](TypeSummary::TypeSummary) Created summary {" << key_ << ";[" << nexts_.size() << "]_ " << num_ << "} for H<" << h.opId() << "} [h.branch.size=" << h.branch().size() << "]>\n";
+    FOUT << "[INFO ](TypeSummary::TypeSummary) Created summary {" << key_ << ";[" << nexts_.size() << "]} for H<" << h.opId() << "} [h.branch.size=" << h.branch().size() << "]>\n";
     CNS_DEBUG("end.");
 }
 
@@ -1050,149 +1051,6 @@ TypeSummary makeTypeSummaryLH(LocalHistory const& lh) {
 }
 
 std::unordered_map<std::string, TypeSummary> TypeSummaries;
-
-/*
-std::ostream& summarize(std::ostream &os, std::string const& ops_, std::string const& rops) {
-    CNS_DEBUG("");
-    auto const& op = ops(ops_);
-    if(op.type_.empty()) {
-        FOUT << "[INFO](summarize<os>) op.type_.empty) for {" << op.qn_ << "}\n";
-        if(census.find(rops) == std::end(census)) {
-            FOUT << "[INFO](summarize<os>) Cannot find {" << rops << "} in census\n";
-            os << "T" << "{" << rops << " = " << ops_ << "}";
-        }
-        else {
-            FOUT << "[INFO](summarize<os>) Found {" << rops << "} in census\n";
-            auto rop = ops(rops);
-            if(rop.type_.empty() && (!rop.qn_.empty())) {
-                os << "T" << "{" << rop.qn_ << "}";
-            }
-            else if(rop.qn_.empty()) {
-                os << rop.type_ << "{ ~" << op.qn_ << "}";
-            }
-            else {
-                os << rop.type_ << "{" << op.qn_ << " = " << rop.qn_ << "}";
-            }
-        }
-    }
-    else {
-        os << op.type_ << "{" << op.qn_ << "}";
-    }
-    CNS_DEBUG("end.");
-    return os;
-}
-
-std::string summarize(LocalHistory const&lh, std::optional<unsigned> level) {
-    CNS_DEBUG("");
-    auto &h = lh.first.get();
-    //if(TypeSummaries.find(h.opId()) != std::end(TypeSummaries)) {
-    //    return TypeSummaries.at(h.opId()).summary();
-    //}
-
-    TypeSummary ts(h.opId());
-    std::stringstream ss;
-    summarize(ss, h.opId(), h.getContextResolvedOpStr(lh.second));
-
-    //auto const& op = ops(h.opId());
-
-    //if(op.type_.empty()) {
-    //    auto rops = h.getContextResolvedOpStr(lh.second);
-    //    if(census.find(rops) != census.end()) {
-    //        auto rop = ops(rops);
-    //        if(rop.type_.empty() && (!rop.qn_.empty())) {
-    //            ss << rop.qn_;
-    //        }
-    //        else if(rop.qn_.empty()) {
-    //            ss << rop.type_ << "{ ~" << op.qn_ << "}";
-    //        }
-    //        else {
-    //            ss << "T{" << op.qn_ << " = " << rop.qn_ << "}";
-    //        }
-    //    }
-    //    else {
-    //        ss << "T{" << rops << " = " << op.qn_ << "}";
-    //    }
-    //}
-    //else {
-    //    ss << op.type_ << "{" << op.qn_ << "}";
-    //}
-
-    if(!level || level.value() == 0) {
-        CNS_INFO("End of level");
-        if(h.branch().size() != 0) {
-            ss << " -> ...TBE ";
-        }
-        ts.addBranchSummary(ss.str());
-        TypeSummaries.insert({h.opId(), ts});
-        CNS_DEBUG("end.");
-        return ss.str();
-    }
-
-    if(h.branch().size() == 0) {
-        CNS_INFO("Empty branch");
-        ts.addBranchSummary(ss.str());
-        TypeSummaries.insert({h.opId(), ts});
-        CNS_DEBUG("end.");
-        return ss.str();
-    }
-
-    auto pc = h.getContext();
-    if(lh.second) {
-        CNS_INFO("Extending parent context with local");
-        pc.insert(std::begin(lh.second.value()), std::end(lh.second.value()));
-    }
-    std::for_each(h.bbegin(), h.bend(),
-        [&](auto const &bh) {
-            auto pcn = pc;
-            // Avoid hof.$1.$0 = hof.$0 to allow hof.$1.$0 -> f.$0
-            //if(bh.second) {
-            //    CNS_INFO("Extending parent context with branch local");
-            //    pcn.insert(std::begin(bh.second.value()), std::end(bh.second.value()));
-            //}
-            //ss << " -> ";
-            //summarize(ss, bh.first.get().opId(), bh.first.get().getContextResolvedOpStr({pcn}));
-            //ss << "\n";
-            ss << " -> " << (summarize({bh.first.get(), pcn}, {level.value() - 1})) << "\n";
-            FOUT << "[INFO](summarize<lh>:branch) {" << h.opId() << ":: " << bh.first.get().opId() << "} branch summary: " << ss.str() << "\n";
-            ts.addBranchSummary(ss.str());
-        });
-
-    TypeSummaries.insert({h.opId(), ts});
-    CNS_DEBUG("end.");
-    return ss.str();
-}
-
-std::string summarize(History const&h, std::optional<unsigned> level) {
-    CNS_DEBUG("");
-    //if(TypeSummaries.find(h.opId()) != std::end(TypeSummaries)) {
-    //    return TypeSummaries.at(h.opId()).summary();
-    //}
-
-    // Summarize h:
-    // Summary(for_each(h.bbegin(), h.bbend()))
-    // => S(h) = S(h1) + S(h2) + S(h3)
-
-    // Create type summary for h
-    TypeSummary ts(h.opId());
-    std::stringstream ss;
-    summarize(ss, h.opId(), h.getContextResolvedOpStr({}));
-    ts.addBranchSummary(ss.str());
-
-    std::for_each(h.bbegin(), h.bend(),
-        [&](auto const &lh) {
-            auto pc = h.getContext();
-            if(lh.second) {
-                CNS_INFO("<h> Extending parent context with branch");
-                pc.insert(std::begin(lh.second.value()), std::end(lh.second.value()));
-            }
-            ts.addBranchSummary(summarize({lh.first.get(), pc}, level.value() - 1));
-        });
-
-    TypeSummaries.insert({h.opId(), ts});
-    CNS_DEBUG("end.");
-    return ts.summary();
-}
-*/
 
 std::ostream& operator<<(std::ostream &os, TypeSummary const &ts) {
     os << ts.summarize({1}) << "\n";
