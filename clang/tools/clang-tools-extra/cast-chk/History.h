@@ -76,6 +76,7 @@ namespace {
         HistoryContext hc;
         std::vector<CensusKey> args;
         std::regex functionPrefix("^.*?\\$");
+        std::regex fptrParmX("^.*?\\$.*\\$");
 
         unsigned i = 0;
         std::for_each(call.arg_begin(), call.arg_end(), [&](auto const *a) {
@@ -104,7 +105,17 @@ namespace {
                 }
             }
 
-            hc[params[i++]] = key;
+            // If parameter is fptr param, use arg = param mapping to facilitate resolving fptr
+            std::smatch fptrParm;
+            if(std::regex_search(params[i], fptrParm, fptrParmX)) {
+                FOUT << "[INFO ](makeHistoryContext) Found fptr parm: {key, value} = {" << params[i] << ", " << key << "}\n";
+                FOUT << "[INFO ](makeHistoryContext) Reversed context pair: {key, value} = {" << key << ", " << params[i] << "}\n";
+                hc[key] = params[i++];
+            }
+            else {
+                FOUT << "[INFO ](makeHistoryContext) {key, value} = {" << params[i] << ", " << key << "}\n";
+                hc[params[i++]] = key;
+            }
             args.push_back(key);
             return;
         });
@@ -126,15 +137,15 @@ namespace {
         //FOUT << "[INFO ](History::derefIdFromContext) Resolving {" << id << "}\n";
         for(unsigned i = 0; i != hc.size(); i++) {
             for(auto &[key, val]: hc) {
-                FOUT << "[INFO ](History::derefIdFromContext) hc[" << i << "]: [" << key << " ↦ " << val << "] ('" << id << "')\n";
+                //FOUT << "[INFO ](History::derefIdFromContext) hc[" << i << "]: [" << key << " ↦ " << val << "] ('" << id << "')\n";
                 if(key == val) {
                     CNS_DEBUG("Key = value, skip");
                     continue;
                 }
-                FOUT << "[INFO ](History::derefIdFromContext) ('" << id << "') -> "/*<< "\n"*/;
+                //FOUT << "[INFO ](History::derefIdFromContext) ('" << id << "') -> "/*<< "\n"*/;
                 std::regex pattern("\\b" + regex_escape(key));
                 id = std::regex_replace(id, pattern, val, std::regex_constants::format_sed);
-                FOUT << "('" << id << "')\n";
+                //FOUT << "('" << id << "')\n";
             }
         }
 

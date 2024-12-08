@@ -543,7 +543,8 @@ std::string getLinkedParm(
     if(auto parmPos = getParameterMatch(*fn, name)) {
         FOUT << "[INFO ](getLinkedParm) parmPos: " << parmPos.value() << "; " << String(context, *fn, *parmPos) << "\n";
         CNS_DEBUG("<T, DeclarationName> end.");
-        return String(context, *fn, *parmPos);
+        //return String(context, *fn, *parmPos);
+        return parmqn(context, *fn, *parmPos);
     }
 
     CNS_WARN("parmPos nullopt.");
