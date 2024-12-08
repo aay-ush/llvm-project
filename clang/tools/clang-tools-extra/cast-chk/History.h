@@ -857,6 +857,8 @@ class TypeSummary {
         //FOUT << "[INFO ](addNextBranch) {" << key_ << ";[" << nexts_.size() << "]_" << numi_ << "} end\n";
     }
 
+    std::string summarize(std::optional<unsigned> level, int indent = 0) const;
+
     ~TypeSummary() = default; /*{
         CNS_DEBUG("");
         FOUT << "[INFO ](~TypeSummary) Clearing {" << key_ << ";[" << nexts_.size() << "]_" << numi_ << "}\n";
@@ -879,34 +881,6 @@ class TypeSummary {
 
     TypeSummary& operator=(const TypeSummary& t) = default;
     TypeSummary& operator=(TypeSummary&& t) = default;
-
-    // S(a) = Typeof(a) -> S(next)
-    std::string summarize(std::optional<unsigned> level, int indent = 0) const {
-        std::stringstream ss;
-
-        //FOUT<< "{" << key_ << ";[" << nexts_.size() << "]_" << numi_ << "} LEVEL = " << level.value_or(599) << "\n";
-        auto const& op = ops(key_);
-        if(op.type_.empty()) {
-            ss << "T {" << op.qn_ << "}";
-        }
-        else {
-            ss << op.type_ << "{" << op.qn_ << "}";
-        }
-
-        if(level <= 0 && nexts_.size() > 0) {
-            ss << "-> <...>\n";
-            return ss.str();
-        }
-
-        std::for_each(begin(nexts_), end(nexts_),
-            [&](auto const& ts) {
-                ss << "\n";
-                space(ss, indent);
-                ss << "|-> " << ts.summarize({level.value() - 1}, indent + 2);
-            });
-
-        return ss.str();
-    }
 
     std::string id() const {
         std::stringstream ss;
@@ -1062,6 +1036,44 @@ TypeSummary makeTypeSummaryLH(LocalHistory const& lh) {
 }
 
 std::unordered_map<std::string, TypeSummary> TypeSummaries;
+
+// S(a) = Typeof(a) -> S(next)
+std::string TypeSummary::summarize(std::optional<unsigned> level, int indent) const {
+    std::stringstream ss;
+
+    //FOUT<< "{" << key_ << ";[" << nexts_.size() << "]_" << numi_ << "} LEVEL = " << level.value_or(599) << "\n";
+    auto const& op = ops(key_);
+    if(op.type_.empty()) {
+        ss << "T {" << op.qn_ << "}";
+    }
+    else {
+        ss << op.type_ << "{" << op.qn_ << "}";
+    }
+
+    if(level <= 0 && nexts_.size() > 0) {
+        ss << "-> <...>\n";
+        return ss.str();
+    }
+
+    if(level > 0 && nexts_.empty()) {
+        if(TypeSummaries.find(key_) != std::end(TypeSummaries)) {
+            ss << "\n";
+            space(ss, indent);
+            //ss << "Resolving further using TypeSummaries built so far:\n";
+            //space(ss, indent);
+            ss << ">+" << TypeSummaries.at(key_).summarize({level.value() - 1}, indent);
+        }
+    }
+
+    std::for_each(begin(nexts_), end(nexts_),
+        [&](auto const& ts) {
+            ss << "\n";
+            space(ss, indent);
+            ss << "|-> " << ts.summarize({level.value() - 1}, indent + 2);
+        });
+
+    return ss.str();
+}
 
 std::ostream& operator<<(std::ostream &os, TypeSummary const &ts) {
     os << ts.summarize({1}) << "\n";
