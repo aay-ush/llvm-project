@@ -6,6 +6,8 @@ add_clang_executable(cast-chk
 
 target_compile_definitions(cast-chk PRIVATE DEBUG_BUILD)
 
+find_package(fmt)
+
 target_link_libraries(cast-chk
     PRIVATE
     clangAST
@@ -14,5 +16,6 @@ target_link_libraries(cast-chk
     clangFrontend
     clangSerialization
     clangTooling
+    fmt::fmt
 )
 

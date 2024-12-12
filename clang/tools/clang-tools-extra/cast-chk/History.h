@@ -41,8 +41,8 @@ class HistoryTemplate {
         // TODO assignment
 
         std::string name() const {
-            CNS_DEBUG("");
-            CNS_DEBUG("end.");
+            CNS_DEBUGM("");
+            CNS_DEBUGM("end");
             return function_;
         }
 
@@ -71,7 +71,7 @@ namespace {
             clang::ASTContext &context,
             clang::CallExpr const &call) {
 
-        CNS_DEBUG("");
+        CNS_DEBUGM("");
 
         HistoryContext hc;
         std::vector<CensusKey> args;
@@ -80,14 +80,14 @@ namespace {
 
         unsigned i = 0;
         std::for_each(call.arg_begin(), call.arg_end(), [&](auto const *a) {
-            CNS_DEBUG("for_each arg.");
+            CNS_DEBUGM("for_each arg.");
             // get arg qn
             auto const key = qualifiedName(context, call, *a);
             if(census.find(key) == census.end()) {
                 // Shouldn't really happen.
-                FOUT << "[ERROR](makeHistoryContext) arg operand :(" << key << ") not in Census.\n";
-                CNS_ERROR("continue.");
-                CNS_DEBUG("end.");
+                CNS_ERROR("arg operand ({}) not in Census", key);
+                CNS_ERRORM("continue.");
+                CNS_DEBUGM("end");
                 hc[params[i]] = params[i];
                 i++;
                 return;
@@ -98,7 +98,7 @@ namespace {
             if(std::regex_search(params[i], matchParm, functionPrefix)
                 && std::regex_search(key, matchArg, functionPrefix)) {
                 if(matchParm.str() == matchArg.str()) {
-                    FOUT << "[INFO ](makeHistoryContext) arg operand (" << key << ") and param(" << params[i] << ") are both parameters of same function(" << matchArg.str() << "), skipping\n";
+                    CNS_INFO("Arg operand ({}) and param ({}) are both parameters of same function ({}), skipping", key, params[i], matchArg.str());
                     hc[params[i]] = params[i];
                     i++;
                     return;
@@ -108,20 +108,20 @@ namespace {
             // If parameter is fptr param, use arg = param mapping to facilitate resolving fptr
             std::smatch fptrParm;
             if(std::regex_search(params[i], fptrParm, fptrParmX)) {
-                FOUT << "[INFO ](makeHistoryContext) Found fptr parm: {key, value} = {" << params[i] << ", " << key << "}\n";
-                FOUT << "[INFO ](makeHistoryContext) Reversed context pair: {key, value} = {" << key << ", " << params[i] << "}\n";
+                CNS_DEBUG("Found fptr parm: {{key, value}} = {{{}, {}}}", params[i], key);
+                CNS_DEBUG("Reversed context pair: {{key, value}} = {{{}, {}}}", key, params[i]);
                 hc[key] = params[i++];
             }
             else {
-                FOUT << "[INFO ](makeHistoryContext) {key, value} = {" << params[i] << ", " << key << "}\n";
+                CNS_DEBUG("{{key, value}} = {{{}, {}}}", params[i], key);
                 hc[params[i++]] = key;
             }
             args.push_back(key);
             return;
         });
 
-        FOUT << "[DEBUG](makeHistoryContext) " << String(context, call) << " produced " << args.size() << " args.\n";
-        CNS_DEBUG("end.");
+        CNS_DEBUG("{} produced {} args", String(context, call), args.size());
+        CNS_DEBUGM("end");
 
         return hc;
     }
@@ -133,19 +133,20 @@ namespace {
 
 
     std::string derefIdFromContext(std::string id, HistoryContext const& hc) {
-        CNS_DEBUG("");
-        //FOUT << "[INFO ](History::derefIdFromContext) Resolving {" << id << "}\n";
+        CNS_DEBUGM("");
+        CNS_DEBUG("Resolving <{}>", id);
         for(unsigned i = 0; i != hc.size(); i++) {
             for(auto &[key, val]: hc) {
-                //FOUT << "[INFO ](History::derefIdFromContext) hc[" << i << "]: [" << key << " ↦ " << val << "] ('" << id << "')\n";
+                CNS_DEBUG("hc[{}]: [{} ↦ {}] ({})", i, key, val, id);
                 if(key == val) {
-                    CNS_DEBUG("Key = value, skip");
+                    CNS_DEBUGM("Key = value, skip");
                     continue;
                 }
-                //FOUT << "[INFO ](History::derefIdFromContext) ('" << id << "') -> "/*<< "\n"*/;
+                auto pid = id;
                 std::regex pattern("\\b" + regex_escape(key));
                 id = std::regex_replace(id, pattern, val, std::regex_constants::format_sed);
-                //FOUT << "('" << id << "')\n";
+                //fmt::print(fOUT, "<{}> -> <{}>\n", pid, id);
+                CNS_DEBUG("<{}> -> <{}>\n", pid, id);
             }
         }
 
@@ -159,7 +160,7 @@ namespace {
 // History template should not have census involvment.
 //
 HistoryTemplate::HistoryTemplate(clang::FunctionDecl const &fn) {
-    CNS_DEBUG("");
+    CNS_DEBUGM("");
     function_ = fn.getNameAsString();
     unsigned pos = 0;
     // ForEach parameter, lookup corresponding census operand
@@ -167,8 +168,8 @@ HistoryTemplate::HistoryTemplate(clang::FunctionDecl const &fn) {
             // get qualifiedName
             auto const& qn = function_ + ".$" + std::to_string(pos++);
             if(census.find(qn) == census.end()) {
-                FOUT << "[ERROR](HistoryTemplate::HistoryTemplate) param operand for: " << qn << " not in Census.\n";
-                FOUT << "[INFO ](HistoryTemplate::HistoryTemplate) Adding  " << qn << " operand in Census.\n";
+                CNS_INFO("param operand for <{}> not in Census", qn);
+                CNS_INFO("Adding <{}> operand in Census", qn);
 
                 // If a param operand doesn't exist yet, which is possible if the function is processed for the first time, just initiate it because otherwise the template will not be created.
                 census.insert(makeCensusSourceNode(buildOpData(*p)));
@@ -177,11 +178,11 @@ HistoryTemplate::HistoryTemplate(clang::FunctionDecl const &fn) {
             // TODO: what if a param is not in census but remaining are? Unlikely since call is processed as a unit.
             params_.push_back(qn);
         });
-    CNS_DEBUG("end.");
+    CNS_DEBUGM("end");
 }
 
 HistoryTemplate::HistoryTemplate(clang::ASTContext &context, clang::CallExpr const& call, clang::DeclRefExpr const &fptr) {
-    CNS_DEBUG("<fptr>");
+    CNS_DEBUGM("<fptr>");
     function_ = qualifiedName(context, fptr);
     unsigned pos = 0;
     // ForEach parameter, lookup corresponding census operand
@@ -189,16 +190,16 @@ HistoryTemplate::HistoryTemplate(clang::ASTContext &context, clang::CallExpr con
             // get qualifiedName
             auto const& qn = function_ + ".$" + std::to_string(pos++);
             if(census.find(qn) == census.end()) {
-                FOUT << "[ERROR](HistoryTemplate::HistoryTemplate<fptr>) param operand for: " << qn << " not in Census.\n";
-                FOUT << "[INFO ](HistoryTemplate::HistoryTemplate<fptr>) Adding  " << qn << " operand in Census.\n";
+                CNS_INFO("<fptr> Param operand for <{}> not in Census", qn);
+                CNS_INFO("<fptr> Adding <{}> operand in Census", qn);
                 // If a param operand doesn't exist yet, which is possible if the function is processed for the first time, just initiate it because otherwise the template will not be created.
                 census.insert(makeCensusSourceNode(buildOpData(context, *p)));
             }
             // TODO: what if a param is not in census but remaining are?
-            FOUT << "[INFO ](HistoryTemplate::HistoryTemplate<fptr>) Found param operand for: " << qn << " in Census.\n";
+            CNS_DEBUG("<fptr> Found param operand for <{}> in Census", qn);
             params_.push_back(qn);
         });
-    CNS_DEBUG("<fptr> end.");
+    CNS_DEBUGM("<fptr> end");
 }
 
 // History instantiation should not change dominator info for
@@ -277,7 +278,7 @@ class History {
         /*
         // REDO
         void extend_c(History h) {
-            CNS_DEBUG("");
+            CNS_DEBUGM("");
             // Extend context of input history before appending to branch
             h.hc_.insert(hc_.begin(), hc_.end());
             // Before appending to branch:
@@ -297,20 +298,20 @@ class History {
                 FOUT << "[INFO ](History::extend_c) Adding History {" << h.id() << "} to {" << id() << "}\n";
                 branch_.push_back(h);
             }
-            CNS_DEBUG("end.");
+            CNS_DEBUGM("end");
         }
         */
 
         // Probably redo? How is local context passed to id()?
         std::string id(std::optional<HistoryContext const> hc) const {
-            CNS_DEBUG("");
+            CNS_DEBUGM("");
             // if operand or context are not same we don't get same string.
             // works for operands without context too and allows for extension of operand history.
             std::stringstream ss;
             ss << op_;
             auto const& op = getContextResolvedOpStr(hc);
             ss << "(" << op/*->qn_*/ << ")";
-            CNS_DEBUG("end.");
+            CNS_DEBUGM("end");
             return ss.str();
         }
 
@@ -319,31 +320,31 @@ class History {
         //    history with 0 depth/single branch.
 
         CensusKey opId() const {
-            CNS_DEBUG("");
-            CNS_DEBUG("end.");
+            CNS_DEBUGM("");
+            CNS_DEBUGM("end");
             return op_;
         }
 
         bool hasContext() const {
-            CNS_DEBUG("");
-            CNS_DEBUG("end.");
+            CNS_DEBUGM("");
+            CNS_DEBUGM("end");
             return !hc_.empty();
         }
 
         void addContext(HistoryContext hc) {
-            CNS_DEBUG("");
-            FOUT << "[INFO ](History::addContext) Adding context to history of " << idversion() << "\n";
+            CNS_DEBUGM("");
+            CNS_DEBUG("Adding context to history of {}", idversion());
             auto nhc = hc_;
-            FOUT << "[INFO ](History::addContext) Current hc_.size() = " << hc_.size() << "\n";
+            CNS_DEBUG("Current context.size() = {}", hc_.size());
             nhc.insert(hc.begin(), hc.end());
-            FOUT << "[INFO ](History::addContext) After extending with input hc, hc.size() = " << nhc.size() << "\n";
+            CNS_DEBUG("After extending with input context, context.size() = {}", nhc.size());
             setContext(nhc);
-            FOUT << "[INFO ](History::addContext) Updated hc_.size() = " << hc_.size() << "\n";
-            CNS_DEBUG("end.");
+            CNS_DEBUG("Updated context.size() = {}", hc_.size());
+            CNS_DEBUGM("end");
         }
         /*
         History addContext(HistoryContext hc) const {
-            CNS_DEBUG("");
+            CNS_DEBUGM("");
             FOUT << "[INFO ](History::addContext) Adding context to history of " << idversion() << "\n";
             auto nhc = hc_;
             FOUT << "[INFO ](History::addContext) Current hc_.size() = " << nhc.size() << "\n";
@@ -354,38 +355,41 @@ class History {
             h.updateVersion();
             FOUT << "[INFO ](History::addContext) New history created with hc.size() = " << h.hc_.size() << "\n";
             FOUT << "[INFO ](History::addContext) Returning history " << h.idversion() << "\n";
-            CNS_DEBUG("end.");
+            CNS_DEBUGM("end");
             return h;
         }
         */
 
         explicit History(CensusKey const& op): op_(op) {
-            CNS_DEBUG("explicit()");
-            //FOUT << "[INFO ](History::explicit) Init: " << op_ << "\n";
+            CNS_DEBUGM("<explicit>");
+            CNS_DEBUG("<explicit> init: {}", op_);
             updateVersion();
-            FOUT << "[INFO ](History::explicit) Created : " << idversion() << "\n";
-            CNS_DEBUG("explicit() end.");
+            CNS_DEBUG("<explicit> Created: {}", idversion());
+            CNS_DEBUGM("<explicit> end");
         }
 
         History(HistoryContext const& context, CensusKey const& op):
             op_(op),
             hc_(context) {
 
-            CNS_INFO("");
-            //FOUT << "[INFO ](History::History(c,k)) Init: " << op_ << "(" << getContextResolvedOp().qn_ << ")\n";
+            CNS_DEBUGM("<context, key>");
+            //CNS_DEBUG("<context, key> init: {} ({})", op_, getContextResolvedOp({}).qn_);
             updateVersion();
-            FOUT << "[INFO ](History::History(c,key)) Created : " << idversion() << "\n";
-            CNS_INFO("end.");
+            CNS_DEBUG("<context, key> Created: {}", idversion());
+            CNS_DEBUGM("<context, key> end");
         }
 
         History() = delete;
-        ~History(){// = default;
-            CNS_INFO("");
+        ~History() = default;
+        /*
+        {
+            CNS_DEBUGM("");
             version_ = "XXXXXX_" + version_;
-            //FOUT << "[INFO ](History::~History()) end: " << op_ << "(" << getContextResolvedOp().qn_<< ")\n";
-            FOUT << "[INFO ](History::~History()) end: " << idversion() << "\n";
-            CNS_INFO("end.");
+            CNS_DEBUG("Destructing history of {}({})", op_, getContextResolvedOp().qn_);
+            CNS_DEBUG("Destructing: {}", idversion());
+            CNS_DEBUGM("end");
         }
+        */
 
         // History is extended by copying this history to another history. Supports branching.
         // Copied history should only be used in extending and should not be mixed with global history.
@@ -396,12 +400,12 @@ class History {
             branch_(h.branch_),
             version_(h.version_),
             copy_(h.copy_ + 1) {
-            CNS_INFO("");
+            CNS_INFOM("");
 
             updateVersion();
-            //FOUT << "[INFO ](History::History(h)) Init: " << op_ << "(" << getContextResolvedOp().qn_ << "): [" << branch_.size() << "]\n";
-            FOUT << "[INFO ](History::History(h)) Created: " << idversion() << "\n";
-            CNS_INFO("end.");
+            CNS_DEBUG("<copy> init: {}({}): [{}]", op_, getContextResolvedOp().qn_, branch_.size());
+            CNS_DEBUG("<copy> Created: {}", idversion());
+            CNS_DEBUGM("end");
         }
         */
         //History& operator=(History h) = default;
@@ -411,26 +415,26 @@ class History {
         std::string getContextResolvedOpStr0(std::optional<HistoryContext const> lc) const;
 
         std::optional<OpData const> getContextResolvedOp(std::optional<HistoryContext const> hc) const {
-            CNS_DEBUG("");
+            CNS_DEBUGM("");
 
             auto rop = getContextResolvedOpStr(hc);
             if(census.find(rop) == census.end()) {
-                CNS_DEBUG("end.");
+                CNS_DEBUGM("end");
                 return {};
             }
 
-            CNS_DEBUG("end.");
+            CNS_DEBUGM("end");
             return ops(rop);
         }
 
         auto bbegin() const {
-            CNS_DEBUG("");
-            CNS_DEBUG("end.");
+            CNS_DEBUGM("");
+            CNS_DEBUGM("end");
             return branch_.begin();
         }
         auto bend() const {
-            CNS_DEBUG("");
-            CNS_DEBUG("end.");
+            CNS_DEBUGM("");
+            CNS_DEBUGM("end");
             return branch_.end();
         }
         auto branch() const {
@@ -477,70 +481,69 @@ class History {
             std::stringstream ss;
             // version = opId + contextual id + hc.size : branch.size
             ss << /*op_ << "_" <<*/ id({hc_}) << "." << std::to_string(hc_.size()) << ":" << branch_.size() <<  "c" << std::to_string(copy_);
-            FOUT << "[INFO ](History::updateVersion) Updated H{" << op_ << "}<" << version_ << "> to <" << ss.str() << ">\n";
+            CNS_DEBUG("Updated H{{{}}}<{}> to <{}>", op_, version_, ss.str());
             version_ = ss.str();
         }
 
 };
 
 void History::extend(History const &h) {
-    CNS_INFO("<g>");
-    FOUT << "[INFO ](History::extend<g>) Current version: " << idversion() << "\n";
-    FOUT << "[INFO ](History::extend<g>) Input history version: " << h.idversion() << "\n";
-    FOUT << "[INFO ](History::extend<g>) Current context size for H(" << h.op_ << "): " << h.hc_.size() << "\n";
-    FOUT << "[INFO ](History::extend<g>) Extending input context using current version: " << idversion() << "\n";
+    CNS_DEBUGM("<g>");
+    CNS_DEBUG("<g> Current version: {}", idversion());
+    CNS_DEBUG("<g> Input history version: {}", h.idversion());
+    CNS_DEBUG("<g> Current context size for H({}): {}", h.op_, h.hc_.size());
+    CNS_DEBUG("<g> Extending input context using current version: {}", idversion());
     // Check if needed, maybe not since local context is stored with histories now.
     // Extend context of input history before appending to branch
     //h.hc_.insert(hc_.begin(), hc_.end());
-    //FOUT << "[INFO ](History::extend<g>) Updated context size for input " << h.idversion() << ": " << h.hc_.size() << "\n";
+    //CNS_DEBUG("<g> Updated context size for input {}: {}", h.idversion(), h.hc_.size());
     /*
     for(auto &bh: h.branch_) {
-        FOUT << "[INFO ](History::extend<g>) Extending input branch " << bh.idversion() << " context using " << idversion() << "\n";
+        CNS_DEBUG(<g> Extending input branch {} context using {}", bh.idversion(), idversion());
         bh.hc_.insert(hc_.begin(), hc_.end());
         bh.updateVersion();
     }
     */
     //h.updateVersion();
-    // Irrelevant since it's a copy: FOUT << "[INFO ](History::extend<g>) New context size for H(" << h.version_ << "): " << h.hc_.size() << "\n";
+    // Irrelevant since it's a copy: CNS_DEBUG("<g> New context size for H({}): {}", h.version_, h.hc_.size());
     // end check
 
     // Check if this is needed?
-    //FOUT << "[INFO ](History::extend<g>) Extending current context with updated input context " << h.idversion() << ": " << h.hc_.size() << "\n";
+    // CNS_DEBUG("<g> Extending current context with updated input context {}: {}", h.idversion(), h.hc_.size());
     //hc_ = h.hc_;
     // end check
 
-    CNS_INFO("Extending current branch with new input");
+    CNS_DEBUGM("Extending current branch with new input");
     branch_.push_back({h, {hc_}});
     updateVersion();
-    FOUT << "[INFO ](History::extend<g>) New version: " << idversion() << "\n";
-    CNS_INFO("<g> end.");
+    CNS_DEBUG("New version: {}", idversion());
+    CNS_DEBUGM("<g> end");
 }
 
 void History::extend(LocalHistory const &h) {
-    CNS_INFO("");
-    FOUT << "[INFO ](History::extend) Current version: " << idversion() << "\n";
-    FOUT << "[INFO ](History::extend) Input history version: " << h.first.get().idversion() << "\n";
+    CNS_DEBUGM("<lh>");
+    CNS_DEBUG("<lh> Current version: {}", idversion());
+    CNS_DEBUG("<lh> Input history version: {}", h.first.get().idversion());
     if(h.second) {
-        FOUT << "[INFO ](History::extend) Input local context size: " << h.second.value().size() << "\n";
+        CNS_DEBUG("<lh> Input local context size: {}", h.second.value().size());
     }
-    //FOUT << "[INFO ](History::extend) Current context size for H(" << h.op_ << "): " << h.hc_.size() << "\n";
-    //FOUT << "[INFO ](History::extend) Extending context using H(" << op_ << "): branch(" << branch_.size() << "); context(" << hc_.size() << ")\n";
-    //
-    FOUT << "[INFO ](History::extend) Extending input's local context using current version: " << idversion() << "\n";
+    //CNS_DEBUG("<lh> Current context size for H({}): {}", h.op_, h.hc_.size());
+    //CNS_DEBUG("<lh> Extending context using H({}): branch({}); context({})", op_, branch_.size(), hc_.size());
+    CNS_DEBUG("<lh> Extending input's local context using current version: {}", idversion());
     // Extend context of input history before appending to branch
     HistoryContext nlhc;
     if(h.second) {
         nlhc = h.second.value();
-        FOUT << "[INFO ](History::extend) Input local context size: " << nlhc.size() << "\n";
+        CNS_DEBUG("<lh> Input local context size: {}", nlhc.size());
     }
     nlhc.insert(hc_.begin(), hc_.end());
-    FOUT << "[INFO ](History::extend) Updated input local context size: " << nlhc.size() << "\n";
+    CNS_DEBUG("<lh> Updated input local context sie: {}", nlhc.size());
 
-    //FOUT << "[INFO ](History::extend) New context size for H(" << h.op_ << "): " << h.hc_.size() << "\n";
-    //FOUT << "[INFO ](History::extend) Updated context size for input " << h.idversion() << ": " << h.hc_.size() << "\n";
+    //CNS_DEBUG("New context size for H({}): {}", h.op_, h.hc_.size());
+    //CNS_DEBUG("Updated context size for input {}: {}", h.idversion(), h.hc_.size());
     /*
     for(auto &bh: h.first.get().branch_) {
-        FOUT << "[INFO ](History::extend) Extending input branch " << bh.first.get().idversion() << " context using " << idversion() << "\n";
+        CNS_DEBUG("<lh> Extending input branch {} context using {}", bh.first.get().idversion(), idversion());
         HistoryContext bhlc;
         if(bh.second) {
             bhlc = bh.second.value();
@@ -550,14 +553,14 @@ void History::extend(LocalHistory const &h) {
     }
     */
     //h.updateVersion();
-    //FOUT << "[INFO ](History::extend) Extending current context with updated input context " << h.idversion() << ": " << h.hc_.size() << "\n";
+    //CNS_DEBUG("<lh> Extending current context with updated input context {}: {}", h.idversion(), h.hc_.size());
     //hc_ = h.hc_;
-    CNS_INFO("Extending current branch with new input");
+    CNS_DEBUGM("<lh> Extending current branch with new input");
     branch_.emplace_back(h.first, nlhc);
-    // Irrelevant since it's a copy: FOUT << "[INFO ](History::extend) New context size for H(" << h.version_ << "): " << h.hc_.size() << "\n";
+    // Irrelevant since it's a copy: CNS_DEBUG("<lh> New context size for H({}): {}", h.version_, h.hc_.size());
     updateVersion();
-    FOUT << "[INFO ](History::extend) New version: " << idversion() << "\n";
-    CNS_INFO("end.");
+    CNS_DEBUG("<lh> New version: {}", idversion());
+    CNS_DEBUGM("<lh> end");
 }
 
 std::unordered_map<CensusKey, History> TypeTransforms;
@@ -567,35 +570,35 @@ std::string History::getContextResolvedOpStr0(std::optional<HistoryContext const
 }
 
 std::string History::getContextResolvedOpStr(std::optional<HistoryContext const> lc) const {
-    CNS_DEBUG("");
-    //FOUT << "[INFO ](History::getContextResolvedOpStr) Resolving op_{" << op_ << "} for H{" << op_ << "}<" << version_ << ">\n";
+    CNS_DEBUGM("");
+    CNS_DEBUG("Resolving op_ {{{}}} for H{{{}}}<{}>", op_, op_, version_);
     auto rop = derefIdFromContext(op_, hc_);
     if(lc) {
-        //FOUT << "[INFO ](History::getContextResolvedOpStr) Now resolving rop{" << rop << "} for H{" << op_ << "}<" << version_ << "> using input context\n";
+        CNS_DEBUG("Now resolving rop{{{}}} for H{{{}}}<{}> using input context", rop, op_, version_);
         rop = derefIdFromContext(rop, lc.value());
     }
 
     if(op_ != rop) {
         // Check if rop exists
         if(census.find(rop) == census.end()) {
-            CNS_DEBUG(" New rop does not match any census node.");
+            CNS_DEBUGM(" New rop does not match any census node.");
             auto ropp = rop.substr(0, rop.find("$") - 1);
             if(TypeTransforms.find(ropp) != TypeTransforms.end()) {
                 // Found H(ropp)
-                //FOUT << "[INFO ](History::getContextResolvedOpStr) Found H(container){" << ropp << "}\n";
+                CNS_DEBUG("Found H(container){{{}}}", ropp);
                 // Check if ropp has any resolution
                 auto const &hropp = TypeTransforms.at(ropp);
                 auto roppn = hropp.getContextResolvedOpStr(lc);
                 if(ropp != roppn) {
                     // Try now
-                    FOUT << "[INFO ](History::getContextResolvedOpStr) Resolved container, ropp = {" << roppn << "}\n";
+                    CNS_DEBUG("Resolved container, ropp = {{{}}}", roppn);
                     rop = roppn + "." + rop.substr(rop.find("$"));
                     if(census.find(rop) == census.end()) {
-                        FOUT << "[INFO ](History::getContextResolvedOpStr) However, rop = {" << rop << "} not in census\n";
+                        CNS_DEBUG("However, rop = {{{}}} not in Census", rop);
                         // Create census node for rop and add op as dominator?
                     }
                     else {
-                        FOUT << "[INFO ](History::getContextResolvedOpStr) rop = {" << rop << "} found in census\n";
+                        CNS_DEBUG("rop = {{{}}} found in Census", rop);
                         // Who is the dominator for this?
                     }
                 }
@@ -604,24 +607,24 @@ std::string History::getContextResolvedOpStr(std::optional<HistoryContext const>
             else {
                 // Try removing the container:
                 auto ropn = rop.substr(rop.find(".") + 1);
-                //FOUT << "[INFO ](History::getContextResolvedOpStr) removing container, ropn = {" << ropn << "}\n";
+                CNS_DEBUG("Removing container, ropn = {{{}}}", ropn);
                 if(census.find(ropn) == census.end()) {
-                    CNS_DEBUG("Removing container did not lead to any census match.");
+                    CNS_DEBUGM("Removing container did not lead to any census match.");
                 }
                 else {
-                    CNS_DEBUG("Removing container led to census match.");
+                    CNS_DEBUGM("Removing container led to census match.");
                     rop = ropn;
                 }
             }
 
         }
         else {
-            CNS_DEBUG(" New rop found in census.");
+            CNS_DEBUGM(" New rop found in census.");
         }
     }
 
     return rop;
-    CNS_DEBUG("end.");
+    CNS_DEBUGM("end");
 }
 
 /*
@@ -759,31 +762,31 @@ std::ostream& operator<<(std::ostream &os, History const& h) {
 //   for same operand but can have a different context
 //   This equality is meant for global history only.
 bool operator==(History const &a, History const &b) {
-    CNS_DEBUG("");
-    //FOUT << "[INFO ](History::operator==<h>) a: (" << a.id() << "/ " << a.opId() << ")\n";
-    //FOUT << "[INFO ](History::operbtor==<h>) b: (" << b.id() << "/ " << b.opId() << ")\n";
-    CNS_DEBUG("end.");
+    CNS_DEBUGM("<h>");
+    CNS_DEBUG("<h> a: ({}/{})", a.id({}), a.opId());
+    CNS_DEBUG("<h> b: ({}/{})", b.id({}), b.opId());
+    CNS_DEBUGM("end");
     // Support both context resolved history and otherwise.
     //return (a.id() == b.id()) || (a.opId() == b.opId());
     return a.opId() == b.opId(); //eturn a.id() == b.id(); // && (a.branch() == b.branch());
 }
 bool operator!=(History const &a, History const &b) {
-    CNS_DEBUG("");
-    CNS_DEBUG("end.");
+    CNS_DEBUGM("<h>");
+    CNS_DEBUGM("<h> end");
     return !(a == b);
 }
 bool operator==(History const &a, CensusKey const &b) {
-    CNS_DEBUG("");
-    //FOUT << "[INFO ](History::operator==<h>) a: (" << a.id() << "/ " << a.opId() << ")\n";
-    //FOUT << "[INFO ](History::operbtor==<ck>) b: (" << b << ")\n";
-    CNS_DEBUG("end.");
+    CNS_DEBUGM("<h, k>");
+    CNS_DEBUG("<h, k> a: ({}/{})", a.id({}), a.opId());
+    CNS_DEBUG("<h, k> b: ({})", b);
+    CNS_DEBUGM("<h, k> end");
     return a.opId() == b;
     //return (a.id() == b) || (a.opId() == b);
     //return (a.id() == b) && !(a.hasContext());
 }
 bool operator!=(History const &a, CensusKey const &b) {
-    CNS_DEBUG("");
-    CNS_DEBUG("end.");
+    CNS_DEBUGM("<h, k>");
+    CNS_DEBUGM("<h, k> end");
     return !(a == b);
 }
 
@@ -808,14 +811,14 @@ History History::append(History h) {
 std::vector<HistoryTemplate> TransformTemplates;
 
 std::vector<LocalHistory> HistoryTemplate::instantiate(clang::ASTContext &context, clang::CallExpr const &call) {
-    CNS_DEBUG("");
+    CNS_DEBUGM("");
     // for each arg, add parm-arg pair to context.
     // return context
 
     if(params_.size() != call.getNumArgs()) {
-        CNS_ERROR("Nb(params != Nb(args), possibly unsupported variadic function or a template mismatch.");
-        FOUT << "[ERROR](HistoryTemplate::instantiate) FnTemplate(" << name() << ") instantiating for function call (" << String(context, call) << ") failed.\n";
-        CNS_DEBUG("end.");
+        CNS_ERRORM("Nb(params) != Nb(args), possibly unsupported variadic function or a template mismatch.");
+        CNS_ERROR("FnTemplate({}) istantiating for function call ({}) failed.", name(), String(context, call));
+        CNS_DEBUGM("end");
         return {};
     }
 
@@ -824,11 +827,11 @@ std::vector<LocalHistory> HistoryTemplate::instantiate(clang::ASTContext &contex
     std::vector<LocalHistory> h;
     std::for_each(begin(params_), end(params_),
         [&](auto const &p) {
-            CNS_DEBUG("for_each param step");
+            CNS_DEBUGM("for_each param step");
 
             if(TypeTransforms.find(p) == std::end(TypeTransforms)) {
                 // Parameter history is not built yet.
-                FOUT << "[INFO ](HistoryTemplate::instantiate) New history created for " << function_ << " var {" << p << "}\n";
+                CNS_INFO("New history created for {} var {{{}}}", function_, p);
                 TypeTransforms.emplace(p, p);
                 //TypeTransforms.insert({p, History(p)});
             }
@@ -836,12 +839,12 @@ std::vector<LocalHistory> HistoryTemplate::instantiate(clang::ASTContext &contex
             // Add hc to existing parameter history
             auto const &hp = TypeTransforms.at(p);
             h.emplace_back(hp, lc);
-            FOUT << "[INFO ](HistoryTemplate::instantiate) Current context size for H(" << p << "): " << hp.getContext().size() << "\n";
+            CNS_DEBUG("Current context size for H({}): {}", p, hp.getContext().size());
 
-            CNS_DEBUG("end for_each param step");
+            CNS_DEBUGM("end for_each param step");
         });
 
-    CNS_DEBUG("end.");
+    CNS_DEBUGM("end");
     return h;
 }
 
@@ -852,32 +855,37 @@ class TypeSummary {
     TypeSummary(History const &h);
 
     void addNextBranch(TypeSummary const& branch) {
-        //FOUT << "[INFO ](addNextBranch) {" << key_ << ";[" << nexts_.size() << "]_" << numi_ << "} Adding Nexts_ branch: {" << branch.key_ << "}\n";
+        CNS_DEBUG("{{{}}};[{}]_{} Adding nexts_ branch: {{{}}}", key_, nexts_.size(), numi_, branch.key_);
         nexts_.push_back(branch);
-        //FOUT << "[INFO ](addNextBranch) {" << key_ << ";[" << nexts_.size() << "]_" << numi_ << "} end\n";
+        CNS_DEBUG("{{{}}};[{}]_{} end", key_, nexts_.size(), numi_);
     }
 
     std::string summarize(std::optional<unsigned> level, int indent = 0) const;
 
-    ~TypeSummary() = default; /*{
-        CNS_DEBUG("");
-        FOUT << "[INFO ](~TypeSummary) Clearing {" << key_ << ";[" << nexts_.size() << "]_" << numi_ << "}\n";
+    ~TypeSummary()= default;
+    /*
+        CNS_DEBUGM("");
+        CNS_DEBUG("Clearing {{{}}};[{}]_{}", key_, nexts_.size(), numi_);
         key_.clear();
         nexts_.clear();
-        CNS_DEBUG("end.");
+        CNS_DEBUGM("end");
     }
     */
 
-    TypeSummary(const TypeSummary& t) = default; /*: key_(t.key_), nexts_(t.nexts_) {
+    TypeSummary(const TypeSummary& t): //= default;
+        key_(t.key_),
+        nexts_(t.nexts_) {
+
         numi_ = num_++;
-        FOUT << "[INFO ](TypeSummary::copy) Copy created from _" << t.numi_ << "_: {" << key_ << ";[" << nexts_.size() << "]_" << numi_ << "}\n";
+        CNS_DEBUG("Copy created from _{}_: {{{}}};[{}]_{}", t.numi_, key_, nexts_.size(), numi_);
     }
-    */
-    TypeSummary(TypeSummary&& t) = default; /*: key_(std::move(t.key_)), nexts_(std::move(t.nexts_)) {
+    TypeSummary(TypeSummary&& t): // = default;
+        key_(std::move(t.key_)),
+        nexts_(std::move(t.nexts_)) {
+
         numi_ = num_++;
-        FOUT << "[INFO ](TypeSummary::move) Moved from _" << t.numi_ << "_: {" << key_ << ";[" << nexts_.size() << "]_" << numi_ << "}\n";
+        CNS_DEBUG("Moved from _{}_: {{{}}};[{}]_{}", t.numi_, key_, nexts_.size(), numi_);
     }
-    */
 
     TypeSummary& operator=(const TypeSummary& t) = default;
     TypeSummary& operator=(TypeSummary&& t) = default;
@@ -895,11 +903,11 @@ class TypeSummary {
     private:
     CensusKey key_;
     std::vector<TypeSummary> nexts_;
-    //static unsigned num_;
-    //unsigned numi_;
+    static unsigned num_;
+    unsigned numi_;
 };
 
-//unsigned TypeSummary::num_ = 0;
+unsigned TypeSummary::num_ = 0;
 
 /*
 bool operator==(TypeSummary lhs, CensusKey rhs) {
@@ -913,24 +921,24 @@ bool operator!=(TypeSummary lhs, CensusKey rhs) {
 TypeSummary makeTypeSummaryLH(LocalHistory const& lh);
 
 TypeSummary::TypeSummary(History const&h) {
-    CNS_DEBUG("");
+    CNS_DEBUGM("");
     key_ = h.opId();
-    //numi_ = num_++;
-    //FOUT << "[INFO ](TypeSummary::TypeSummary) Created summary {" << key_ << ";[" << nexts_.size() << "]_ " << num_ << "} for H<" << h.opId() << "} [h.branch.size=" << h.branch().size() << "]>\n";
-    FOUT << "[INFO ](TypeSummary::TypeSummary) Created summary {" << key_ << ";[" << nexts_.size() << "]} for H<" << h.opId() << "} [h.branch.size=" << h.branch().size() << "]>\n";
-    CNS_DEBUG("end.");
+    numi_ = num_++;
+    CNS_DEBUG("Created summary {{{}}};[{}]_{} for H<{}>[h.branch.size() = {}]", key_, nexts_.size(), numi_, h.opId(), h.branch().size());
+    CNS_DEBUG("Created summary {{{}}};[{}] for H<{}>[h.branch.size() = {}]", key_, nexts_.size(), h.opId(), h.branch().size());
+    CNS_DEBUGM("end");
 }
 
 TypeSummary makeResolvedSummary(std::string const& keyOp, std::string const& keyRops) {
-    CNS_INFO("");
-    FOUT << "[INFO ](makeResolvedSummary) Building summary for {" << keyOp << ", " << keyRops << "}\n";
+    CNS_DEBUGM("");
+    CNS_INFO("Building summary for {{{}, {}}}", keyOp, keyRops);
     auto const& op = ops(keyOp);
-    FOUT << "[INFO ](makeResolvedSummary) {" << keyOp << "}: A\n";
+    CNS_DEBUG("{{{}}}: A", keyOp);
     TypeSummary ts (TypeTransforms.at(keyOp));
 
     if(keyRops == keyOp) {
-        FOUT << "[INFO ](makeResolvedSummary) {" << keyOp << "} = {" << keyRops << "}\n";
-        FOUT << "[INFO ](makeResolvedSummary) {" << ts.id() << "}: end.\n";
+        CNS_INFO("{{{} = {}}}", keyOp, keyRops);
+        CNS_DEBUG("{{{}}}: end", ts.id());
         return ts;
     }
 
@@ -942,23 +950,22 @@ TypeSummary makeResolvedSummary(std::string const& keyOp, std::string const& key
         //    not needed since that is taken care of by history
         if(!std::regex_search(keyRops, pattern)) {
             // => arg
-            FOUT << "[INFO ](makeResolvedSummary) {" << ts.id() << "}: {" << keyRops << "} is probably an arg for param {" << keyOp << "}, stopping\n";
-            FOUT << "[INFO ](makeResolvedSummary) {" << ts.id() << "}: end.\n";
+            CNS_INFO("{{{}}}: {{{}}} is probably an arg for param {{{}}}, stopping", ts.id(), keyRops, keyOp);
+            CNS_DEBUG("{{{}}}: end", ts.id());
             return ts;
         }
-
     }
 
     // If op.type is not empty
     if(!op.type_.empty()) {
-        FOUT << "[INFO ](makeResolvedSummary) {" << ts.id() << "} has defined type. Not using {" << keyRops << "}\n";
-        FOUT << "[INFO ](makeResolvedSummary) {" << ts.id() << "}: end.\n";
+        CNS_INFO("{{{}}} has defined type. Not using {{{}}}", ts.id(), keyRops);
+        CNS_DEBUG("{{{}}}: end", ts.id());
         return ts;
     }
 
     if(census.find(keyRops) == std::end(census)) {
-        FOUT << "[INFO ](makeResolvedSummary) {" << ts.id() << "}: Cannot find keyRops{" << keyRops << "} in census\n";
-        FOUT << "[INFO ](makeResolvedSummary) {" << ts.id() << "}: end.\n";
+        CNS_INFO("{{{}}}: Cannot find keyRops{{{}}} in Census", ts.id(), keyRops);
+        CNS_DEBUG("{{{}}}: end", ts.id());
         return ts;
     }
 
@@ -968,7 +975,7 @@ TypeSummary makeResolvedSummary(std::string const& keyOp, std::string const& key
             && std::regex_search(keyRops, pattern)) {
 
         // Possibly, Strongly connected components (one param to next, maybe cyclic)
-        CNS_INFO("SCC possibility detected, stopping recursion.");
+        CNS_INFOM("SCC possibility detected, stopping recursion.");
         auto const &hr = TypeTransforms.at(keyRops);
         std::for_each(hr.bbegin(), hr.bend(),
             [&](auto const &bh_) {
@@ -980,40 +987,40 @@ TypeSummary makeResolvedSummary(std::string const& keyOp, std::string const& key
                 }
             });
 
-        CNS_INFO("end.");
+        CNS_DEBUGM("end");
         return ts;
     }
     */
 
 
-    FOUT << "[INFO ](makeResolvedSummary) {" << ts.id() << "}: Found keyRops{" << keyRops << "} in census\n";
+    CNS_DEBUG("{{{}}}: Found keyRops{{{}}} in Census", ts.id(), keyRops);
     //auto th = TypeSummary(TypeTransforms.at(keyRops)); //, {});
-    FOUT << "[INFO ](makeResolvedSummary) {" << ts.id() << "}: Adding branch from resolved keyRops{" << keyRops << "}\n";
-    FOUT << "[INFO ](makeResolvedSummary) {" << ts.id() << "}: B\n";
+    CNS_INFO("{{{}}}: Adding branch from resolved keyRops{{{}}}", ts.id(), keyRops);
+    CNS_DEBUG("{{{}}}: B", ts.id());
     ts.addNextBranch(TypeTransforms.at(keyRops));
 
-    FOUT << "[INFO ](makeResolvedSummary) {" << ts.id() << "}: end.\n";
+    CNS_DEBUG("{{{}}}: end", ts.id());
     return ts;
 }
 
 TypeSummary makeTypeSummaryLH(LocalHistory const& lh) {
-    CNS_INFO("");
+    CNS_DEBUGM("");
 
     auto const &h = lh.first.get();
     auto hid = h.opId();
-    FOUT << "[INFO ](makeTypeSummaryLH) Building summary for {" << hid << "}\n";
+    CNS_DEBUG("Building summary for {{{}}}", hid);
     auto rops = h.getContextResolvedOpStr(lh.second);
-    FOUT << "[INFO ](makeTypeSummaryLH) {" << hid << "}: 1.\n";
+    CNS_DEBUG("{{{}}}: 1", hid);
     auto ts = makeResolvedSummary(h.opId(), rops);
     if(!lh.second) {
-        FOUT << "[INFO ](makeTypeSummaryLH) {" << ts.id() << "}: No local context; end.\n";
+        CNS_DEBUG("{{{}}}: No local context; end", ts.id());
         return ts;
     }
 
-    FOUT << "[INFO ](makeTypeSummaryLH) {" << ts.id() << "}: Using local history context to summarize branches for {" << ts.id() << "} branch{size=" << h.branch().size() << "}\n";
+    CNS_DEBUG("{{{}}}: Using local history context to summarize branches for {{{}}} branch{{size={}}}", ts.id(), ts.id(), h.branch().size());
     auto pc = h.getContext();
     if(lh.second) {
-        CNS_DEBUG("Extending parent context with local");
+        CNS_DEBUGM("Extending parent context with local");
         pc.insert(std::begin(lh.second.value()), std::end(lh.second.value()));
     }
     std::for_each(h.bbegin(), h.bend(),
@@ -1023,15 +1030,16 @@ TypeSummary makeTypeSummaryLH(LocalHistory const& lh) {
             }
             auto pcn = pc;
             if(bh.second) {
-                CNS_DEBUG("Extending parent context with branch local");
+                CNS_DEBUGM("Extending parent context with branch local");
                 pcn.insert(std::begin(bh.second.value()), std::end(bh.second.value()));
             }
-            FOUT << "[INFO ](makeTypeSummaryLH) {" << ts.id() << "}: Creating summary for branch: {" << bh.first.get().opId() << "}\n";
-            FOUT << "[INFO ](makeTypeSummaryLH) {" << ts.id() << "}: 2.\n";
+
+            CNS_DEBUG("{{{}}}: Creating summary for branch: {{{}}}", ts.id(), bh.first.get().opId());
+            CNS_DEBUG("{{{}}}: 2", ts.id());
             ts.addNextBranch(makeTypeSummaryLH({bh.first.get(), pcn}));
         });
 
-    FOUT << "[INFO ](makeTypeSummaryLH) {" << ts.id() << "}: end.\n";
+    CNS_DEBUG("{{{}}}: end", ts.id());
     return ts;
 }
 
@@ -1041,7 +1049,7 @@ std::unordered_map<std::string, TypeSummary> TypeSummaries;
 std::string TypeSummary::summarize(std::optional<unsigned> level, int indent) const {
     std::stringstream ss;
 
-    //FOUT<< "{" << key_ << ";[" << nexts_.size() << "]_" << numi_ << "} LEVEL = " << level.value_or(599) << "\n";
+    CNS_DEBUG("{{{}}};[{}]_{} LEVEL = {}", key_, nexts_.size(), numi_, level.value_or(599));
     auto const& op = ops(key_);
     if(op.type_.empty()) {
         ss << "T {" << op.qn_ << "}";
@@ -1087,41 +1095,59 @@ void summarize(std::ostream &os, TypeSummary const &ts, unsigned depth = 0) {
 // Create copies of typetransforms. Then resolve and update history branches as needed.
 // Eliminate local history with history by using context.
 void elaborateHistory(History const &h) {//, std::optional<int> level) {
-    CNS_INFO("");
+    CNS_DEBUGM("");
     TypeSummaries.clear();
     //summarize(h, level);
     std::for_each(begin(TypeTransforms), end(TypeTransforms),
         [&](auto const& h_) {
             auto const &h = h_.second;
-            FOUT << "[INFO ](elaborateHistory) Making summary for {" << h_.first << "}; <branch.size() = " << h.branch().size() << ">\n";
+            CNS_DEBUG("Making summary for {{{}}}; <branch.size() = {}", h_.first, h.branch().size());
             auto ts = TypeSummary(h);
-            FOUT << "[INFO ](elaborateHistory) {" << ts.id() << "} <" << h.branch().size() << "> Adding branches.\n";
+            CNS_DEBUG("{{{}}} <{}>", ts.id(), h.branch().size());
             std::for_each(h.bbegin(), h.bend(),
                 [&](auto const&bh) {
                     // make type summary from local history and append to nexts_
                     auto pc = h.getContext();
                     if(bh.second) {
-                        CNS_DEBUG("Extending parent context with branch");
+                        CNS_DEBUGM("Extending parent context with branch");
                         pc.insert(std::begin(bh.second.value()), std::end(bh.second.value()));
                     }
                     /*
                     if(level > 0) {
-                        CNS_INFO("Decrement level by 1");
+                        CNS_INFOM("Decrement level by 1");
                         auto nl = std::make_optional(level.value() - 1);
                         level.swap(nl);
                     }
                     */
 
-                    FOUT << "[INFO ](elaborateHistory) {" << ts.id() << "} <" << h.branch().size() << "> Creating new branch: {" << bh.first.get().opId() << "}\n";
+                    CNS_DEBUG("{{{}}} <{}> Creating new branch: {{{}}}", ts.id(), h.branch().size(), bh.first.get().opId());
                     auto th = makeTypeSummaryLH({bh.first.get(), pc});
                     ts.addNextBranch(th);
                 });
 
-            //FOUT << "[INFO ](elaborateHistory) Adding Summary for {" << h_.first << "}: {" << TypeSummaries.at(h_.first).summary({4}) << "\n}\n";
+            //CNS_DEBUG("Adding Summary for {{{}}}: {{{}}}", h_.first, TypeSummaries.at(h_.first).summary({4}));
             TypeSummaries.insert({h_.first, ts});
         });
 
-    CNS_INFO("end.");
+    CNS_DEBUGM("end");
 }
+
+/*
+template <> struct fmt::formatter<History>: formatter<string_view> {
+    template <typename FormatContext>
+    auto format(History const& h, FormatContext& ctx) {
+        string_view vh;
+        return formatter<string_view>::format(vh, ctx);
+    }
+};
+
+template <> struct fmt::formatter<TypeSummary>: formatter<string_view> {
+    template <typename FormatContext>
+    auto format(TypeSummary const& ts, FormatContext& ctx) {
+        string_view vts = ts.summarize({depth});
+        return formatter<string_view>::format(vts, ctx);
+    }
+};
+*/
 
 #endif  // HISTORY_H
