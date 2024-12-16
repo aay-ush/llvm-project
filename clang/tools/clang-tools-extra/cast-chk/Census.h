@@ -58,7 +58,7 @@ enum class CastExprType{
 
 template <CastExprType t>
 std::string getCastExprType() {
-    CNS_DEBUGM("<T>");
+    CNS_DEBUG_MSG("<T>");
     switch(t) {
         case CastExprType::Assignment:
             return "assignment";
@@ -69,7 +69,7 @@ std::string getCastExprType() {
         case CastExprType::BinaryOp:
             return "binaryop";
     };
-    CNS_DEBUGM("<T> end");
+    CNS_DEBUG_MSG("<T> end");
 }
 
 std::string getCastExprType(clang::DeclStmt const&) {
@@ -88,24 +88,26 @@ std::string getCastExprType(clang::DeclRefExpr const&) {
 //--
 
 std::string OpDebugSummary(OpData const &data) {
-    std::stringstream ss;
-    ss << data.type_
-       << " (key_qn: " << data.qn_ << " )"
-       << " (cat: " << data.category_ << ")"
-       << " (expr: " << data.expr_ << ")"
-       << " (lp: " << data.linkedParm_ << ") in " << data.container_ << "()"
-       << " at " << data.location_.substr(data.location_.find_last_of('/') + 1);
+    std::string sopds;
+    sopds.reserve(1024);
+    sopds = data.type_;
+    sopds += " (key_qn: " + data.qn_ + " )"
+        + " (cat: " + data.category_ + ")"
+        + " (expr: " + data.expr_ + ")"
+        + " (lp: " + data.linkedParm_ + ") in " + data.container_ + "()"
+        + " at " + data.location_.substr(data.location_.find_last_of('/') + 1);
 
-    return ss.str();
+    return sopds;
 }
 
 std::string OpSummary(OpData const &data) {
-    std::stringstream ss;
-    ss << "[" << data.category_ << "]" << data.expr_ << ": '" << data.type_ << "'"
-       << " " << data.linkedParm_ << " at " << data.location_.substr(
-               data.location_.find_last_of('/') + 1);
+    std::string sops;
+    sops.reserve(1024);
+    sops = "[" + data.category_ + "]" + data.expr_ + ": '" + data.type_ + "'"
+        + " " + data.linkedParm_ + " at "
+        + data.location_.substr(data.location_.find_last_of('/') + 1);
 
-    return ss.str();
+    return sops;
 }
 
 /*
@@ -114,11 +116,11 @@ void OpHistorySummary(std::ostream &os, OpData const &data) {
        << " :" << data.linkedParm_ << ": at " << data.location_.substr(
                data.location_.find_last_of('/') + 1);
 }
-*/
 
 void OpTypeSummary(std::ostream &os, OpData const &data) {
     os << "'" << data.type_ << "'" << " " << data.linkedParm_;
 }
+*/
 //--
 
 /*
@@ -203,58 +205,58 @@ std::string dump(DominatorData const &info);
 // ---- Building Histree ----
 
 std::optional<Dominators> const& doms(CensusNode const &n) {
-    CNS_DEBUGM("");
+    CNS_DEBUG_MSG("");
     auto const &[_, info] = n;
     auto const &[__, doms_] = info;
-    CNS_DEBUGM("end");
+    CNS_DEBUG_MSG("end");
     return doms_;
 }
 
 OpData const& ops(CensusNode const &n) {
-    CNS_DEBUGM("<CensusNode const>");
+    CNS_DEBUG_MSG("<CensusNode const>");
     auto const &[_, info] = n;
     auto const &[op, __] = info;
     CNS_DEBUG("<CensusNode const> Returning op: {}", op.qn_);
-    CNS_DEBUGM("<CensusNode const> end");
+    CNS_DEBUG_MSG("<CensusNode const> end");
     return op;
 }
 
 OpData& ops(CensusNode &n) {
-    CNS_DEBUGM("<CensusNode>");
+    CNS_DEBUG_MSG("<CensusNode>");
     auto &[_, info] = n;
     auto &[op, __] = info;
     CNS_DEBUG("ops<CensusNode> Returning op: {}", op.qn_);
-    CNS_DEBUGM("<CensusNode> end");
+    CNS_DEBUG_MSG("<CensusNode> end");
     return op;
 }
 
 /*
 OpData const& ops(unsigned hash) {
-    CNS_DEBUGM("<hash>");
+    CNS_DEBUG_MSG("<hash>");
     auto const &[op, __] = census[hash];
     //FOUT << "[DEBUG](ops<hash>) Returning op (" << op.hash_ << ")\n";
-    CNS_DEBUGM("<hash> end");
+    CNS_DEBUG_MSG("<hash> end");
     return op;
 }
 */
 
 OpData const& ops(CensusKey k) {
-    CNS_DEBUGM("<cesuskey>");
+    CNS_DEBUG_MSG("<cesuskey>");
     auto const &[op, _] = census[k];
-    CNS_DEBUGM("<cesuskey> end");
+    CNS_DEBUG_MSG("<cesuskey> end");
     return op;
 }
 
 CensusKey const& opKey(CensusNode const& n) {
-    CNS_DEBUGM("");
+    CNS_DEBUG_MSG("");
     auto const &op = ops(n);
     CNS_DEBUG("Returning key: {}", op.qn_);
-    CNS_DEBUGM(" end");
+    CNS_DEBUG_MSG(" end");
     return op.qn_;
 }
 
 std::vector<CensusKey> UseChain(OpData const &op) {
-    CNS_DEBUGM("");
+    CNS_DEBUG_MSG("");
     auto doesOpDominate = [&op](CensusNode const &in) {
         CNS_DEBUG("(doesOpDominate) op.qn_ = {}", op.qn_);
         auto const &doms_ = doms(in);
@@ -268,7 +270,7 @@ std::vector<CensusKey> UseChain(OpData const &op) {
         //if(match != std::end(doms)) {
             //CNS_DEBUG("Op dominates {}", in.second.first.hash_);
         //}
-        CNS_DEBUGM("end");
+        CNS_DEBUG_MSG("end");
         return match != std::end(doms);
     };
 
@@ -276,12 +278,12 @@ std::vector<CensusKey> UseChain(OpData const &op) {
     std::copy_if(std::begin(census), std::end(census), std::back_inserter(t), doesOpDominate);
     std::vector<CensusKey> usechain;
     std::transform(std::begin(t), std::end(t), std::back_inserter(usechain), opKey);
-    CNS_DEBUGM("end");
+    CNS_DEBUG_MSG("end");
     return usechain;
 }
 
 void elaborateUse(OpData const &node, std::optional<int> level) {
-    CNS_DEBUGM("");
+    CNS_DEBUG_MSG("");
     node.use_.clear();
     // Use(node) = [i, Use(i) | i in UseChain(node)]
     auto const &usechain = UseChain(node);
@@ -300,7 +302,7 @@ void elaborateUse(OpData const &node, std::optional<int> level) {
             std::copy(begin(ops(hash).use_), end(ops(hash).use_), back_inserter(node.use_));
         }
     }
-    CNS_DEBUGM("end");
+    CNS_DEBUG_MSG("end");
 }
 
 //--
@@ -355,13 +357,15 @@ std::ostream& dump(std::ostream &os, DominatorData const &domInfo) {
 
 std::string dump(UseDefInfo const &d) {
     auto const &[data, dominators] = d;
-    std::stringstream ss;
-    ss << dump(data);
+    std::string sud;
+    sud.reserve(1024);
+    sud.append(dump(data));
     if(!dominators) {
-        return ss.str();
+        return sud;
     }
-    ss << dump(dominators.value()) << " -> " << dump(data);
-    return ss.str();
+    sud.append(dump(dominators.value()));
+    sud += " -> " + dump(data);
+    return sud;
 }
 
 std::string dump(OpData const &info) {
@@ -369,43 +373,43 @@ std::string dump(OpData const &info) {
     //        linkedParameter: '{}', containerFunction: '{}', location: '{}}}'\n",
     //        info.qn_, info.expr_, info.type_, info.category_,
     //        info.linkedParm_, info.container_, info.location_);
-    std::stringstream ss;
-    ss << "{key: '" << info.qn_
-       << "', expr: '" << info.expr_
-       << "', type: '" << info.type_
-       << "', category: '" << info.category_
-       << "', linkedParameter: '" << info.linkedParm_
-       << "', containerFunction: '" << info.container_
-       << "', location: '" << info.location_
-       << "'}\n";
-    return ss.str();
+    std::string sod;
+    sod.reserve(128);
+    sod = "{key: '" + info.qn_
+        + "', expr: '" + info.expr_
+        + "', type: '" + info.type_
+        + "', category: '" + info.category_
+        + "', linkedParameter: '" + info.linkedParm_
+        + "', containerFunction: '" + info.container_
+        + "', location: '" + info.location_
+        + "'}\n";
+    return sod;
 }
 
 std::string dump(Dominators const& doms) {
-    std::stringstream ss;
+    std::string sds;
+    sds.reserve(128);
     for(auto const &d: doms) {
-        ss << dump(d);
+        sds.append(dump(d));
     }
-    return ss.str();
+    return sds;
 }
 
 std::string dump(DominatorData const& domInfo) {
-    std::stringstream ss;
-    ss << "{from: " << dump(domInfo.from_)
-       << "', LinkingExpr: '" << domInfo.expr_
-       << "', ExprType: '" << domInfo.exprType_
-       //<< "', CalledFunction: '" << domInfo.callee_.value_or("(N/A)")
-       << "}\n";
-    return ss.str();
+    std::string sd;
+    sd = "{from: " + dump(domInfo.from_)
+        + "', LinkingExpr: '" + domInfo.expr_
+        + "', ExprType: '" + domInfo.exprType_
+        //+ "', CalledFunction: '" + domInfo.callee_.value_or("(N/A)")
+        + "}\n";
+    return sd;
 }
 //--
 
-std::ostream& space(std::ostream &os, int indent);
-void OpSummary(std::ostream &os, OpData const &data);
-void OpHistorySummary(std::ostream &os, OpData const &data);
+std::string space(int indent);
 
 void censusSummary() {
-    CNS_DEBUGM("<void>");
+    CNS_DEBUG_MSG("<void>");
 
     // build usechain
     /*
@@ -455,8 +459,17 @@ void censusSummary() {
         FOUT << "\n\n";
         */
     }
-    CNS_DEBUGM("<void> end");
+    CNS_DEBUG_MSG("<void> end");
 }
+
+std::string space(int indent) {
+    return std::string(indent, ' ');
+}
+
+/*
+std::ostream& space(std::ostream &os, int indent);
+void OpSummary(std::ostream &os, OpData const &data);
+void OpHistorySummary(std::ostream &os, OpData const &data);
 
 std::ostream& space(std::ostream &os, int indent) {
     for(int i = 0; i != indent; i++) {
@@ -464,15 +477,15 @@ std::ostream& space(std::ostream &os, int indent) {
     }
     return os;
 }
-
+*/
 /*
 std::string getLinkedFunction(
         clang::ASTContext const &context,
         clang::CastExpr const &castExpr,
         clang::UnaryOperator const&) {
 
-    CNS_DEBUGM("<unaryop>");
-    CNS_DEBUGM("<unaryop> end");
+    CNS_DEBUG_MSG("<unaryop>");
+    CNS_DEBUG_MSG("<unaryop> end");
     return "N/A";
 }
 
@@ -481,8 +494,8 @@ std::string getLinkedFunction(
         clang::CastExpr const &castExpr,
         clang::DeclRefExpr const&) {
 
-    CNS_DEBUGM("<declrefexpr>");
-    CNS_DEBUGM("<declrefe> end");
+    CNS_DEBUG_MSG("<declrefexpr>");
+    CNS_DEBUG_MSG("<declrefe> end");
     return "N/A";
 }
 
@@ -492,14 +505,14 @@ std::string getLinkedFunction(
         clang::CastExpr const &castExpr,
         clang::CallExpr const &call) {
 
-    CNS_DEBUGM("<callexpr>");
+    CNS_DEBUG_MSG("<callexpr>");
     auto const *calledFn = getCalleeDecl(call);
     assert(calledFn);
     if(!calledFn) {
         return "";
     }
 
-    CNS_DEBUGM("<callexpr> end");
+    CNS_DEBUG_MSG("<callexpr> end");
     return calledFn->getNameAsString();
 }
 */
