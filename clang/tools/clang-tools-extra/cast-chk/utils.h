@@ -67,9 +67,9 @@ void logm(const char * severity, const char * func, int line, fmt::string_view m
     fmt::print(fOUT, "[{}] {}():{}: {}\n" , severity, func, line, msg);
 }
 
-//#define CNS_LOG_LEVEL_DEBUG {}
+#define CNS_LOG_LEVEL_DEBUG {}
 #define CNS_LOG_LEVEL_INFO {}
-//#define CNS_LOG_LEVEL_WARN {}
+#define CNS_LOG_LEVEL_WARN {}
 #define CNS_LOG_LEVEL_ERROR {}
 
 #ifdef CNS_LOG_LEVEL_DEBUG

@@ -423,7 +423,7 @@ void censusSummary() {
         auto const& op = ops(n);
         CNS_DEBUG("<void> op: {}", op.qn_);
         //op.use_ = UseChain(op);
-        elaborateUse(op, {3});
+        //elaborateUse(op, {3});
         CNS_DEBUG("<void> op.use_.size() = {}", op.use_.size());
     }
 

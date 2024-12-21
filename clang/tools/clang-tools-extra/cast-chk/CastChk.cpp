@@ -937,12 +937,12 @@ public:
         censusSummary();
         CNS_INFO_MSG("# end Census summary so far");
 
+        /*
         std::for_each(begin(TypeTransforms), end(TypeTransforms),
             [&](auto &h) {
                 elaborateHistory(h.second); //, {3});
             });
 
-        /*
         FOUT << "History collection:\n";
         std::cout << "History collection:\n";
         std::for_each(begin(TypeSummaries), end(TypeSummaries),
@@ -1042,6 +1042,12 @@ int main(int argc, const char **argv) {
 
 void printCollection() {
     LOG_FUNCTION_TIME;
+
+    std::for_each(begin(TypeTransforms), end(TypeTransforms),
+        [&](auto &h) {
+            elaborateHistory(h.second); //, {3});
+        });
+
     fmt::print(fOUT, "History collection:\n");
     fmt::print(stdout, "History collection:\n");
     std::for_each(begin(TypeSummaries), end(TypeSummaries),
