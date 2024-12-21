@@ -323,10 +323,23 @@ void updateCensus(
 
 void processCast(MatchFinder::MatchResult const &result) {
     CNS_DEBUG_MSG("");
-    assert(result);
     auto *context = result.Context;
+    if(!context) {
+        CNS_ERROR_MSG("Null context");
+        CNS_DEBUG_MSG("end.");
+        return;
+    }
     assert(context);
     auto const *castExpr = result.Nodes.getNodeAs<CastExpr>("cast");
+    if(!castExpr) {
+        CNS_ERROR_MSG("Null cast expr");
+        CNS_DEBUG_MSG("end.");
+        return;
+    }
+    assert(castExpr);
+
+    CNS_DEBUG("Cast match at: '{}'", castExpr->getExprLoc().printToString(*result.SourceManager));
+    CNS_DEBUG("Cast : '{}'", String(*context, *castExpr));
 
     // Source
     auto const *s_unaryCastee = result.Nodes.getNodeAs<DeclRefExpr>("unaryCastee");
@@ -337,21 +350,24 @@ void processCast(MatchFinder::MatchResult const &result) {
     auto const *unaryOp = result.Nodes.getNodeAs<UnaryOperator>("unaryOp");
 
     if(!!unaryOp) {
+        CNS_DEBUG_MSG("Processing cast: Unary operation");
         updateCensus<CastSourceType::UnaryOp>(*context, *result.SourceManager, *castExpr, *s_unaryCastee, *unaryOp);
     }
     else if(!!binOp) {
-        CNS_INFO_MSG("binop processing");
-        auto const *bl = result.Nodes.getNodeAs<DeclRefExpr>("binLhs");
-        auto const *br = result.Nodes.getNodeAs<DeclRefExpr>("binRhs");
+        CNS_DEBUG_MSG("Processing cast: Binary operation");
+        auto const *bl = result.Nodes.getNodeAs<DeclRefExpr>("lhsref");
+        auto const *br = result.Nodes.getNodeAs<DeclRefExpr>("rhsref");
         if(!bl) {
             CNS_ERROR_MSG("binop lHS == nullptr.");
+            CNS_DEBUG_MSG(" end");
             return;
         }
         if(!br) {
             CNS_ERROR_MSG("binop RHS == nullptr.");
+            CNS_DEBUG_MSG(" end");
             return;
         }
-        updateCensus<CastSourceType::BinaryOp>(*context, *result.SourceManager, *castExpr, *bl, *br);
+        updateCensus<CastSourceType::BinaryOp>(*context, *result.SourceManager, *castExpr, *br, *bl);
     }
 
     CNS_DEBUG_MSG(" end");
@@ -391,6 +407,9 @@ void processVar(MatchFinder::MatchResult const &result) {
     auto const *rhs = result.Nodes.getNodeAs<clang::VarDecl>("varDecl");
     assert(rhs);
 
+    CNS_DEBUG("VarDecl match at: '{}'", rhs->getLocation().printToString(*result.SourceManager));
+    CNS_DEBUG("VarDecl : '{}'", String(*context, *rhs));
+
     auto const *lhsRef = result.Nodes.getNodeAs<clang::DeclRefExpr>("assignee");
     auto const *lhsLit = result.Nodes.getNodeAs<clang::Expr>("literal");
     if(!lhsRef || lhsLit) {
@@ -404,6 +423,7 @@ void processVar(MatchFinder::MatchResult const &result) {
              << "          : inside " << rhsData.container_ << "()\n"
              << "\n";
         */
+        CNS_INFO_MSG("Skipping VarDecl init with a literal.");
         return;
     }
 
@@ -788,13 +808,16 @@ void preprocess(
 //
 //
 void processFunctionCall(MatchFinder::MatchResult const &result) {
-    CNS_INFO_MSG("");
+    CNS_DEBUG_MSG("");
+
     assert(result);
     auto *context = result.Context;
     assert(context);
 
     auto const *call = result.Nodes.getNodeAs<CallExpr>("ce");
     assert(call);
+    CNS_DEBUG("FunctionCall match at: '{}'", call->getExprLoc().printToString(*result.SourceManager));
+    CNS_DEBUG("Call : '{}'", String(*context, *call));
 
     // - Preprocess call.
     preprocess(*context, *call);
@@ -803,7 +826,7 @@ void processFunctionCall(MatchFinder::MatchResult const &result) {
     //
     addCallHistory(*context, *call);
 
-    CNS_INFO_MSG(" end");
+    CNS_DEBUG_MSG(" end");
 }
 
 //----------------------------------------------------------------------------
@@ -840,13 +863,22 @@ StatementMatcher CastMatcher =
                 hasParent(
                     binaryOperator(
                         isAssignmentOperator(),
-                        hasLHS(expr(declRefExpr().bind("lhsref")).bind("binLhs")),
-                        hasRHS(expr(declRefExpr().bind("rhsref")).bind("binRhs"))
-                        ).bind("binOp")))
+                        hasLHS(expr(
+                                anyOf(
+                                    declRefExpr().bind("lhsref"),
+                                    hasDescendant(declRefExpr().bind("lhsref"))
+                                )).bind("binLhs")),
+                        hasRHS(expr(
+                                anyOf(
+                                    declRefExpr().bind("rhsref"),
+                                    hasDescendant(declRefExpr().bind("rhsref"))
+                                )).bind("binRhs"))
+                    ).bind("binOp")))
 
-        ).bind("cast");
+    ).bind("cast");
 
 
+/*
 StatementMatcher CastMatcher2 =
     castExpr(
         allOf(
@@ -858,6 +890,7 @@ StatementMatcher CastMatcher2 =
                 hasAncestor(expr().bind("gexpr"))),
                 hasDescendant(declRefExpr().bind("castee")))
         ).bind("cast");
+*/
 // TODO: Add missing cast dumps. For example in other cast types.(?).
 
 //---
