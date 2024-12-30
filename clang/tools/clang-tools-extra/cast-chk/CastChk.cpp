@@ -48,7 +48,6 @@ using namespace clang::ast_matchers;
 using namespace clang::ento;
 
 std::vector<unsigned> seenFunctions;
-std::vector<std::string> ignoreFunctions;
 
 // Tool workflow
 // Matcher invokes Callback with match result

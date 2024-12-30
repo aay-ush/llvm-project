@@ -1118,12 +1118,33 @@ TypeSummary makeResolvedSummary(std::string const& keyOp, std::string const& key
     return ts;
 }
 
+std::vector<std::string> ignoreFunctions;
+bool isIgnoredFunction(std::string const& key) {
+    CNS_DEBUG("Checking if {{{}}} is ignored", key);
+    auto pos = key.find(".$");
+    if(pos != std::string::npos) {
+        auto fn = key.substr(0, pos - 1);
+        if(std::find(begin(ignoreFunctions), end(ignoreFunctions), fn) != end(ignoreFunctions)) {
+            CNS_DEBUG("'{}'() is ignored", fn);
+            return true;
+        }
+    }
+    return false;
+}
+
+
 TypeSummary makeTypeSummaryLH(LocalHistory const& lh) {
     CNS_DEBUG_MSG("");
 
     auto const &h = lh.first.get();
     auto hid = h.opId();
     CNS_DEBUG("Building summary for {{{}}}", hid);
+
+    if(isIgnoredFunction(h.opId())) {
+        CNS_INFO("skipping, ignored function: {}", h.opId());
+        return makeResolvedSummary(h.opId(), h.opId());
+    }
+
     auto rops = h.getContextResolvedOpStr(lh.second);
     CNS_DEBUG("{{{}}}: 1", hid);
     auto ts = makeResolvedSummary(h.opId(), rops);
@@ -1158,7 +1179,7 @@ TypeSummary makeTypeSummaryLH(LocalHistory const& lh) {
     return ts;
 }
 
-std::unordered_map<std::string, TypeSummary> TypeSummaries;
+std::unordered_map<CensusKey, TypeSummary> TypeSummaries;
 
 // S(a) = Typeof(a) -> S(next)
 std::string TypeSummary::summarize(std::optional<unsigned> level, int indent) const {
