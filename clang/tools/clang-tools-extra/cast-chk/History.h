@@ -1032,6 +1032,37 @@ bool operator!=(TypeSummary lhs, CensusKey rhs) {
 }
 */
 
+class OverflowGuard {
+public:
+    static OverflowGuard& get() {
+        static OverflowGuard g(1000);
+        if(g.value() > 0) {
+            g.decrement();
+        }
+        return g;
+    }
+    static void reset() {
+        auto &og = OverflowGuard::get();
+        og.stack_depth_ = 1000;
+    }
+
+    unsigned value() const {
+        return stack_depth_;
+    }
+    bool ok() const {
+        return value() > 0;
+    }
+
+private:
+    OverflowGuard(unsigned sd): stack_depth_{sd} {}
+    void decrement() {
+        stack_depth_--;
+    }
+
+    unsigned stack_depth_;
+};
+
+
 TypeSummary makeTypeSummaryLH(LocalHistory const& lh);
 
 TypeSummary::TypeSummary(History const&h) {
@@ -1172,7 +1203,13 @@ TypeSummary makeTypeSummaryLH(LocalHistory const& lh) {
 
             CNS_DEBUG("{{{}}}: Creating summary for branch: {{{}}}", ts.id(), bh.first.get().opId());
             CNS_DEBUG("{{{}}}: 2", ts.id());
-            ts.addNextBranch(makeTypeSummaryLH({bh.first.get(), pcn}));
+            auto &og = OverflowGuard::get();
+            if(og.ok()) {
+                ts.addNextBranch(makeTypeSummaryLH({bh.first.get(), pcn}));
+            }
+            else {
+                CNS_INFO("Stopping makeTypeSummaryLH recursion for {{{}}}, skipping {{{}}} because overflow guard limit exceeded.", ts.id(), bh.first.get().opId());
+            }
         });
 
     CNS_DEBUG("{{{}}}: end", ts.id());
@@ -1263,11 +1300,20 @@ void elaborateHistory(History const &h) {//, std::optional<int> level) {
 
                     CNS_DEBUG("{{{}}} <{}> Creating new branch: {{{}}}", ts.id(), h.branch().size(), bh.first.get().opId());
                     auto th = makeTypeSummaryLH({bh.first.get(), pc});
-                    ts.addNextBranch(th);
+                    //ts.addNextBranch(th);
+                    auto &og = OverflowGuard::get();
+                    if(og.ok()) {
+                        auto th = makeTypeSummaryLH({bh.first.get(), pc});
+                        ts.addNextBranch(th);
+                    }
+                    else {
+                        CNS_INFO("Stopping makeTypeSummaryLH recursion for {{{}}}, skipping {{{}}} because overflow guard limit exceeded.", ts.id(), bh.first.get().opId());
+                    }
                 });
 
             //CNS_DEBUG("Adding Summary for {{{}}}: {{{}}}", h_.first, TypeSummaries.at(h_.first).summary({4}));
             TypeSummaries.insert({h_.first, ts});
+            OverflowGuard::reset();
         });
 
     CNS_DEBUG_MSG("end");
