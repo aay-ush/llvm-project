@@ -240,7 +240,7 @@ OpData const& ops(unsigned hash) {
 }
 */
 
-OpData const& ops(CensusKey k) {
+OpData const& ops(CensusKey const& k) {
     CNS_DEBUG_MSG("<cesuskey>");
     auto const &[op, _] = census[k];
     CNS_DEBUG_MSG("<cesuskey> end");

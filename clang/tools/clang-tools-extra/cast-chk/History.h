@@ -132,8 +132,85 @@ namespace {
         return std::regex_replace(text, chars_to_escape, "\\$0");
     }
 
-
     std::string derefIdFromContext(std::string id, HistoryContext const& hc) {
+        LOG_FUNCTION_TIME;
+        CNS_DEBUG_MSG("");
+        CNS_DEBUG("Resolving <{}>", id);
+        for(unsigned i = 0; i != hc.size(); i++) {
+            auto start0 = std::chrono::steady_clock::now();
+            for(auto &[key, val]: hc) {
+                CNS_DEBUG("hc[{}]: [{} ↦ {}] ({})", i, key, val, id);
+                auto start = std::chrono::steady_clock::now();
+                if(key == val) {
+                    CNS_DEBUG_MSG("Key == value, skip");
+                    continue;
+                }
+                auto pid = id;
+                if(id == key) {
+                    CNS_DEBUG("id({}) == key({})", id, key);
+                    id = val;
+                }
+                else {
+                    auto pos = id.find_last_of(".");
+                    if(pos == std::string::npos) {
+                        // No period in id and id != key
+                        // => no key in id
+                        CNS_DEBUG("No prefix found in {}", id);
+                        CNS_DEBUG("<{}> -> <{}>\n", pid, id);
+                        continue;
+                    }
+                    auto prefix = id.substr(0, pos);
+                    auto suffix = id.substr(pos);
+                    if(prefix == key) {
+                        CNS_DEBUG("Prefix({}) == key({})", prefix, key);
+                        CNS_DEBUG("Suffix = {}", suffix);
+                        id = val + suffix;
+                    }
+                    else {
+                        CNS_DEBUG("Prefix({}) != key({})", prefix, key);
+                        auto pos2 = prefix.find_last_of(".");
+                        if(pos2 == std::string::npos) {
+                            CNS_DEBUG("No preprefix found in ({})", prefix);
+                            CNS_DEBUG("<{}> -> <{}>\n", pid, id);
+                            continue;
+                        }
+                        auto prefix2 = prefix.substr(0, pos2);
+                        auto suffix2 = prefix.substr(pos2);
+                        if(prefix2 == key) {
+                            CNS_DEBUG("Preprefix({}) == key({})", prefix2, key);
+                            CNS_DEBUG("Sufprefix = {}", suffix2);
+                            id = val + suffix2 + suffix;
+                        }
+                        else {
+                            CNS_DEBUG("Preprefix({}) != key({})", prefix2, key);
+                        }
+                    }
+                }
+                auto duration = std::chrono::steady_clock::now() - start;
+                fmt::print(fOUT, "[ INFO] :TIME TRACE: {} took {}μs\n",
+                        "keyorprefix_replace",
+                       std::chrono::duration_cast<std::chrono::microseconds>(duration).count());
+                /*
+                std::regex pattern("\\b" + regex_escape(key));
+                auto start = std::chrono::steady_clock::now();
+                id = std::regex_replace(id, pattern, val, std::regex_constants::format_sed);
+                auto duration = std::chrono::steady_clock::now() - start;
+                fmt::print(fOUT, "[ INFO] :TIME TRACE: {} took {}μs\n",
+                        "regex_replace",
+                       std::chrono::duration_cast<std::chrono::microseconds>(duration).count());
+                */
+                CNS_DEBUG("<{}> -> <{}>\n", pid, id);
+            }
+            auto duration0 = std::chrono::steady_clock::now() - start0;
+            fmt::print(fOUT, "[ INFO] :TIME TRACE: {} took {}μs\n",
+                    "deref inside loop",
+                   std::chrono::duration_cast<std::chrono::microseconds>(duration0).count());
+        }
+
+        return id;
+    }
+
+    std::string derefIdFromContextOLD(std::string id, HistoryContext const& hc) {
         LOG_FUNCTION_TIME;
         CNS_DEBUG_MSG("");
         CNS_DEBUG("Resolving <{}>", id);
