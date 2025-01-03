@@ -1035,7 +1035,7 @@ bool operator!=(TypeSummary lhs, CensusKey rhs) {
 class OverflowGuard {
 public:
     static OverflowGuard& get() {
-        static OverflowGuard g(1000);
+        static OverflowGuard g(10000);
         if(g.value() > 0) {
             g.decrement();
         }
@@ -1043,7 +1043,7 @@ public:
     }
     static void reset() {
         auto &og = OverflowGuard::get();
-        og.stack_depth_ = 1000;
+        og.stack_depth_ = 10000;
     }
 
     unsigned value() const {
