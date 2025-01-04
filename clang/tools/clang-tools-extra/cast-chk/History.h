@@ -143,41 +143,6 @@ namespace {
         return {prefix, suffix};
     }
 
-    /*
-    std::string evalCensusKey(std::string const &key, std::string const &pattern, std::string const &replacement) {
-        CNS_DEBUG_MSG("");
-        if(!hasPrefix(key)) {
-            CNS_DEBUG("No prefix found in {}", key);
-            return key;
-        }
-
-        auto [prefix, suffix] = unpack(key);
-        if(prefix == pattern) {
-            CNS_DEBUG("Prefix({}) == pattern({})", prefix, pattern);
-            CNS_DEBUG("Suffix = {}", suffix);
-            return replacement + suffix;
-        }
-
-        CNS_DEBUG("Prefix({}) != pattern({})", prefix, pattern);
-        if(!hasPrefix(prefix)) {
-            CNS_DEBUG("No further prefix in {}", prefix);
-            CNS_DEBUG_MSG("end");
-            return key;
-        }
-
-        auto [prefix2, suffix2] = unpack(prefix);
-        if(prefix2 == pattern) {
-            CNS_DEBUG("Prefix2({}) == pattern({})", prefix2, pattern);
-            CNS_DEBUG("Suffix2 = {}", suffix2);
-            return replacement + suffix2 + suffix;
-        }
-
-        CNS_DEBUG("Pattern({}) not found in key({})", pattern, key);
-        CNS_DEBUG_MSG("end");
-        return key;
-    }
-    */
-
     std::string derefIdFromContext(std::string id, HistoryContext const& hc) {
         LOG_FUNCTION_TIME;
         CNS_DEBUG_MSG("");
