@@ -132,6 +132,52 @@ namespace {
         return std::regex_replace(text, chars_to_escape, "\\$0");
     }
 
+    bool hasPrefix(std::string const &key) {
+        return key.find_last_of(".") != std::string::npos;
+    }
+
+    inline std::pair<std::string, std::string> unpack(std::string const &key) {
+        auto pos = key.find_last_of(".");
+        auto prefix = key.substr(0, pos);
+        auto suffix = key.substr(pos);
+        return {prefix, suffix};
+    }
+
+    /*
+    std::string evalCensusKey(std::string const &key, std::string const &pattern, std::string const &replacement) {
+        CNS_DEBUG_MSG("");
+        if(!hasPrefix(key)) {
+            CNS_DEBUG("No prefix found in {}", key);
+            return key;
+        }
+
+        auto [prefix, suffix] = unpack(key);
+        if(prefix == pattern) {
+            CNS_DEBUG("Prefix({}) == pattern({})", prefix, pattern);
+            CNS_DEBUG("Suffix = {}", suffix);
+            return replacement + suffix;
+        }
+
+        CNS_DEBUG("Prefix({}) != pattern({})", prefix, pattern);
+        if(!hasPrefix(prefix)) {
+            CNS_DEBUG("No further prefix in {}", prefix);
+            CNS_DEBUG_MSG("end");
+            return key;
+        }
+
+        auto [prefix2, suffix2] = unpack(prefix);
+        if(prefix2 == pattern) {
+            CNS_DEBUG("Prefix2({}) == pattern({})", prefix2, pattern);
+            CNS_DEBUG("Suffix2 = {}", suffix2);
+            return replacement + suffix2 + suffix;
+        }
+
+        CNS_DEBUG("Pattern({}) not found in key({})", pattern, key);
+        CNS_DEBUG_MSG("end");
+        return key;
+    }
+    */
+
     std::string derefIdFromContext(std::string id, HistoryContext const& hc) {
         LOG_FUNCTION_TIME;
         CNS_DEBUG_MSG("");
@@ -145,22 +191,15 @@ namespace {
                     CNS_DEBUG_MSG("Key == value, skip");
                     continue;
                 }
+
                 auto pid = id;
                 if(id == key) {
                     CNS_DEBUG("id({}) == key({})", id, key);
                     id = val;
                 }
-                else {
-                    auto pos = id.find_last_of(".");
-                    if(pos == std::string::npos) {
-                        // No period in id and id != key
-                        // => no key in id
-                        CNS_DEBUG("No prefix found in {}", id);
-                        CNS_DEBUG("<{}> -> <{}>\n", pid, id);
-                        continue;
-                    }
-                    auto prefix = id.substr(0, pos);
-                    auto suffix = id.substr(pos);
+                else if(hasPrefix(id)) {
+                    //id = evalCensusKey(id, key, val);
+                    auto [prefix, suffix] = unpack(id);
                     if(prefix == key) {
                         CNS_DEBUG("Prefix({}) == key({})", prefix, key);
                         CNS_DEBUG("Suffix = {}", suffix);
@@ -168,27 +207,27 @@ namespace {
                     }
                     else {
                         CNS_DEBUG("Prefix({}) != key({})", prefix, key);
-                        auto pos2 = prefix.find_last_of(".");
-                        if(pos2 == std::string::npos) {
-                            CNS_DEBUG("No preprefix found in ({})", prefix);
+                        if(!hasPrefix(prefix)) {
+                            CNS_DEBUG("No further prefix in {}", prefix);
                             CNS_DEBUG("<{}> -> <{}>\n", pid, id);
                             continue;
                         }
-                        auto prefix2 = prefix.substr(0, pos2);
-                        auto suffix2 = prefix.substr(pos2);
+
+                        auto [prefix2, suffix2] = unpack(prefix);
                         if(prefix2 == key) {
-                            CNS_DEBUG("Preprefix({}) == key({})", prefix2, key);
-                            CNS_DEBUG("Sufprefix = {}", suffix2);
+                            CNS_DEBUG("Prefix2({}) == key({})", prefix2, key);
+                            CNS_DEBUG("Suffix2 = {}", suffix2);
                             id = val + suffix2 + suffix;
                         }
                         else {
-                            CNS_DEBUG("Preprefix({}) != key({})", prefix2, key);
+                            CNS_DEBUG("key({}) not found in id({})", key, id);
+                            CNS_DEBUG("<{}> -> <{}>\n", pid, id);
                         }
                     }
                 }
                 auto duration = std::chrono::steady_clock::now() - start;
                 fmt::print(fOUT, "[ INFO] :TIME TRACE: {} took {}μs\n",
-                        "keyorprefix_replace",
+                        "evalCensusKey",
                        std::chrono::duration_cast<std::chrono::microseconds>(duration).count());
                 /*
                 std::regex pattern("\\b" + regex_escape(key));
@@ -199,37 +238,6 @@ namespace {
                         "regex_replace",
                        std::chrono::duration_cast<std::chrono::microseconds>(duration).count());
                 */
-                CNS_DEBUG("<{}> -> <{}>\n", pid, id);
-            }
-            auto duration0 = std::chrono::steady_clock::now() - start0;
-            fmt::print(fOUT, "[ INFO] :TIME TRACE: {} took {}μs\n",
-                    "deref inside loop",
-                   std::chrono::duration_cast<std::chrono::microseconds>(duration0).count());
-        }
-
-        return id;
-    }
-
-    std::string derefIdFromContextOLD(std::string id, HistoryContext const& hc) {
-        LOG_FUNCTION_TIME;
-        CNS_DEBUG_MSG("");
-        CNS_DEBUG("Resolving <{}>", id);
-        for(unsigned i = 0; i != hc.size(); i++) {
-            auto start0 = std::chrono::steady_clock::now();
-            for(auto &[key, val]: hc) {
-                CNS_DEBUG("hc[{}]: [{} ↦ {}] ({})", i, key, val, id);
-                if(key == val) {
-                    CNS_DEBUG_MSG("Key = value, skip");
-                    continue;
-                }
-                auto pid = id;
-                std::regex pattern("\\b" + regex_escape(key));
-                auto start = std::chrono::steady_clock::now();
-                id = std::regex_replace(id, pattern, val, std::regex_constants::format_sed);
-                auto duration = std::chrono::steady_clock::now() - start;
-                fmt::print(fOUT, "[ INFO] :TIME TRACE: {} took {}μs\n",
-                        "regex_replace",
-                       std::chrono::duration_cast<std::chrono::microseconds>(duration).count());
                 CNS_DEBUG("<{}> -> <{}>\n", pid, id);
             }
             auto duration0 = std::chrono::steady_clock::now() - start0;
