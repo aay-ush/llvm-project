@@ -382,6 +382,7 @@ std::string dump(OpData const &info) {
         + "', linkedParameter: '" + info.linkedParm_
         + "', containerFunction: '" + info.container_
         + "', location: '" + info.location_
+        + "', castkind: '" + info.castKind_
         + "'}\n";
     return sod;
 }

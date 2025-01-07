@@ -307,6 +307,8 @@ void updateCensus(
     auto lhs = buildOpData(context, sm, castExpr, castSource);
     CNS_INFO_MSG("<Cast> building rhs data.");
     auto rhs = buildOpData<CS_t>(context, sm, castExpr, dest);
+    // Cast kind update
+    rhs.castKind_ = castExpr.getCastKindName();
 
     DominatorData dom{
         lhs,
@@ -385,6 +387,15 @@ void updateCensus(
     auto lhs = buildOpData(context, sm, src, *lhsDecl);
     CNS_INFO_MSG("<declrefexpr, varDecl> building rhs data.");
     auto rhs = buildOpData(context, sm, dest);
+
+    auto const *inx = dest.getInit();
+    if(inx) {
+        auto const *inc = dyn_cast<clang::CastExpr>(inx);
+        if(inc) {
+            CNS_DEBUG("Cast expression in var decl init '{}'", String(context, *inc));
+            rhs.castKind_ = inc->getCastKindName();
+        }
+    }
 
     DominatorData dom{lhs, {}, {}};
     updateCensus(lhs, rhs, dom);

@@ -191,24 +191,19 @@ namespace {
                     }
                 }
                 auto duration = std::chrono::steady_clock::now() - start;
+                /*
                 fmt::print(fOUT, "[ INFO] :TIME TRACE: {} took {}μs\n",
                         "evalCensusKey",
-                       std::chrono::duration_cast<std::chrono::microseconds>(duration).count());
-                /*
-                std::regex pattern("\\b" + regex_escape(key));
-                auto start = std::chrono::steady_clock::now();
-                id = std::regex_replace(id, pattern, val, std::regex_constants::format_sed);
-                auto duration = std::chrono::steady_clock::now() - start;
-                fmt::print(fOUT, "[ INFO] :TIME TRACE: {} took {}μs\n",
-                        "regex_replace",
                        std::chrono::duration_cast<std::chrono::microseconds>(duration).count());
                 */
                 CNS_DEBUG("<{}> -> <{}>\n", pid, id);
             }
             auto duration0 = std::chrono::steady_clock::now() - start0;
+            /*
             fmt::print(fOUT, "[ INFO] :TIME TRACE: {} took {}μs\n",
                     "deref inside loop",
                    std::chrono::duration_cast<std::chrono::microseconds>(duration0).count());
+            */
         }
 
         return id;
@@ -1085,7 +1080,7 @@ bool operator!=(TypeSummary lhs, CensusKey rhs) {
 class OverflowGuard {
 public:
     static OverflowGuard& get() {
-        static OverflowGuard g(10000);
+        static OverflowGuard g(1000);
         if(g.value() > 0) {
             g.decrement();
         }
@@ -1093,7 +1088,7 @@ public:
     }
     static void reset() {
         auto &og = OverflowGuard::get();
-        og.stack_depth_ = 10000;
+        og.stack_depth_ = 1000;
     }
 
     unsigned value() const {
@@ -1258,7 +1253,7 @@ TypeSummary makeTypeSummaryLH(LocalHistory const& lh) {
                 ts.addNextBranch(makeTypeSummaryLH({bh.first.get(), pcn}));
             }
             else {
-                CNS_INFO("Stopping makeTypeSummaryLH recursion for {{{}}}, skipping {{{}}} because overflow guard limit exceeded.", ts.id(), bh.first.get().opId());
+                CNS_WARN("Stopping makeTypeSummaryLH recursion for {{{}}}, skipping {{{}}} because overflow guard limit exceeded.", ts.id(), bh.first.get().opId());
             }
         });
 
@@ -1357,7 +1352,7 @@ void elaborateHistory(History const &h) {//, std::optional<int> level) {
                         ts.addNextBranch(th);
                     }
                     else {
-                        CNS_INFO("Stopping makeTypeSummaryLH recursion for {{{}}}, skipping {{{}}} because overflow guard limit exceeded.", ts.id(), bh.first.get().opId());
+                        CNS_WARN("Stopping makeTypeSummaryLH recursion for {{{}}}, skipping {{{}}} because overflow guard limit exceeded.", ts.id(), bh.first.get().opId());
                     }
                 });
 
