@@ -1050,6 +1050,26 @@ int main(int argc, const char **argv) {
     return rc;
 }
 
+void printCollection(std::FILE *fp) {
+    LOG_FUNCTION_TIME;
+
+    CastStat tcst("Total Cast Statistics");
+    fmt::print(fp, "History collection:\n");
+    std::for_each(begin(TypeSummaries), end(TypeSummaries),
+        [&](auto const &s) {
+            CastStat cst("Cast stats for " + s.first);
+            fmt::print(fp, "History of ({}):\n", s.first);
+            auto tsummary = s.second.summarize(cst, {SUMMARY_DEPTH});
+            tcst.extend(cst);
+
+            fmt::print(fp, "{}\n\n", tsummary);
+            cst.print(fp);
+            fmt::print(fp, "\n");
+        });
+    tcst.print(fp);
+    std::fflush(fp);
+}
+
 void printCollection() {
     LOG_FUNCTION_TIME;
 
@@ -1058,19 +1078,34 @@ void printCollection() {
             elaborateHistory(h.second); //, {3});
         });
 
+    printCollection(fOUT);
+    printCollection(stdout);
+    /*
+    std::for_each(begin(TypeTransforms), end(TypeTransforms),
+        [&](auto &h) {
+            elaborateHistory(h.second); //, {3});
+        });
+
+    CastStat tcst;
     fmt::print(fOUT, "History collection:\n");
     fmt::print(stdout, "History collection:\n");
     std::for_each(begin(TypeSummaries), end(TypeSummaries),
         [&](auto const &s) {
+            CastStat cst;
             fmt::print(fOUT, "History of ({}):\n", s.first);
             fmt::print(stdout, "History of ({}):\n", s.first);
             //std::cout << "History of (" << s.first << "):\n";
-            auto tsummary = s.second.summarize({SUMMARY_DEPTH});
+            auto tsummary = s.second.summarize(cst, {SUMMARY_DEPTH});
             fmt::print(fOUT, "{}\n\n", tsummary);
             fmt::print(stdout, "{}\n\n", tsummary);
+            cst.print(fOUT);
+            cst.print(stdout);
+            std::fflush(stdout);
+            tcst.extend(cst);
         });
     fmt::print(fOUT, "end History collection\n");
     fmt::print(stdout, "end History collection\n");
+    */
 }
 
 void buildIgnoreList() {

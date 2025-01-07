@@ -1006,6 +1006,7 @@ std::vector<LocalHistory> HistoryTemplate::instantiate(clang::ASTContext &contex
     return h;
 }
 
+class CastStat;
 // TypeSummary evaluates to key.type_ or key.qn_ or key.type_ -> (key.type_ | key.qn_) and so on.
 class TypeSummary {
     public:
@@ -1018,7 +1019,8 @@ class TypeSummary {
         CNS_DEBUG("{{{}}};[{}]_{} end", key_, nexts_.size(), numi_);
     }
 
-    std::string summarize(std::optional<unsigned> level, int indent = 0) const;
+    std::string summarizeNoStat(std::optional<unsigned> level, int indent = 0) const;
+    std::string summarize(CastStat&, std::optional<unsigned> level, int indent = 0) const;
 
     ~TypeSummary()= default;
     /*
@@ -1263,8 +1265,114 @@ TypeSummary makeTypeSummaryLH(LocalHistory const& lh) {
 
 std::unordered_map<CensusKey, TypeSummary> TypeSummaries;
 
+class CastStat {
+public:
+    CastStat(std::string label): label_(label) {}
+
+    void addFunction(std::string fn) {
+        funcCounts_[fn] = funcCounts_[fn] + 1;
+    }
+    void addType(std::string type) {
+        typeCounts_[type] = typeCounts_[type] + 1;
+    }
+    void increment() {
+        castCount_++;
+    }
+
+    void print(std::FILE *fp) const {
+        fmt::print(fp, "[Cast Statistics] {} :\n", label_);
+        fmt::print(fp, "Total BitCasts: {}\n", castCount_);
+        if(typeCounts_.find("void *") != std::end(typeCounts_)) {
+            fmt::print(fp, "Total void * casts : {}\n", typeCounts_.at("void *"));
+        }
+        else {
+            fmt::print(fp, "Total void * casts : 0\n");
+        }
+        fmt::print(fp, "Other types {{Type: Count}}: ");
+        for(auto const &[t, tc]: typeCounts_) {
+            fmt::print(fp, "{{'{}': {}}}, ", t, tc);
+        }
+        fmt::print(fp, "\n[end Cast Statistics] {}\n", label_);
+        /*
+        fmt::print(fp, "{{Func: Count}}:\n");
+        for(auto const &[f, fc]: funcCounts_) {
+            fmt::print(fp, "{{'{}': {}}}, ", f, fc);
+        }
+        fmt::print(fp, "\n");
+        */
+    }
+
+    void extend(CastStat const& cst) {
+        castCount_ += cst.castCount_;
+        std::for_each(begin(cst.typeCounts_), end(cst.typeCounts_),
+            [&](auto const& tc) {
+                typeCounts_[tc.first] += tc.second;
+            });
+
+        std::for_each(begin(cst.funcCounts_), end(cst.funcCounts_),
+            [&](auto const& fc) {
+                funcCounts_[fc.first] += fc.second;
+            });
+    }
+
+    // functions to view funcCounts/typeCount
+
+private:
+    unsigned castCount_ = 0;
+    std::string label_;
+    //CensusKey key_; // Required to lookup metadata?
+    std::unordered_map<std::string, unsigned> funcCounts_;
+    std::unordered_map<std::string, unsigned> typeCounts_;
+};
+
+std::string TypeSummary::summarize(CastStat &cst, std::optional<unsigned> level, int indent) const {
+    LOG_FUNCTION_TIME;
+    std::string ssr;
+    ssr.reserve(1024);
+    CNS_DEBUG("{{{}}};[{}]_{} LEVEL = {}", key_, nexts_.size(), numi_, level.value_or(599));
+    auto const& op = ops(key_);
+    if(op.castKind_ == "BitCast") {
+        cst.increment();
+    }
+
+    if(op.type_.empty()) {
+        ssr = "T {" + op.qn_ + "}(" + op.castKind_ + ")";
+        cst.addType("T");
+    }
+    else {
+        ssr = op.type_ + "{" + op.qn_ + "}(" + op.castKind_ + ")";
+        cst.addType(op.type_);
+    }
+
+    if(level <= 0 && nexts_.size() > 0) {
+        ssr.append("-> <...>\n");
+        return ssr;
+    }
+
+    /*
+    if(level > 0 && nexts_.empty()) {
+        if(TypeSummaries.find(key_) != std::end(TypeSummaries)) {
+            ssr.append("\n");
+            ssr.append(space(indent));
+            //ss << "Resolving further using TypeSummaries built so far:\n";
+            //space(ss, indent);
+            ssr += ">+" + TypeSummaries.at(key_).summarize(cst, {level.value() - 1}, indent);
+        }
+    }
+    */
+
+    std::for_each(begin(nexts_), end(nexts_),
+        [&](auto const& ts) {
+            ssr.append("\n");
+            ssr.append(space(indent));
+            ssr += "|->" + ts.summarize(cst, {level.value() - 1}, indent + 2);
+        });
+
+    return ssr;
+}
+
 // S(a) = Typeof(a) -> S(next)
-std::string TypeSummary::summarize(std::optional<unsigned> level, int indent) const {
+std::string TypeSummary::summarizeNoStat(std::optional<unsigned> level, int indent) const {
     LOG_FUNCTION_TIME;
     std::string ssr;
     ssr.reserve(1024);
@@ -1288,7 +1396,7 @@ std::string TypeSummary::summarize(std::optional<unsigned> level, int indent) co
             ssr.append(space(indent));
             //ss << "Resolving further using TypeSummaries built so far:\n";
             //space(ss, indent);
-            ssr += ">+" + TypeSummaries.at(key_).summarize({level.value() - 1}, indent);
+            ssr += ">+" + TypeSummaries.at(key_).summarizeNoStat({level.value() - 1}, indent);
         }
     }
 
@@ -1296,7 +1404,7 @@ std::string TypeSummary::summarize(std::optional<unsigned> level, int indent) co
         [&](auto const& ts) {
             ssr.append("\n");
             ssr.append(space(indent));
-            ssr += "|->" + ts.summarize({level.value() - 1}, indent + 2);
+            ssr += "|->" + ts.summarizeNoStat({level.value() - 1}, indent + 2);
         });
 
     return ssr;
