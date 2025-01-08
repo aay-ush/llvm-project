@@ -34,6 +34,13 @@ using Census = std::unordered_map<CensusKey, UseDefInfo>;
 Census census;
 using CensusNode = decltype(census)::value_type;
 
+bool operator==(DominatorData const &lhs, CensusKey const &rhs) {
+    return lhs.from_.qn_ == rhs;
+}
+bool operator!=(DominatorData const &lhs, CensusKey const &rhs) {
+    return !(lhs == rhs);
+}
+
 std::pair<CensusKey, UseDefInfo> makeCensusNode(
         OpData const &node,
         DominatorData const &dom) {
@@ -382,7 +389,7 @@ std::string dump(OpData const &info) {
         + "', linkedParameter: '" + info.linkedParm_
         + "', containerFunction: '" + info.container_
         + "', location: '" + info.location_
-        + "', castkind: '" + info.castKind_
+        //+ "', castkind: '" + info.castKind_
         + "'}\n";
     return sod;
 }
@@ -419,7 +426,6 @@ void censusSummary() {
 
        elaborateUse(op, {3});
     }
-    */
     for(auto const& n: census) {
         auto const& op = ops(n);
         CNS_DEBUG("<void> op: {}", op.qn_);
@@ -427,6 +433,7 @@ void censusSummary() {
         //elaborateUse(op, {3});
         CNS_DEBUG("<void> op.use_.size() = {}", op.use_.size());
     }
+    */
 
     /*
     // build history

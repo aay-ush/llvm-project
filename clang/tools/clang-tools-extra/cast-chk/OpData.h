@@ -118,7 +118,7 @@ struct OpData {
     std::string container_;
     std::string location_;
     std::string qn_;
-    std::string castKind_ {};
+    //std::string castKind_ {};
     mutable std::vector<OpID> use_ {};
     //bool isComplete {true};
     //mutable std::unordered_set<OpID> history_ {};

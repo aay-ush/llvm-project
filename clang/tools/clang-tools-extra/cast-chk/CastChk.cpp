@@ -143,8 +143,10 @@ void addDomNode(OpData const &dom) {
 
 void updateHistory(
         OpData const &from,
-        OpData const &to) {
+        OpData const &to,
+        DominatorData const& domInfo) {
     CNS_DEBUG_MSG("");
+    CNS_DEBUG("Updating History of {} with {}[{}]", from.qn_, to.qn_, domInfo.exprType_);
 
     // Ensure H(to) first.
     // Retrieve H(to)
@@ -199,7 +201,7 @@ void updateHistory(
         CNS_INFO(":toFP: Extending history from {} with {}", foh.idversion(), toh.idversion());
         //TypeTransforms.at(from.qn_).extend(ech);
         //foh.extend({toh, hc}); //ech);
-        foh.extend(toh);
+        foh.extend(toh, domInfo);
         CNS_INFO(":toFP: New from version: {}", foh.idversion());
     }
     else {
@@ -210,7 +212,7 @@ void updateHistory(
         auto const &toh = TypeTransforms.at(to.qn_);
         CNS_INFO(":from: Extending history {} with {}", foh.idversion(), toh.idversion());
         CNS_INFO(":from: New from version: {}", foh.idversion());
-        foh.extend(toh);
+        foh.extend(toh, domInfo);
         CNS_INFO(":from: New from version: {}", foh.idversion());
     }
 
@@ -231,7 +233,7 @@ void updateCensus(
         CNS_INFO_MSG("<0> Inserting new node for 'to'.");
         census.insert(makeCensusNode(to, dom));
 
-        updateHistory(from, to);
+        updateHistory(from, to, dom);
         CNS_DEBUG_MSG("<from, to, dom> end");
         return;
     }
@@ -243,7 +245,7 @@ void updateCensus(
         appendNodeDominator(to, dom);
     }
 
-    updateHistory(from, to);
+    updateHistory(from, to, dom);
     CNS_DEBUG_MSG("<from, to, dom> end");
 }
 
@@ -308,12 +310,12 @@ void updateCensus(
     CNS_INFO_MSG("<Cast> building rhs data.");
     auto rhs = buildOpData<CS_t>(context, sm, castExpr, dest);
     // Cast kind update
-    rhs.castKind_ = castExpr.getCastKindName();
+    //rhs.castKind_ = castExpr.getCastKindName();
 
     DominatorData dom{
         lhs,
         String(context, castExpr),
-        {}, //getCastExprType(dest),
+        castExpr.getCastKindName(), //{}, //getCastExprType(dest),
         //{}, //getLinkedFunction(context, castExpr, dest)
     };
 
@@ -388,16 +390,23 @@ void updateCensus(
     CNS_INFO_MSG("<declrefexpr, varDecl> building rhs data.");
     auto rhs = buildOpData(context, sm, dest);
 
+    DominatorData dom;
     auto const *inx = dest.getInit();
     if(inx) {
         auto const *inc = dyn_cast<clang::CastExpr>(inx);
         if(inc) {
             CNS_DEBUG("Cast expression in var decl init '{}'", String(context, *inc));
-            rhs.castKind_ = inc->getCastKindName();
+            //rhs.castKind_ = inc->getCastKindName();
+            dom = {lhs, String(context, *inc), inc->getCastKindName()};
         }
+        dom = {lhs, String(context, *inx), "InitVarDecl"};
+    }
+    else {
+        CNS_ERROR("No init expr found for vardecl '{}'", String(context, dest));
+        dom = {lhs, "NoInitExprFound", "VarDecl"};
     }
 
-    DominatorData dom{lhs, {}, {}};
+    //DominatorData dom{lhs, {}, {}};
     updateCensus(lhs, rhs, dom);
     logCensusUpdate(lhs, rhs, dom);
     CNS_DEBUG_MSG("<declrefexpr, varDecl> end");
@@ -484,7 +493,7 @@ OpData buildArgOp(clang::ASTContext &context,
     return buildOpData(context, sm, arg, *dre);
 }
 
-auto buildOpDatas(clang::ASTContext &context,
+void buildOpDatas(clang::ASTContext &context,
         clang::SourceManager const &sm,
         clang::CallExpr const &call) {
 
@@ -497,6 +506,19 @@ auto buildOpDatas(clang::ASTContext &context,
             OpData lhs, rhs;
             // create source(arg) op
             lhs = buildArgOp(context, sm, call, *arg);
+            DominatorData dom{
+                lhs,
+                String(context, *arg),
+                "TODOArg", //getCastExprType(arg),
+                //{} //getLinkedFunction(context, call, arg)
+            };
+            auto lhsce = dyn_cast<CastExpr>(arg);
+            if(lhsce) {
+                dom.exprType_ = lhsce->getCastKindName();
+            }
+            else {
+                dom.exprType_ = "NotACast";
+            }
 
             // create target(param) op
             CNS_INFO_MSG("Building rhs(Param) opData.");
@@ -624,12 +646,6 @@ auto buildOpDatas(clang::ASTContext &context,
             }
 
             // update census()
-            DominatorData dom{
-                lhs,
-                String(context, *arg),
-                {}, //getCastExprType(arg),
-                //{} //getLinkedFunction(context, call, arg)
-            };
             updateCensusNoHistory(lhs, rhs, dom);
             // H(to) will be added through addCallHistory()
             //updateHistory(lhs, rhs);
@@ -725,7 +741,7 @@ void addCallHistory(clang::ASTContext & context, clang::CallExpr const& call) {
                 CNS_DEBUG("Found existing history for {}", argQn);
                 // extend history
                 if(i < hs.size()) {
-                    CNS_INFO("Extending history for {} with {}", argQn, hs[i].first.get().opId());
+                    CNS_INFO("Extending history for {} with {}", argQn, hs[i].id());
                     TypeTransforms.at(argQn).extend(hs.at(i));
                 }
                 else {
@@ -737,7 +753,7 @@ void addCallHistory(clang::ASTContext & context, clang::CallExpr const& call) {
                 CNS_DEBUG("Adding new history for {}", argQn);
                 //TypeTransforms.insert({hs[i].opId(), hs[i]});
                 auto hqn = History(argQn);
-                CNS_DEBUG("Extending history for {} with {}", argQn, hs[i].first.get().opId());
+                CNS_DEBUG("Extending history for {} with {}", argQn, hs[i].id());
                 hqn.extend(hs[i]);
                 TypeTransforms.emplace(argQn, std::move(hqn));
                 //TypeTransforms.insert({qn, hqn});
