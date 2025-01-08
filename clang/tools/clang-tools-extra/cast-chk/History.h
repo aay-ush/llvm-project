@@ -1391,12 +1391,15 @@ public:
     void increment() {
         castCount_++;
     }
+    void vincrement() {
+        voidCount_++;
+    }
 
     void print(std::FILE *fp) const {
         fmt::print(fp, "[Cast Statistics] {} :\n", label_);
         fmt::print(fp, "Total BitCasts: {}\n", castCount_);
         if(typeCounts_.find("void *") != std::end(typeCounts_)) {
-            fmt::print(fp, "Total void * casts : {}\n", typeCounts_.at("void *"));
+            fmt::print(fp, "Total void * casts : {}\n", voidCount_); //typeCounts_.at("void *"));
         }
         else {
             fmt::print(fp, "Total void * casts : 0\n");
@@ -1417,6 +1420,7 @@ public:
 
     void extend(CastStat const& cst) {
         castCount_ += cst.castCount_;
+        voidCount_ += cst.voidCount_;
         std::for_each(begin(cst.typeCounts_), end(cst.typeCounts_),
             [&](auto const& tc) {
                 typeCounts_[tc.first] += tc.second;
@@ -1432,6 +1436,7 @@ public:
 
 private:
     unsigned castCount_ = 0;
+    unsigned voidCount_ = 0;
     std::string label_;
     //CensusKey key_; // Required to lookup metadata?
     std::unordered_map<std::string, unsigned> funcCounts_;
@@ -1447,6 +1452,9 @@ std::string TypeSummary::summarize(CastStat &cst, std::optional<unsigned> level,
     //if(op.castKind_ == "BitCast") {
     if(linkLabel_ == "BitCast") {
         cst.increment();
+        if(op.type_ == "void *") {
+            cst.vincrement();
+        }
     }
 
     if(op.type_.empty()) {

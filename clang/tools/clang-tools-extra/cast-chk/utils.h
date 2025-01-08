@@ -124,8 +124,11 @@ class LogTime {
         std::chrono::steady_clock::time_point start_;
 };
 
-#ifndef LOG_FUNCTION_TIME
+//#define LOG_FUNCTION_TIME_ENABLE
+#ifdef LOG_FUNCTION_TIME_ENABLE
 #define LOG_FUNCTION_TIME LogTime const lt___(__FUNCTION__);
+#else
+#define LOG_FUNCTION_TIME {}
 #endif
 
 
