@@ -618,7 +618,7 @@ void buildOpDatas(clang::ASTContext &context,
                     if(qns.empty()) {
                         qns = String(context, *fn); // + ".$" + to_string(pos);
                     }
-                    qns  += std::to_string(pos);
+                    qns  += ".$" + std::to_string(pos);
                     rhs = {
                         cnsHash(context, *arg),
                         qns,

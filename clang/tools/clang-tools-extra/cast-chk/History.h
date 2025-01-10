@@ -293,7 +293,7 @@ HistoryTemplate::HistoryTemplate(clang::ASTContext &context, clang::CallExpr con
                 //}
 
                 auto pop = aop; // Assume parameter will have same info as arg
-                //pop.qn_ = qn;   // Other than qn
+                pop.qn_ = qn;   // Other than qn
                 CNS_INFO("<SEE>Built param opdata '{}' for '{}'", pop.qn_, String(context, *p));
                 //census.insert(makeCensusSourceNode(pop));
                 DominatorData dom = {aop, String(context, *p), "TODOArg"};
@@ -748,7 +748,29 @@ std::string History::getContextResolvedOpStr(std::optional<HistoryContext const>
 
         }
         else {
-            CNS_DEBUG_MSG(" New rop found in census.");
+            CNS_DEBUG_MSG("New rop found in census.");
+            if(ops(rop).type_.empty()) {
+                CNS_DEBUG("rOp({}) has no type, trying to remove container for correct rop", rop);
+                // Try removing the container:
+                auto ropn = rop.substr(rop.find(".") + 1);
+                CNS_DEBUG("Removing container, ropn = {{{}}}", ropn);
+                if(census.find(ropn) == census.end()) {
+                    CNS_DEBUG_MSG("Removing container did not lead to any census match.");
+                }
+                else {
+                    CNS_DEBUG_MSG("Removing container led to census match.");
+                    rop = ropn;
+                    if(ops(rop).type_.empty()) {
+                        CNS_DEBUG("rOp({}) has no type defined either", rop);
+                    }
+                    else {
+                        CNS_DEBUG("rOp({}) has type: {}", rop, ops(rop).type_);
+                    }
+                }
+            }
+            else {
+                CNS_DEBUG("rOp('{}') has type: {}", rop, ops(rop).type_);
+            }
         }
     }
 
