@@ -1441,8 +1441,6 @@ public:
     }
 
     void record(OpData const& op, std::string const& origin) {
-        castCount_ += (origin == "BitCast");
-        voidCount_ += (origin == "BitCast" && op.type_ == "void *");
         if(op.type_.empty()) {
             typeCounts_["T"] += 1;
         }
@@ -1450,14 +1448,19 @@ public:
             typeCounts_[op.type_] += 1;
         }
 
-        if(op.container_.empty()) {
-            funcCounts_["UnknownFn"] += 1;
-        }
-        else {
-            funcCounts_[op.container_] += 1;
-        }
+        if(origin == "BitCast") {
+            castCount_++;
+            voidCount_ += (op.type_ == "void *");
 
-        locationCounts_[op.location_] += 1;
+            locationCounts_[op.location_] += 1;
+
+            if(op.container_.empty()) {
+                funcCounts_["UnknownFn"] += 1;
+            }
+            else {
+                funcCounts_[op.container_] += 1;
+            }
+        }
     }
 
     // functions to view funcCounts/typeCount
