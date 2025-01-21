@@ -399,7 +399,9 @@ void updateCensus(
             //rhs.castKind_ = inc->getCastKindName();
             dom = {lhs, String(context, *inc), inc->getCastKindName()};
         }
-        dom = {lhs, String(context, *inx), "InitVarDecl"};
+        else {
+            dom = {lhs, String(context, *inx), "InitVarDecl"};
+        }
     }
     else {
         CNS_ERROR("No init expr found for vardecl '{}'", String(context, dest));
