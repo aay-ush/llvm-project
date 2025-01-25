@@ -768,6 +768,7 @@ void addCallHistory(clang::ASTContext & context, clang::CallExpr const& call) {
 // For call expressions:
 void preprocess(
         clang::ASTContext &context,
+        clang::SourceManager const &sm,
         clang::CallExpr const &call) {
 
     CNS_DEBUG_MSG("<CallExpr>");
@@ -781,9 +782,16 @@ void preprocess(
 
     auto const& fn = calledFn->getNameAsString();
 
+    //if(sm.isInSystemHeader(call.getExprLoc()) || sm.isInExternCSystemHeader(call.getExprLoc())) {
+    auto const fcs = sm.getFileCharacteristic(call.getExprLoc());
+    if(clang::SrcMgr::isSystem(fcs)) {
+        ignoreFunctions.push_back(fn);
+        CNS_INFO("Ignoring system function: {}", String(context, *calledFn));
+        CNS_DEBUG_MSG("<CallExpr> end");
+        return; // ignore
+    }
     if(std::find(begin(ignoreFunctions), end(ignoreFunctions), fn) != end(ignoreFunctions)) {
         CNS_INFO("Skipping ignored function: {}", String(context, *calledFn));
-        CNS_INFO_MSG("<CallExpr> Adding ignored function to seen functions.");
         CNS_DEBUG_MSG("<CallExpr> end");
         return; // ignore
     }
@@ -847,8 +855,25 @@ void processFunctionCall(MatchFinder::MatchResult const &result) {
     CNS_DEBUG("FunctionCall match at: '{}'", call->getExprLoc().printToString(*result.SourceManager));
     CNS_DEBUG("Call : '{}'", String(*context, *call));
 
+    auto const *calledFn = getCalleeDecl(*call);
+    if(calledFn) {
+        auto const& fn = calledFn->getNameAsString();
+        auto const fcs = result.SourceManager->getFileCharacteristic(call->getExprLoc());
+        if(clang::SrcMgr::isSystem(fcs)) {
+            ignoreFunctions.push_back(fn);
+            CNS_INFO("Ignoring system function: {}", fn);
+            CNS_DEBUG_MSG(" end");
+            return; // ignore
+        }
+    }
+    else {
+        CNS_INFO("Cannot find decl for call '{}', skipping", String(*context, *call));
+        CNS_DEBUG_MSG(" end");
+        return;
+    }
+
     // - Preprocess call.
-    preprocess(*context, *call);
+    preprocess(*context, *result.SourceManager, *call);
     // update census
     buildOpDatas(*context, *result.SourceManager, *call);
     //
