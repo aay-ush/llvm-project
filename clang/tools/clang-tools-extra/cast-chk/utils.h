@@ -488,7 +488,6 @@ clang::FunctionDecl const* getContainerFunctionDecl(
         }
         context = context->getParent();
     }
-
     CNS_INFO_MSG("Could not find parent function.");
     CNS_DEBUG_MSG("<DeclContext, VarDecl> end");
     return nullptr;
@@ -500,6 +499,21 @@ clang::FunctionDecl const* getContainerFunctionDecl(ASTContext &context, VarDecl
     CNS_DEBUG_MSG("<Context, VarDecl> end");
     return getContainerFunctionDecl(c2, var);
 }
+
+/*
+clang::FunctionDecl const* getContainerFunctionDecl(ASTContext &context, clang::Decl const &decl) {
+    CNS_DEBUG_MSG("<Context, Decl>");
+    auto const * dc = decl.getParentFunctionOrMethod();
+    while(dc && !(dc->isFunctionOrMethod())) { // getParentFunctionOrMethod returns function/method/block
+        CNS_DEBUG_MSG("declContext is not a function");
+        dc = dc->getParent();
+    }
+    //auto const *c2 = var.getDeclContext();
+    CNS_DEBUG_MSG("<Context, Decl> end");
+    return dyn_cast<FunctionDecl>(dc);
+    //return getContainerFunctionDecl(c2, var);
+}
+*/
 
 // Get containing function for declaration
 template<typename T>
@@ -513,6 +527,19 @@ std::string getContainerFunction(ASTContext &context, T const &node) {
 
     CNS_DEBUG_MSG("<T> end");
     return fn->getNameAsString();
+}
+
+std::string getContainerFucntion(ASTContext &context, clang::Decl const &decl) {
+    CNS_DEBUG_MSG("<context, decl>");
+    auto const *fn = getContainerFunctionDecl(context, decl);
+    if(fn) {
+        CNS_DEBUG_MSG("<context, decl> end");
+        return fn->getNameAsString();
+    }
+
+    CNS_INFO("Container for '{}' is null, maybe global", String(context, decl));
+    CNS_DEBUG_MSG("<context, decl> end");
+    return "";
 }
 
 // Get containing translation unit for declaration
@@ -700,7 +727,7 @@ std::string getLinkedParm(
         clang::VarDecl const &var) {
 
     CNS_DEBUG_MSG("<DeclContext, VarDecl>");
-    auto const *func = getContainerFunctionDecl(context, var);
+    auto const *func = getContainerFunctionDecl(context->getParentASTContext(), var);
     if(!func) {
         CNS_ERROR_MSG("<DC>No Parent function found.");
         CNS_DEBUG_MSG("<DeclContext, VarDecl> end");
@@ -723,7 +750,7 @@ std::string qualifiedName(
         clang::VarDecl const &var) {
 
     CNS_DEBUG_MSG("<DeclContext, VarDecl>");
-    auto const *func = getContainerFunctionDecl(context, var);
+    auto const *func = getContainerFunctionDecl(context->getParentASTContext(), var);
     if(!func) {
         CNS_ERROR_MSG("<DC>No Parent function found.");
         CNS_DEBUG_MSG("<DeclContext, VarDecl> end");
@@ -745,6 +772,11 @@ std::string qualifiedName(
         clang::ASTContext &context,
         clang::VarDecl const &var) {
     CNS_DEBUG_MSG("");
+    if(var.hasGlobalStorage()) {
+        CNS_INFO_MSG("VarDecl is global");
+        CNS_DEBUG_MSG("end");
+        return "global." + String(context, var);
+    }
     if(var.isLocalVarDecl()) {
         CNS_INFO_MSG("VarDecl is local var & not parm");
         CNS_DEBUG_MSG("end");
@@ -752,16 +784,24 @@ std::string qualifiedName(
     }
     if(var.isLocalVarDeclOrParm()) {
         CNS_INFO_MSG("VarDecl is probably a parm");
-        auto const *c2 = var.getDeclContext();
-        if(!c2) {
-            CNS_INFO_MSG("Using iContext.");
+
+        auto const *func = getContainerFunctionDecl(context, var);
+        if(!func) {
+            CNS_ERROR_MSG("No Parent function found.");
             CNS_DEBUG_MSG("end");
-            return qualifiedName(context, var, var.getDeclName());
+            return qualifiedName(var.getDeclContext(), var);
+            //return "{n/a}";
         }
 
-        CNS_INFO_MSG("Trying with var.getDeclContext");
+        if(auto parmPos = getParameterMatch(*func, var.getDeclName())) {
+            CNS_INFO("parmPos: {}; {}", parmPos.value(), parmqn(context, *func, *parmPos));
+            CNS_DEBUG_MSG("end");
+            return parmqn(context, *func, *parmPos);
+        }
+
+        CNS_ERROR_MSG("parmPos nullopt.");
         CNS_DEBUG_MSG("end");
-        return qualifiedName(c2, var);
+        return getContainerFunction(context, var) + "." + String(context, var);
     }
     CNS_DEBUG_MSG("end");
     return "(whatisit?)";
@@ -812,56 +852,183 @@ std::string qualifiedName(
     return getContainerFunction(context, dre) + "." + String(context, dre);
 }
 
+namespace {
+    inline clang::Expr const* getSubExpr_(clang::UnaryOperator const& e) {
+        return e.getSubExpr();
+    }
+    inline clang::Expr const* getSubExpr_(clang::MemberExpr const& e){
+        return e.getBase(); // Also checkout getMemberDecl
+    }
+    inline clang::Expr const* getSubExpr_(clang::ArraySubscriptExpr const&e) {
+        return e.getBase();
+    }
+    inline clang::Expr const* getSubExpr_(clang::CastExpr const &e) {
+        return e.getSubExpr();
+    }
+
+    inline clang::UnaryOperator const* unaryExpr_(clang::Expr const *e) {
+        return dyn_cast<clang::UnaryOperator>(e);
+    }
+
+    inline clang::MemberExpr const* memberExpr_(clang::Expr const *e) {
+        return dyn_cast<clang::MemberExpr>(e);
+    }
+
+    inline clang::ArraySubscriptExpr const* arraySubscriptExpr_(clang::Expr const *e) {
+        return dyn_cast<clang::ArraySubscriptExpr>(e);
+    }
+
+    inline clang::CastExpr const* castExpr_(clang::Expr const *e) {
+        return dyn_cast<clang::CastExpr>(e);
+    }
+
+    clang::DeclRefExpr const* getDREChild(clang::Expr const *e);
+
+    template<typename T>
+    clang::DeclRefExpr const* getDREChild(T const *e) {
+        if(!e) {
+            return nullptr;
+        }
+        auto const * sub = getSubExpr_(*e);
+        return getDREChild(sub);
+    }
+
+    clang::DeclRefExpr const* getDREChild(clang::Expr const *e) {
+        if(unaryExpr_(e)) {
+            return getDREChild(unaryExpr_(e));
+        }
+        if(memberExpr_(e)) {
+            return getDREChild(memberExpr_(e));
+        }
+        if(arraySubscriptExpr_(e)) {
+            return getDREChild(arraySubscriptExpr_(e));
+        }
+        if(castExpr_(e)) {
+            return getDREChild(castExpr_(e));
+        }
+
+        auto const *dre = dyn_cast<clang::DeclRefExpr>(e);
+        if(dre) {
+            return dre;
+        }
+
+        return nullptr;
+    }
+}
+
+clang::DeclRefExpr const* getSubExprDRE(
+        clang::ASTContext &context,
+        clang::Expr const &e) {
+
+    auto watch = "<" + String(context, e) + ">";
+    CNS_DEBUG("{}: start", watch);
+
+    auto const * uop = dyn_cast<clang::UnaryOperator>(&e);
+    auto const * mem = dyn_cast<clang::MemberExpr>(&e);
+    auto const * asubs = dyn_cast<clang::ArraySubscriptExpr>(&e);
+    auto const * calle = dyn_cast<clang::CallExpr>(&e);
+    auto const * caste = dyn_cast<clang::CastExpr>(&e);
+
+    if(uop) {
+        return getDREChild(uop);
+    }
+    if(mem) {
+        return getDREChild(mem);
+    }
+    if(asubs) {
+        return getDREChild(asubs);
+    }
+    if(caste) {
+        return getDREChild(caste);
+    }
+    /*
+    if(calle) {
+        return getDREChild(calle);
+    }
+    auto cbegin = e.child_begin();
+    auto cend = e.child_begin();
+    ConstStmtIterator it = cbegin;
+    unsigned pos = 0;
+    while(it != cend) {
+        CNS_DEBUG("{} pos = {}", watch, pos);
+        auto const *dre = dyn_cast<clang::DeclRefExpr>(*it);
+        if(dre) {
+            CNS_DEBUG("{}: found dre", watch);
+            CNS_DEBUG("{}: end", watch);
+            return dre;
+        }
+        CNS_DEBUG("{}: expr = {}", watch, String(context, **it));
+        it = (*it)->child_begin();
+        cend = (*it)->child_end();
+        pos++;
+    }
+    */
+
+    CNS_DEBUG("{}: no dre found", watch);
+    CNS_DEBUG("{}: end", watch);
+    return nullptr;
+}
+
 std::string qualifiedName(
         clang::ASTContext &context,
         clang::CallExpr const& call,
         clang::Expr const &e) {
 
-    CNS_INFO_MSG("");
+    std::string watch = "<" + String(context, call) + "|" + String(context, e) + ">";
+    CNS_INFO("qn {}", watch);
     auto const *fn = getContainerFunctionDecl(context, e);
     if(!fn) {
-        CNS_INFO_MSG("Container fn == nullptr");
-        CNS_INFO_MSG("end");
+        CNS_INFO("{}: Container fn == nullptr", watch);
+        CNS_INFO("{}: end", watch);
         return String(context, e);
     }
 
     auto const * dre = dyn_cast<clang::DeclRefExpr>(&e);
     if(dre) {
-        CNS_INFO_MSG("<dre>");
-        CNS_INFO_MSG("end");
+        CNS_INFO("{}: Got DRE", watch);
+        CNS_INFO("{}: end", watch);
         return qualifiedName(context, *dre);
     }
 
     auto const *ce = dyn_cast<clang::CastExpr>(&e);
     if(ce) {
-        CNS_INFO_MSG("Got castexpr.");
-        CNS_INFO("<call, e> Cast subexpr: {}", String(context, *(ce->getSubExpr())));
+        CNS_INFO("{}: Got castexpr.", watch);
+        CNS_INFO("{}: <call, e> Cast subexpr: {}", watch, String(context, *(ce->getSubExpr())));
         auto const *dre2 = dyn_cast<clang::DeclRefExpr>(ce->getSubExpr());
         if(dre) {
-            CNS_INFO_MSG("Got dre from castexpr.");
-            CNS_INFO_MSG("end");
+            CNS_INFO("{}: Got dre from castexpr.", watch);
+            CNS_INFO("{}: end", watch);
             return qualifiedName(context, *dre2);
         }
         else {
-            CNS_INFO_MSG("No dre from castexpr.");
+            CNS_INFO("{}: No dre from castexpr.", watch);
             auto const * ces = ce->getSubExpr();
             auto const * ed = ces->getReferencedDeclOfCallee();
             if(ed) {
-                CNS_INFO_MSG("Found callee decl from cast expr.");
+                CNS_INFO("{}: Found callee decl from cast expr.", watch);
                 auto const * edv = dyn_cast<VarDecl>(ed);
                 auto const * edf = dyn_cast<FunctionDecl>(ed);
                 if(edv) {
-                    CNS_INFO_MSG("Found var decl from callee decl.");
+                    CNS_INFO("{}: Found var decl from callee decl.", watch);
                     return qualifiedName(context, *edv);
                 }
                 else if(edf) {
-                    CNS_INFO_MSG("Found function decl from callee decl.");
+                    CNS_INFO("{}: Found function decl from callee decl.", watch);
                     return edf->getNameAsString();
                 }
-                CNS_INFO_MSG("No value decl from callee decl. Stringifying decl");
+                CNS_INFO("{}: No value decl from callee decl. Stringifying decl", watch);
                 return String(context, e);
             }
-            CNS_INFO_MSG("No callee decl from cast expr.");
+            CNS_INFO("{}: No callee decl from cast expr.", watch);
+
+            // Check if subexpression has any dre child
+            auto const *sdre = getSubExprDRE(context, *ces);
+            if(sdre) {
+                CNS_INFO("{}: Got dre from subexpr: '{}'.", watch, String(context, *sdre));
+                CNS_INFO("{}: end", watch);
+                return qualifiedName(context, *sdre);
+            }
+
             // See if expr matches any of the fn parameters
             unsigned pos = 0;
             for(auto const* p: fn->parameters()) {
@@ -875,7 +1042,7 @@ std::string qualifiedName(
                 return fn->getNameAsString() + ".$" + std::to_string(pos);
             }
             else {
-                CNS_INFO_MSG("No param matched.");
+                CNS_INFO("{}: No param matched.", watch);
             }
 
         }
@@ -883,24 +1050,24 @@ std::string qualifiedName(
     else {
         auto const * ed = e.getReferencedDeclOfCallee();
         if(ed) {
-            CNS_INFO_MSG("Found callee decl from expr.");
+            CNS_INFO("{}: Found callee decl from expr.", watch);
             auto const * edv = dyn_cast<VarDecl>(ed);
             auto const * edf = dyn_cast<FunctionDecl>(ed);
             if(edv) {
-                CNS_INFO_MSG("Found var decl from callee decl.");
+                CNS_INFO("{}: Found var decl from callee decl.", watch);
                 return qualifiedName(context, *edv);
             }
             else if(edf) {
-                CNS_INFO_MSG("Found function decl from callee decl.");
+                CNS_INFO("{}: Found function decl from callee decl.", watch);
                 return edf->getNameAsString();
             }
-            CNS_INFO_MSG("No value decl from callee decl. Stringifying decl");
+            CNS_INFO("{}: No value decl from callee decl. Stringifying decl", watch);
             return String(context, e);
         }
     }
 
-    CNS_INFO_MSG("Found container fn but no dre.");
-    CNS_INFO_MSG("end");
+    CNS_INFO("{}: Found container fn but no dre.", watch);
+    CNS_INFO("{}: end", watch);
     // Search for a declrefexpr in expr and qualifiedName on declref
     // or just return string
     return fn->getNameAsString() + "." + String(context, e);
@@ -920,17 +1087,27 @@ std::string getLinkedParm(
     CNS_INFO_MSG("VarDecl is not local var");
     if(var.isLocalVarDeclOrParm()) {
         CNS_INFO_MSG("VarDecl is probably a parm");
-        //return getLinkedParm(context, var, var.getDeclName());
-        auto const *c2 = var.getDeclContext();
-        if(!c2) {
-            CNS_INFO_MSG("Using iContext.");
+
+        auto const *func = getContainerFunctionDecl(context, var);
+        if(!func) {
+            CNS_ERROR_MSG("No Parent function found.");
+
+            auto const *dc = var.getDeclContext();
             CNS_DEBUG_MSG("<Context, VarDecl> end");
-            return getLinkedParm(context, var, var.getDeclName());
+            return getLinkedParm(dc, var);
+            //return getLinkedParm(context, var, var.getDeclName());
+            //return "{n/a}";
         }
 
-        CNS_INFO_MSG("Trying with var.getDeclContext");
+        if(auto parmPos = getParameterMatch(*func, var.getDeclName())) {
+            CNS_INFO("parmPos: {}; {}", parmPos.value(), parmqn(context, *func, *parmPos));
+            CNS_DEBUG_MSG("<Context, VarDecl> end");
+            return parmqn(context, *func, *parmPos);
+        }
+
+        CNS_ERROR_MSG("<DC>parmPos nullopt.");
         CNS_DEBUG_MSG("<Context, VarDecl> end");
-        return getLinkedParm(c2, var);
+        return "{local}";
     }
 
     CNS_DEBUG_MSG("<Context, VarDecl> end");

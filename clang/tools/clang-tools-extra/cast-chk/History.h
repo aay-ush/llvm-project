@@ -1103,7 +1103,7 @@ std::vector<LocalHistory> HistoryTemplate::instantiate(clang::ASTContext &contex
                     else {
                         auto itpd = std::find(begin(pdoms.value()), end(pdoms.value()), argqn);
                         if(itpd == std::end(pdoms.value())) {
-                            CNS_ERROR("Param '{}' does not dominate arg '{}'", p, argqn);
+                            CNS_ERROR("Param '{}' is not dominated by arg '{}'", p, argqn);
                         }
                         else {
                             linkInfo = *itpd;

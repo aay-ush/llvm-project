@@ -478,17 +478,36 @@ OpData buildArgOp(clang::ASTContext &context,
     auto const *dre = dyn_cast<DeclRefExpr>(e);
     if(!dre) {
         CNS_DEBUG_MSG("Null DRE");
-        CNS_DEBUG_MSG(" end");
-        return {
-            cnsHash(context, arg),
-            String(context, arg),
-            Typename(context, arg),
-            TypeCategory(context, arg),
-            String(context, arg),
-            getContainerFunction(context, arg),
-            call.getExprLoc().printToString(sm),
-            qualifiedName(context, call, arg)
-        };
+        auto const *dre2 = getDREChild(e);
+        if(dre2) {
+            CNS_DEBUG_MSG("Found dre from child expr");
+            CNS_DEBUG_MSG(" end");
+            // get declref expr for arg
+            return {
+                cnsHash(context, arg),
+                String(context, *e),
+                Typename(context, *e),
+                TypeCategory(context, *e),
+                String(context, arg),
+                getContainerFunction(context, *e),
+                call.getExprLoc().printToString(sm),
+                qualifiedName(context, call, *e)
+            };
+        }
+        else {
+            CNS_WARN_MSG("No DRE in child expr");
+            CNS_WARN_MSG(" end");
+            return {
+                cnsHash(context, arg),
+                String(context, arg),
+                "", //Typename(context, arg),
+                "", //TypeCategory(context, arg),
+                String(context, arg),
+                getContainerFunction(context, arg),
+                call.getExprLoc().printToString(sm),
+                qualifiedName(context, call, arg)
+            };
+        }
     }
     CNS_INFO_MSG("Got DRE from arg.");
     CNS_DEBUG_MSG(" end");
@@ -625,7 +644,7 @@ void buildOpDatas(clang::ASTContext &context,
                         cnsHash(context, *arg),
                         qns,
                         "",//Typename(context, *arg),     // Since we can't get decl from callee expr.
-                        TypeCategory(context, *arg),
+                        "",// TypeCategory(context, *arg),
                         String(context, call, pos),
                         getContainerFunction(context, *arg),
                         call.getExprLoc().printToString(sm),
@@ -638,7 +657,7 @@ void buildOpDatas(clang::ASTContext &context,
                         cnsHash(context, *arg),
                         String(context, *arg),
                         "", //Typename(context, *arg),
-                        TypeCategory(context, *arg),
+                        "", //TypeCategory(context, *arg),
                         String(context, call, pos),
                         getContainerFunction(context, *arg),
                         call.getExprLoc().printToString(sm),
