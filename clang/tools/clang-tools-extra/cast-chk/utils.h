@@ -154,6 +154,11 @@ std::string TypeCategory(QualType const &qtype);
 std::string TypeCategory(ASTContext const &context, Expr const &expr);
 std::string TypeCategory(ASTContext const &context, ValueDecl const &d);
 
+std::string getLinkedRecord(clang::QualType const &qt);
+std::string getLinkedRecord(clang::Expr const &expr);
+std::string getLinkedRecord(clang::ValueDecl const &decl);
+std::string getLinkedRecord(clang::Type const &type);
+
 //clang::FunctionDecl const* getContainerFunctionDecl(ASTContext &context, clang::Stmt const &stmt);
 //std::string getContainerFunction(ASTContext &context, clang::Stmt const &stmt);
 
@@ -372,6 +377,62 @@ std::string String(ASTContext const &context, Decl const &decl) {
     return stream.str();
 }
 
+std::string getLinkedRecord(clang::QualType const &qt) {
+    CNS_DEBUG_MSG("<QualType>");
+    CNS_DEBUG_MSG("end <QualType>");
+    auto const *type = qt.getTypePtrOrNull();
+    if(!type) {
+        CNS_DEBUG_MSG("end <QualType>");
+        return "";
+    }
+    return getLinkedRecord(*type);
+}
+
+std::string getLinkedRecord(clang::Expr const &expr) {
+    CNS_DEBUG_MSG("<Expr>");
+    CNS_DEBUG_MSG("end <Expr>");
+    return getLinkedRecord(expr.getType());
+}
+
+std::string getLinkedRecord(clang::ValueDecl const &decl) {
+    CNS_DEBUG_MSG("<ValueDecl>");
+    CNS_DEBUG_MSG("end <ValueDecl>");
+    return getLinkedRecord(decl.getType());
+}
+
+std::string getLinkedRecord(clang::Type const &type) {
+    CNS_DEBUG_MSG("<Type>");
+    auto const *stype = type.getAsStructureType();
+    auto const *utype = type.getAsUnionType();
+
+    RecordDecl const *decl = nullptr;
+    if(stype) {
+        decl = stype->getDecl();
+        CNS_DEBUG_MSG("end <Type>");
+        return type.getTypeClassName();
+    }
+    if(utype) {
+        decl = utype->getDecl();
+        CNS_DEBUG_MSG("end <Type>");
+        return type.getTypeClassName();
+    }
+
+    if(!decl) {
+        CNS_DEBUG_MSG("end <Type>");
+        return "";
+        // Check if this type is a memeber type
+    }
+
+    auto const *declType = decl->getTypeForDecl();
+    if(!declType) {
+        CNS_DEBUG_MSG("end <Type>");
+        return "";
+    }
+
+    CNS_DEBUG_MSG("end <Type>");
+    return declType->getTypeClassName();
+}
+
 // Get type name of QualType
 std::string Typename(ASTContext const &context, QualType qtype) {
     CNS_DEBUG_MSG("<QualType>");
@@ -437,6 +498,45 @@ std::string TypeCategory(ASTContext const &context, ValueDecl const &d) {
     return TypeCategory(qtype);
 }
 
+std::string linkedTypeCategory(QualType const &qtype) {
+    CNS_DEBUG_MSG("<QualType>");
+    auto *type = qtype.getTypePtrOrNull();
+    if(!type) {
+        CNS_DEBUG_MSG("<QualType> end");
+        return "";
+    }
+
+    auto const *stype = type->getAsStructureType();
+    auto const *utype = type->getAsUnionType();
+
+    if(stype) {
+        CNS_DEBUG_MSG("<QualType> end");
+        return "Struct";
+    }
+    if(utype) {
+        CNS_DEBUG_MSG("<QualType> end");
+        return "Union";
+    }
+
+    CNS_DEBUG_MSG("<QualType> end");
+    return "";
+}
+
+std::string linkedTypeCategory(Expr const &e) {
+    CNS_DEBUG_MSG("<Expr>");
+    CNS_DEBUG_MSG("<Expr> end ");
+    return linkedTypeCategory(e.getType());
+}
+
+std::string linkedTypeCategory(ValueDecl const &decl) {
+    CNS_DEBUG_MSG("<ValueDecl>");
+    CNS_DEBUG_MSG("<ValueDecl> end");
+    return linkedTypeCategory(decl.getType());
+}
+
+// TODO Fix:
+// for declarations, get the associated definition
+// for expressions, get the declrefexpr
 // Get containing function decl
 template<typename T>
 clang::FunctionDecl const* getContainerFunctionDecl(ASTContext &context, T const &node) {

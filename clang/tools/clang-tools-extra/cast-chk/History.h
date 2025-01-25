@@ -280,17 +280,19 @@ HistoryTemplate::HistoryTemplate(clang::ASTContext &context, clang::CallExpr con
                 // If a param operand doesn't exist yet, which is possible if the function is processed for the first time, just initiate it because otherwise the template will not be created.
                 // ARG
                 auto aop = buildOpData(context, *p);
-                //if(auto pos = function_.find("$"); pos != std::string::npos) {
-                //    aop.qn_ = function_.substr(0, pos) + String(context, *p);
-                //}
-                //else {
-                //    aop.qn_ = function_ + "." + String(context, *p);
-                //}
-                //if(census.find(aop.qn_) == std::end(census)) {
-                //    CNS_INFO("<SEE>Built arg opdata '{}' for '{}'", aop.qn_, String(context, *p));
-                //    //census.insert(makeCensusSourceNode(buildOpData(context, *p)));
-                //    census.insert(makeCensusSourceNode(aop));
-                //}
+                /*
+                if(auto pos = function_.find("$"); pos != std::string::npos) {
+                    aop.qn_ = function_.substr(0, pos) + String(context, *p);
+                }
+                else {
+                    aop.qn_ = function_ + "." + String(context, *p);
+                }
+                if(census.find(aop.qn_) == std::end(census)) {
+                    CNS_INFO("<SEE>Built arg opdata '{}' for '{}'", aop.qn_, String(context, *p));
+                    //census.insert(makeCensusSourceNode(buildOpData(context, *p)));
+                    census.insert(makeCensusSourceNode(aop));
+                }
+                */
 
                 auto pop = aop; // Assume parameter will have same info as arg
                 pop.qn_ = qn;   // Other than qn
@@ -1406,23 +1408,39 @@ public:
 
     void print(std::FILE *fp) const {
         fmt::print(fp, "[Cast Statistics] {} :\n", label_);
+
         fmt::print(fp, "Total BitCasts: {}\n", castCount_);
         fmt::print(fp, "Total void * casts : {}\n", voidCount_);
 
-        auto printMap = [&](auto const& stat) {
+        auto printMap_ = [&](auto const& stat) {
             for(auto const &[key, value]: stat) {
                 fmt::print(fp, "{{'{}': {}}}, ", key, value);
             }
             fmt::print(fp, "\n");
         };
 
+        auto printMap = [&](auto const& msg, auto const& stat) {
+            fmt::print(fp, "\n{}: ", msg);
+            printMap_(stat);
+        };
+
+        printMap("Types involved {Type: Count}", typeCounts_);
+        printMap("Type Categories involved {Category: Count}", categoryCounts_);
+        printMap("Functions involved {Func: Count}", funcCounts_);
+        printMap("Locations involved {Location: Count}", locationCounts_);
+
+        fmt::print(fp, "\n[end Cast Statistics] {}\n", label_);
+        /*
         fmt::print(fp, "\nTypes involved {{Type: Count}}: ");
         printMap(typeCounts_);
+        fmt::print(fp, "\nType Categories involved {{Category: Count}}: ");
+        printMap(categoryCounts_);
         fmt::print(fp, "\nFunctions involved {{Func: Count}}:");
         printMap(funcCounts_);
         fmt::print(fp, "\nLocations involved {{Location: Count}}:");
         printMap(locationCounts_);
         fmt::print(fp, "\n[end Cast Statistics] {}\n", label_);
+        */
     }
 
     void extend(CastStat const& cst) {
@@ -1438,6 +1456,7 @@ public:
         extendStat(std::begin(cst.typeCounts_), std::end(cst.typeCounts_), typeCounts_);
         extendStat(std::begin(cst.funcCounts_), std::end(cst.funcCounts_), funcCounts_);
         extendStat(std::begin(cst.locationCounts_), std::end(cst.locationCounts_), locationCounts_);
+        extendStat(std::begin(cst.categoryCounts_), std::end(cst.categoryCounts_), categoryCounts_);
     }
 
     void record(OpData const& op, std::string const& origin) {
@@ -1461,6 +1480,11 @@ public:
                 funcCounts_[op.container_] += 1;
             }
         }
+
+        if(origin == "BitCast" || label_.find(op.qn_) != std::string::npos) {
+            categoryCounts_[op.linkedRecordCategory_] += 1;
+            categoryCounts_[op.category_] += 1;
+        }
     }
 
     // functions to view funcCounts/typeCount
@@ -1473,6 +1497,7 @@ private:
     std::unordered_map<std::string, unsigned> funcCounts_;
     std::unordered_map<std::string, unsigned> typeCounts_;
     std::unordered_map<std::string, unsigned> locationCounts_;
+    std::unordered_map<std::string, unsigned> categoryCounts_;
 };
 
 std::string TypeSummary::summarize(CastStat &cst, std::optional<unsigned> level, int indent) const {
@@ -1487,6 +1512,9 @@ std::string TypeSummary::summarize(CastStat &cst, std::optional<unsigned> level,
     }
     else {
         ssr = op.type_ + "{" + key_ + "}(" + linkLabel_ + ")";
+    }
+    if(!op.linkedRecord_.empty()) {
+        ssr += "{" + op.linkedRecord_ + ": " + op.linkedRecordCategory_ + "}";
     }
 
     if(level <= 0 && nexts_.size() > 0) {

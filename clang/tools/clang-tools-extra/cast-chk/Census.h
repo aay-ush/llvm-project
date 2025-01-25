@@ -388,6 +388,8 @@ std::string dump(OpData const &info) {
         + "', category: '" + info.category_
         + "', linkedParameter: '" + info.linkedParm_
         + "', containerFunction: '" + info.container_
+        + "', recordType: '" + info.linkedRecord_
+        + "', recordCategory: '" + info.linkedRecordCategory_
         + "', location: '" + info.location_
         //+ "', castkind: '" + info.castKind_
         + "'}\n";

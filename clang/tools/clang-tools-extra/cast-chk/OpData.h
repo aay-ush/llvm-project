@@ -116,8 +116,11 @@ struct OpData {
     std::string category_;
     std::string linkedParm_;
     std::string container_;
+    std::string linkedRecord_;
+    std::string linkedRecordCategory_;
     std::string location_;
     std::string qn_;
+
     //std::string castKind_ {};
     mutable std::vector<OpID> use_ {};
     //bool isComplete {true};
@@ -160,6 +163,8 @@ OpData buildOpData(
         TypeCategory(context, parm),
         getLinkedParm(context, parm),
         getContainerFunction(context, parm),
+        getLinkedRecord(parm),
+        linkedTypeCategory(parm),
         parm.getLocation().printToString(sm),
         qualifiedName(context, parm)
     };
@@ -183,6 +188,8 @@ OpData buildOpData(
         TypeCategory(context, arg),
         String(context, arg), //getLinkedParm(context, arg),
         getContainerFunction(context, arg),
+        getLinkedRecord(arg),
+        linkedTypeCategory(arg),
         arg.getExprLoc().printToString(sm),
         String(context, arg), //qualifiedName(context, arg),
     };
@@ -203,6 +210,8 @@ OpData buildOpData(
         TypeCategory(context, var),
         getLinkedParm(context, var),
         getContainerFunction(context, var),
+        getLinkedRecord(var),
+        linkedTypeCategory(var),
         var.getLocation().printToString(sm),
         qualifiedName(context, var)
     };
@@ -224,6 +233,8 @@ OpData buildOpData(
         TypeCategory(context, decl),
         getLinkedParm(context, e, decl.getDeclName()),
         getContainerFunction(context, e),
+        getLinkedRecord(e),
+        linkedTypeCategory(e),
         decl.getLocation().printToString(sm),
         qualifiedName(context, e) //, decl.getDeclName())
     };
@@ -246,6 +257,8 @@ OpData buildOpData(
         TypeCategory(context, decl),
         getLinkedParm(context, decl, decl.getDeclName()),
         getContainerFunction(context, castExpr),
+        getLinkedRecord(castExpr),
+        linkedTypeCategory(castExpr),
         decl.getLocation().printToString(sm),
         qualifiedName(context, decl, decl.getDeclName())
     };
@@ -268,6 +281,8 @@ OpData buildOpData(
         TypeCategory(context, e),
         getLinkedParm(context, s, e.getNameInfo()),
         getContainerFunction(context, castExpr),
+        getLinkedRecord(castExpr),
+        linkedTypeCategory(castExpr),
         castExpr.getExprLoc().printToString(sm),
         qualifiedName(context, s, e.getNameInfo())
     };
@@ -356,6 +371,8 @@ OpData buildOpData(
         TypeCategory(context, e),
         "(No Param match due to declrefexpr error)",
         getContainerFunction(context, castExpr),
+        getLinkedRecord(castExpr),
+        linkedTypeCategory(castExpr),
         castExpr.getExprLoc().printToString(sm),
         String(context, e)
     };
@@ -397,6 +414,8 @@ OpData buildOpDataArg(
             TypeCategory(context, e),
             getLinkedParm(context, *decl, e.getNameInfo()),
             getContainerFunction(context, arg),
+            getLinkedRecord(arg),
+            linkedTypeCategory(arg),
             arg.getExprLoc().printToString(sm),
             qualifiedName(context, *decl, e.getNameInfo())
         };
@@ -412,6 +431,8 @@ OpData buildOpDataArg(
             TypeCategory(context, e),
             getLinkedParm(context, *stmt, e.getNameInfo()),
             getContainerFunction(context, arg),
+            getLinkedRecord(arg),
+            linkedTypeCategory(arg),
             arg.getExprLoc().printToString(sm),
             qualifiedName(context, *stmt, e.getNameInfo())
         };
@@ -426,6 +447,8 @@ OpData buildOpDataArg(
         TypeCategory(context, e),
         "(No Param match due to declrefexpr error)",
         getContainerFunction(context, arg),
+        getLinkedRecord(arg),
+        linkedTypeCategory(arg),
         arg.getExprLoc().printToString(sm),
         String(context, e)
     };
@@ -447,6 +470,8 @@ OpData buildOpData<CastSourceType::UnaryOp>(
         TypeCategory(context, op),
         "(TODO param_check)",
         getContainerFunction(context, castExpr),
+        getLinkedRecord(castExpr),
+        linkedTypeCategory(castExpr),
         castExpr.getExprLoc().printToString(sm),
         String(context, op)
     };

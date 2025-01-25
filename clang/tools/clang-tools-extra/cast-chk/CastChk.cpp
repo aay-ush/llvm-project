@@ -471,6 +471,8 @@ OpData buildArgOp(clang::ASTContext &context,
             TypeCategory(context, arg),
             String(context, arg),
             getContainerFunction(context, arg),
+            getLinkedRecord(arg),
+            linkedTypeCategory(arg),
             call.getExprLoc().printToString(sm),
             qualifiedName(context, call, arg)
         };
@@ -490,6 +492,8 @@ OpData buildArgOp(clang::ASTContext &context,
                 TypeCategory(context, *e),
                 String(context, arg),
                 getContainerFunction(context, *e),
+                getLinkedRecord(*e),
+                linkedTypeCategory(*e),
                 call.getExprLoc().printToString(sm),
                 qualifiedName(context, call, *e)
             };
@@ -504,6 +508,8 @@ OpData buildArgOp(clang::ASTContext &context,
                 "", //TypeCategory(context, arg),
                 String(context, arg),
                 getContainerFunction(context, arg),
+                getLinkedRecord(arg),
+                linkedTypeCategory(arg),
                 call.getExprLoc().printToString(sm),
                 qualifiedName(context, call, arg)
             };
@@ -560,6 +566,8 @@ void buildOpDatas(clang::ASTContext &context,
                     TypeCategory(context, *parm),
                     String(context, call, pos),
                     getContainerFunction(context, *arg),
+                    getLinkedRecord(*arg),
+                    linkedTypeCategory(*arg),
                     call.getExprLoc().printToString(sm),
                     (call.getDirectCallee() != nullptr)
                         ? (call.getDirectCallee()->getQualifiedNameAsString() + ".$" + std::to_string(pos))
@@ -647,6 +655,8 @@ void buildOpDatas(clang::ASTContext &context,
                         "",// TypeCategory(context, *arg),
                         String(context, call, pos),
                         getContainerFunction(context, *arg),
+                        getLinkedRecord(*arg),
+                        linkedTypeCategory(*arg),
                         call.getExprLoc().printToString(sm),
                         qns
                     };
@@ -660,6 +670,8 @@ void buildOpDatas(clang::ASTContext &context,
                         "", //TypeCategory(context, *arg),
                         String(context, call, pos),
                         getContainerFunction(context, *arg),
+                        getLinkedRecord(*arg),
+                        linkedTypeCategory(*arg),
                         call.getExprLoc().printToString(sm),
                         "Resolve Func from callexpr_.$" + std::to_string(pos)
                     };
