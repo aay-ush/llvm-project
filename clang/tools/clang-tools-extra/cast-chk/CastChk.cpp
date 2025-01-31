@@ -471,6 +471,41 @@ inline OpData buildLimitedArgOp(clang::ASTContext &context,
         };
 }
 
+void processMidCall(clang::ASTContext &context,
+        clang::SourceManager const &sm,
+        clang::CallExpr const &call,
+        clang::DeclRefExpr const &src,
+        clang::Expr const &dest) {
+
+    auto const logKey = String(context, call) + "(): " + String(context, dest);
+    CNS_DEBUG_MSG(logKey, "begin");
+
+    CNS_DEBUG(logKey, "Building src op: '{}", String(context, src));
+    auto from = buildOpData(context, sm, dest, src);
+
+    CNS_DEBUG(logKey, "Building dest op: '{}", String(context, dest));
+    OpData to = { cnsHash(context, dest),
+                  String(context, dest),
+                  Typename(context, dest),
+                  TypeCategory(context, dest),
+                  String(context, dest),
+                  getContainerFunction(context, dest),
+                  getLinkedRecord(dest),
+                  linkedTypeCategory(dest),
+                  call.getExprLoc().printToString(sm),
+                  String(context, dest)}; //qualifiedName(context, call, dest) };
+
+    // TODO: check if cast is involved
+    DominatorData dom = {from, {}, {}};
+
+    // Update census with this pair
+    // This takes care of history as well so that later on it is sufficient to just use the expr as key instead of fetching declrefexpr from the arg.
+    CNS_DEBUG_MSG(logKey, "updating census");
+    updateCensus(from, to, dom);
+    CNS_DEBUG_MSG(logKey, "end");
+}
+
+
 OpData buildArgOp(clang::ASTContext &context,
         clang::SourceManager const &sm,
         clang::CallExpr const &call,
@@ -485,6 +520,7 @@ OpData buildArgOp(clang::ASTContext &context,
         return buildLimitedArgOp(context, sm, call, arg);
     }
 
+    /*
     auto const *dre = getDREChild(e);
     if(!dre) {
         CNS_WARN(logKey, "Null DRE from expr '{}'", String(context, *e));
@@ -493,6 +529,9 @@ OpData buildArgOp(clang::ASTContext &context,
     }
 
     CNS_DEBUG_MSG(logKey, "Found dre from child expr");
+
+    //processMidCall(context, sm, call, *dre, *e);
+    */
 
     CNS_DEBUG(logKey, "Building arg op to return from '{}'", String(context, *e));
     OpData to = {

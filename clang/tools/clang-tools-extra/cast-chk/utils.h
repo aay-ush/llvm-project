@@ -1102,6 +1102,47 @@ clang::DeclRefExpr const* getSubExprDRE(
     return nullptr;
 }
 
+std::string qualifiedNameX(
+        clang::ASTContext &context,
+        clang::CallExpr const& call,
+        clang::Expr const &e) {
+    std::string logKey = "(" + String(context, call) + "|" + String(context, e) + ")";
+    CNS_INFO_MSG(logKey, "begin");
+    auto const *fn = getContainerFunctionDecl(context, e);
+    if(!fn) {
+        CNS_INFO_MSG(logKey, "Container fn == nullptr");
+        CNS_INFO_MSG(logKey, "end");
+        return String(context, e);
+    }
+
+    auto const * dre = dyn_cast<clang::DeclRefExpr>(&e);
+    if(dre) {
+        CNS_INFO_MSG(logKey, "Got DRE");
+        CNS_INFO_MSG(logKey, "end");
+        return qualifiedName(context, *dre);
+    }
+
+    // For any other complex exprs, return func name + expr
+    CNS_INFO_MSG(logKey, "Found container fn but no dre");
+    CNS_INFO_MSG(logKey, "end");
+    return  String(context, e);
+}
+
+std::string qualifiedName(clang::ASTContext &context, clang::MemberExpr const &e) {
+    std::string logKey =  String(context, e);
+    CNS_INFO_MSG(logKey, "begin");
+    auto const *dre = getDREChild(&e);
+    if(dre) {
+        CNS_INFO(logKey, "Found dre '{}'", String(context, *dre));
+        CNS_INFO_MSG(logKey, "end");
+        return qualifiedName(context, *dre) + "." + String(context, e);
+    }
+
+    CNS_WARN_MSG(logKey, "Cannot find dre from the member expr");
+    CNS_INFO_MSG(logKey, "end");
+    return "VarUnk." + String(context, e);
+}
+
 std::string qualifiedName(
         clang::ASTContext &context,
         clang::CallExpr const& call,
@@ -1154,6 +1195,13 @@ std::string qualifiedName(
             }
             CNS_INFO_MSG(logKey, "No callee decl from cast expr");
 
+            if(memberExpr_(ces)) {
+                auto const * mex = memberExpr_(ces);
+                CNS_INFO(logKey, "Arg is a memberexpr: '{}'", String(context, *mex));
+                CNS_INFO_MSG(logKey, "end");
+                return qualifiedName(context, *mex);
+            }
+            /*
             // Check if subexpression has any dre child
             auto const *sdre = getSubExprDRE(context, *ces);
             if(sdre) {
@@ -1161,6 +1209,7 @@ std::string qualifiedName(
                 CNS_INFO_MSG(logKey, "end");
                 return qualifiedName(context, *sdre);
             }
+            */
 
             // See if expr matches any of the fn parameters
             unsigned pos = 0;
@@ -1250,7 +1299,6 @@ std::string getLinkedParm(
     return "{No_Impl_Yet!}";
 }
 
-
 std::string  linkedParmPos(
         clang::ASTContext &context,
         clang::CallExpr const &call,
@@ -1267,16 +1315,18 @@ std::string  linkedParmPos(
 
     unsigned pos = 0;
     for(auto const * aexpr: call.arguments()) {
-        if(*aexpr != arg)
+        if(clang::Expr::isSameComparisonOperand(aexpr, &arg)) {
             pos++;
-        else
+        }
+        else {
             break;
+        }
     }
     CNS_INFO(logKey, "argPos = {}", pos);
     // if pos > call.arguments() TODO
 
     CNS_DEBUG_MSG(logKey, "end");
-    return fn.getNameAsString() + ".$" + std::to_string(pos);
+    return fn->getNameAsString() + ".$" + std::to_string(pos);
 }
 //--
 template <typename T, typename Parameter>
