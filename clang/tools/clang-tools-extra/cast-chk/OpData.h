@@ -136,6 +136,10 @@ bool operator!=(OpData const &lhs, OpData const &rhs) {
     return !(lhs == rhs);
 }
 
+std::string String(OpData const &op) {
+    return op.qn_ + "(" + op.type_ + "){" + op.linkedParm_ + "}";
+}
+
 //---
 
 template<CastSourceType s_type, typename T>
@@ -154,7 +158,7 @@ OpData buildOpData(
     auto &context = parm.getASTContext();
     auto const &sm = context.getSourceManager();
 
-    CNS_DEBUG("<ParmVarDecl> parm: {}; type: {}", String(context, parm), Typename(context, parm));
+    CNS_DEBUG(String(context, parm), "<ParmVarDecl> type: {}", Typename(context, parm));
 
     return {
         cnsHash(context, parm),
@@ -179,7 +183,7 @@ OpData buildOpData(
     //auto &context = arg.getASTContext();
     auto const &sm = context.getSourceManager();
 
-    CNS_DEBUG("<Arg expr> arg: {}; type: {}", String(context, arg), Typename(context, arg));
+    CNS_DEBUG(String(context, arg), "<Arg expr> type: {}", Typename(context, arg));
 
     return {
         cnsHash(context, arg),
@@ -201,7 +205,7 @@ OpData buildOpData(
         clang::SourceManager const &sm,
         clang::VarDecl const &var) {
 
-    CNS_DEBUG("<VarDecl> var: {}; type: {}", String(context, var), Typename(context, var));
+    CNS_DEBUG(String(context, var), "<VarDecl> type: {}", Typename(context, var));
 
     return {
         cnsHash(context, var),
@@ -224,7 +228,7 @@ OpData buildOpData(
         clang::DeclRefExpr const &e,
         clang::ValueDecl const &decl) {
 
-    CNS_DEBUG("<ValueDecl> decl: {}; type: {}", String(context, decl), Typename(context, decl));
+    CNS_DEBUG(String(context, decl), "<ValueDecl> type: {}", Typename(context, decl));
 
     return {
         cnsHash(context, decl),
@@ -248,7 +252,7 @@ OpData buildOpData(
         clang::DeclRefExpr const &e,
         clang::ValueDecl const& decl) {
 
-    CNS_DEBUG("<Decl> decl: {}; type: {}", String(context, e), Typename(context, e));
+    CNS_DEBUG(String(context, e), "<Decl> type: {}", Typename(context, e));
 
     return {
         cnsHash(context, decl),
@@ -272,7 +276,7 @@ OpData buildOpData(
         clang::DeclRefExpr const &e,
         clang::Stmt const& s) {
 
-    CNS_DEBUG("<Stmt> stmt: {}; type: {}", String(context, s), Typename(context, e));
+    CNS_DEBUG(String(context, s), "<Stmt> type: {}", Typename(context, e));
 
     return {
         cnsHash(context, s),
@@ -295,15 +299,16 @@ OpData buildOpData(
         clang::Expr const &castExpr,
         clang::DeclRefExpr const &e) {
 
-    CNS_DEBUG_MSG("<DeclRef>");
-    CNS_DEBUG("<DeclRef> ref: {}; type: {}", String(context, e), Typename(context, e));
+    auto const logKey = String(context, e);
+    CNS_DEBUG_MSG(logKey, "<DeclRef> begin");
+    CNS_DEBUG(logKey, "<DeclRef> type: {}", Typename(context, e));
 
     auto const *refd = e.getReferencedDeclOfCallee();
     if(refd) {
-        CNS_INFO_MSG("Building data from ReferencedDecl");
+        CNS_INFO_MSG(logKey, "Building data from ReferencedDecl");
         auto const *vd = dyn_cast<VarDecl>(refd);
         if(vd) {
-            CNS_INFO_MSG("ReferencedDecl is VarDecl");
+            CNS_INFO_MSG(logKey, "ReferencedDecl is VarDecl");
             return buildOpData(context, sm, *vd);
         }
     }
@@ -311,13 +316,13 @@ OpData buildOpData(
     auto const *stmt = e.getExprStmt();
     auto const *decl = e.getDecl();
     if(!!decl) {
-        CNS_INFO_MSG("Building data from Decl from DeclRefExpr");
+        CNS_INFO_MSG(logKey, "Building data from Decl from DeclRefExpr");
         auto const *var = dyn_cast<clang::VarDecl>(decl);
         if(var) {
-            CNS_INFO_MSG("Found VarDecl from DeclRefExpr");
+            CNS_INFO_MSG(logKey, "Found VarDecl from DeclRefExpr");
             return buildOpData(context, sm, *var);
         }
-        CNS_INFO_MSG("NO VarDecl from DeclRefExpr");
+        CNS_INFO_MSG(logKey, "NO VarDecl from DeclRefExpr");
         /*
         auto const *nd = e.getFoundDecl();
         if(!!nd) {
@@ -349,20 +354,20 @@ OpData buildOpData(
         */
         auto const *fp = decl->getAsFunction();
         if(!!fp) {
-            CNS_INFO_MSG("Got function pointer");
+            CNS_INFO_MSG(logKey, "Got function pointer");
             return buildOpData(context, sm, castExpr, e, *fp);
         }
-        CNS_INFO_MSG("Not function pointer type");
+        CNS_INFO_MSG(logKey, "Not function pointer type");
         return buildOpData(context, sm, castExpr, e, *decl);
     }
 
     if(!!stmt) {
-        CNS_INFO_MSG("Building data from Expr stmt from DeclRefExpr");
+        CNS_INFO_MSG(logKey, "Building data from Expr stmt from DeclRefExpr");
         return buildOpData(context, sm, castExpr, e, *stmt);
     }
 
-    CNS_ERROR_MSG("DeclRefExpr has no decl or stmt.");
-    CNS_DEBUG_MSG("<DeclRef> end");
+    CNS_ERROR_MSG(logKey, "DeclRefExpr has no decl or stmt.");
+    CNS_DEBUG_MSG(logKey, "<DeclRef> end");
 
     return {
         cnsHash(context, e),
@@ -385,14 +390,15 @@ OpData buildOpDataArg(
         clang::Expr const &arg,
         clang::DeclRefExpr const &e) {
 
-    CNS_DEBUG("<DeclRef2> ref: {}; type: {}", String(context, e), Typename(context, e));
+    auto const logKey = String(context, e);
+    CNS_DEBUG(logKey, "<DeclRef2> type: {}", Typename(context, e));
 
     auto const *refd = e.getReferencedDeclOfCallee();
     if(refd) {
-        CNS_INFO_MSG("Building data from ReferencedDecl");
+        CNS_INFO_MSG(logKey, "Building data from ReferencedDecl");
         auto const *vd = dyn_cast<VarDecl>(refd);
         if(vd) {
-            CNS_INFO_MSG("ReferencedDecl is VarDecl");
+            CNS_INFO_MSG(logKey, "ReferencedDecl is VarDecl");
             return buildOpData(context, sm, *vd);
         }
     }
@@ -400,13 +406,13 @@ OpData buildOpDataArg(
     auto const *stmt = e.getExprStmt();
     auto const *decl = e.getDecl();
     if(!!decl) {
-        CNS_INFO_MSG("Building data from Decl from DeclRefExpr");
+        CNS_INFO_MSG(logKey, "Building data from Decl from DeclRefExpr");
         auto const *var = dyn_cast<clang::VarDecl>(decl);
         if(var) {
-            CNS_INFO_MSG("Found VarDecl from DeclRefExpr");
+            CNS_INFO_MSG(logKey, "Found VarDecl from DeclRefExpr");
             return buildOpData(context, sm, *var);
         }
-        CNS_WARN_MSG("NO VarDecl from DeclRefExpr");
+        CNS_WARN_MSG(logKey, "NO VarDecl from DeclRefExpr");
         return {
             cnsHash(context, *decl),
             String(context, e),
@@ -422,7 +428,7 @@ OpData buildOpDataArg(
     }
 
     if(!!stmt) {
-        CNS_INFO_MSG("Building data from Expr stmt from DeclRefExpr");
+        CNS_INFO_MSG(logKey, "Building data from Expr stmt from DeclRefExpr");
         //return buildOpData(context, sm, arg, e, *stmt);
         return {
             cnsHash(context, *stmt),
@@ -438,7 +444,7 @@ OpData buildOpDataArg(
         };
     }
 
-    CNS_ERROR_MSG("DeclRefExpr has no decl or stmt.");
+    CNS_ERROR_MSG(logKey, "DeclRefExpr has no decl or stmt.");
 
     return {
         cnsHash(context, e),
@@ -461,7 +467,7 @@ OpData buildOpData<CastSourceType::UnaryOp>(
         clang::CastExpr const &castExpr,
         clang::UnaryOperator const &op) {
 
-    CNS_DEBUG("<UnaryOp> op: {}; type: {}", String(context, op), Typename(context, op));
+    CNS_DEBUG(String(context, op), "type: {}", Typename(context, op));
 
     return {
         cnsHash(context, op),
@@ -613,7 +619,7 @@ OpData buildOpData<CastSourceType::BinaryOp>(
         clang::CastExpr const &castExpr,
         clang::DeclRefExpr const &e) {
 
-    CNS_INFO_MSG("<BinaryOp, DeclRefExpr>");
+    CNS_INFO_MSG(String(context, e), "<BinaryOp, DeclRefExpr>");
     return buildOpData(context, sm, castExpr, e);
 }
 

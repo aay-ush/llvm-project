@@ -18,8 +18,40 @@ bool operator==(DominatorData const &lhs, DominatorData const &rhs) {
 bool operator!=(DominatorData const &lhs, DominatorData const &rhs) {
     return !(lhs == rhs);
 }
-//--
 
+std::string String(DominatorData const &d) {
+    return d.from_.qn_ + "_" + d.exprType_;
+}
+//
+
+DominatorData buildVarDeclDom(clang::ASTContext const& context, OpData const& domOp, clang::VarDecl const& var) {
+    auto logKey = String(context, var);
+    CNS_DEBUG_MSG(logKey, "begin");
+    DominatorData ret;
+    auto const *inx = var.getInit();
+    if(inx) {
+        CNS_DEBUG(logKey, "Found init expr: '{}'", String(context, *inx));
+        auto const *inc = dyn_cast<clang::CastExpr>(inx);
+        if(inc) {
+            CNS_DEBUG(logKey, "Init expression is cast expr '{}'", String(context, *inc));
+            //rhs.castKind_ = inc->getCastKindName();
+            ret = {domOp, String(context, *inc), inc->getCastKindName()};
+        }
+        else {
+            CNS_DEBUG(logKey, "Init expression '{}' is not a cast expr", String(context, *inx));
+            ret = {domOp, String(context, *inx), "InitVarDecl"};
+        }
+    }
+    else {
+        CNS_ERROR_MSG(logKey, "No init expr found for vardecl");
+        ret = {domOp, "NoInitExprFound", "VarDecl"};
+    }
+
+    CNS_DEBUG_MSG(logKey, "end");
+    return ret;
+}
+
+//--
 using Dominators = std::vector<DominatorData>;
 using UseDefInfo = std::pair<OpData, std::optional<Dominators>>;
 
@@ -212,28 +244,28 @@ std::string dump(DominatorData const &info);
 // ---- Building Histree ----
 
 std::optional<Dominators> const& doms(CensusNode const &n) {
-    CNS_DEBUG_MSG("");
+    CNS_DEBUG_MSG(n.first, "begin");
     auto const &[_, info] = n;
     auto const &[__, doms_] = info;
-    CNS_DEBUG_MSG("end");
+    CNS_DEBUG_MSG(n.first, "end");
     return doms_;
 }
 
 OpData const& ops(CensusNode const &n) {
-    CNS_DEBUG_MSG("<CensusNode const>");
+    CNS_DEBUG_MSG(n.first, "<CensusNode const> begin");
     auto const &[_, info] = n;
     auto const &[op, __] = info;
-    CNS_DEBUG("<CensusNode const> Returning op: {}", op.qn_);
-    CNS_DEBUG_MSG("<CensusNode const> end");
+    CNS_DEBUG(n.first, "<CensusNode const> Returning op: {}", op.qn_);
+    CNS_DEBUG_MSG(n.first, "<CensusNode const> end");
     return op;
 }
 
 OpData& ops(CensusNode &n) {
-    CNS_DEBUG_MSG("<CensusNode>");
+    CNS_DEBUG_MSG(n.first, "<CensusNode> begin");
     auto &[_, info] = n;
     auto &[op, __] = info;
-    CNS_DEBUG("ops<CensusNode> Returning op: {}", op.qn_);
-    CNS_DEBUG_MSG("<CensusNode> end");
+    CNS_DEBUG(n.first, "ops<CensusNode> Returning op: {}", op.qn_);
+    CNS_DEBUG_MSG(n.first, "<CensusNode> end");
     return op;
 }
 
@@ -248,24 +280,24 @@ OpData const& ops(unsigned hash) {
 */
 
 OpData const& ops(CensusKey const& k) {
-    CNS_DEBUG_MSG("<cesuskey>");
+    CNS_DEBUG_MSG(k, "<cesuskey> begin");
     auto const &[op, _] = census[k];
-    CNS_DEBUG_MSG("<cesuskey> end");
+    CNS_DEBUG_MSG(k, "<cesuskey> end");
     return op;
 }
 
 CensusKey const& opKey(CensusNode const& n) {
-    CNS_DEBUG_MSG("");
+    CNS_DEBUG_MSG(n.first, "begin");
     auto const &op = ops(n);
-    CNS_DEBUG("Returning key: {}", op.qn_);
-    CNS_DEBUG_MSG(" end");
+    CNS_DEBUG(n.first, "Returning key: {}", op.qn_);
+    CNS_DEBUG_MSG(n.first, "end");
     return op.qn_;
 }
 
 std::vector<CensusKey> UseChain(OpData const &op) {
-    CNS_DEBUG_MSG("");
+    CNS_DEBUG_MSG(op.qn_, "begin");
     auto doesOpDominate = [&op](CensusNode const &in) {
-        CNS_DEBUG("(doesOpDominate) op.qn_ = {}", op.qn_);
+        CNS_DEBUG(op.qn_, "(doesOpDominate) op.qn_ = {}", op.qn_);
         auto const &doms_ = doms(in);
         if(!doms_)
             return false;
@@ -277,7 +309,7 @@ std::vector<CensusKey> UseChain(OpData const &op) {
         //if(match != std::end(doms)) {
             //CNS_DEBUG("Op dominates {}", in.second.first.hash_);
         //}
-        CNS_DEBUG_MSG("end");
+        CNS_DEBUG_MSG(op.qn_, "end");
         return match != std::end(doms);
     };
 
@@ -285,23 +317,23 @@ std::vector<CensusKey> UseChain(OpData const &op) {
     std::copy_if(std::begin(census), std::end(census), std::back_inserter(t), doesOpDominate);
     std::vector<CensusKey> usechain;
     std::transform(std::begin(t), std::end(t), std::back_inserter(usechain), opKey);
-    CNS_DEBUG_MSG("end");
+    CNS_DEBUG_MSG(op.qn_, "end");
     return usechain;
 }
 
 void elaborateUse(OpData const &node, std::optional<int> level) {
-    CNS_DEBUG_MSG("");
+    CNS_DEBUG_MSG(node.qn_, "begin");
     node.use_.clear();
     // Use(node) = [i, Use(i) | i in UseChain(node)]
     auto const &usechain = UseChain(node);
-    CNS_DEBUG("Building use chain for {}", node.hash_);
+    CNS_DEBUG(node.qn_, "Building use chain for {}", node.hash_);
     for(auto const &hash: usechain) {
         if(level && (level.value() > 0)) {
-            CNS_DEBUG("Level = {}", level.value());
+            CNS_DEBUG(node.qn_, "Level = {}", level.value());
             elaborateUse(ops(hash), level.value() - 1);
         }
 
-        CNS_DEBUG("Adding hash: {}", hash);
+        CNS_DEBUG(node.qn_, "Adding hash: {}", hash);
         // Add the node 'p' from usechain
         node.use_.push_back(hash);
         // Add use(p)
@@ -309,7 +341,7 @@ void elaborateUse(OpData const &node, std::optional<int> level) {
             std::copy(begin(ops(hash).use_), end(ops(hash).use_), back_inserter(node.use_));
         }
     }
-    CNS_DEBUG_MSG("end");
+    CNS_DEBUG_MSG(node.qn_, "end");
 }
 
 //--
@@ -419,7 +451,8 @@ std::string dump(DominatorData const& domInfo) {
 std::string space(int indent);
 
 void censusSummary() {
-    CNS_DEBUG_MSG("<void>");
+    constexpr auto logKey = "<cenSus>";
+    CNS_DEBUG_MSG(logKey, "<void> begin");
 
     // build usechain
     /*
@@ -469,7 +502,7 @@ void censusSummary() {
         FOUT << "\n\n";
         */
     }
-    CNS_DEBUG_MSG("<void> end");
+    CNS_DEBUG_MSG(logKey, "<void> end");
 }
 
 std::string space(int indent) {

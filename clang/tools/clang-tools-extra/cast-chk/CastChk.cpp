@@ -65,31 +65,34 @@ std::vector<unsigned> seenFunctions;
 void preprocess(
         clang::ASTContext &context,
         clang::UnaryOperator const &op) {
-    CNS_DEBUG_MSG("<UnaryOp>");
-    CNS_DEBUG_MSG("<UnaryOp> end");
+    auto const logKey = String(context, op);
+    CNS_DEBUG_MSG(logKey, "begin");
+    CNS_DEBUG_MSG(logKey, "end");
 }
 
 void preprocess(
         clang::ASTContext &context,
         clang::DeclRefExpr const &op) {
-    CNS_DEBUG_MSG("<DeclRefExpr>");
-    CNS_DEBUG_MSG("<DeclRefExpr> end");
+    auto const logKey = String(context, op);
+    CNS_DEBUG_MSG(logKey, "begin");
+    CNS_DEBUG_MSG(logKey, "end");
 }
 
 bool isNodeDominatorNew(
         OpData const &node,
         DominatorData const &dom) {
 
-    CNS_DEBUG_MSG("");
+    auto const& logKey = node.qn_ + "| dom(" + String(dom) + ")";
+    CNS_DEBUG_MSG(logKey, "begin");
     auto &[_, doms_] = census[node.qn_];
     if(!doms_) {
-        CNS_INFO_MSG("No doms present currently.");
+        CNS_DEBUG_MSG(logKey, "No doms present currently.");
         return true;
     }
 
-    CNS_INFO("Checking current doms for this dom [{}]", dom.from_.qn_);
+    CNS_DEBUG(logKey, "Checking current doms for this dom [{}]", dom.from_.qn_);
     auto doms = doms_.value();
-    CNS_DEBUG_MSG(" end");
+    CNS_DEBUG_MSG(logKey, "end");
     return std::find(begin(doms), end(doms), dom) == end(doms);
 }
 
@@ -97,85 +100,90 @@ void appendNodeDominator(
         OpData const &node,
         DominatorData const &dom) {
 
-    CNS_DEBUG_MSG("");
+    auto const& logKey = node.qn_ + "| dom(" + String(dom) + ")";
+    CNS_DEBUG_MSG(logKey, "begin");
     auto &[_, doms_] = census[node.qn_];
     if(!doms_) {
-        CNS_INFO_MSG("Dominator Initialized.");
+        CNS_INFO_MSG(logKey, "Dominator Initialized.");
         census[node.qn_] = makeUseDefInfo(node, dom);
     } else {
-        CNS_INFO_MSG("Appending to dominators.");
+        CNS_INFO_MSG(logKey, "Appending to dominators.");
         auto &doms = doms_.value();
         doms.push_back(dom);
     }
 
-    CNS_INFO_MSG("New Dominator Appended: {");
+    CNS_INFO_MSG(logKey, "New Dominator Appended: {");
     fmt::print(fOUT, "{}\n\n", dump(dom));
-    CNS_INFO_MSG("}");
-    CNS_DEBUG_MSG("end");
+    CNS_INFO_MSG(logKey, "}");
+    CNS_DEBUG_MSG(logKey, "end");
 }
 
 void chkNodeDataForChange(OpData const &node) {
-    CNS_DEBUG_MSG("");
+    auto const logKey = node.qn_;
+    CNS_DEBUG_MSG(logKey, "begin");
     auto const& [old, _] = census[node.qn_];
     if(old != node) {
-        CNS_WARN_MSG("Old node with different OpData:");
-        CNS_WARN_MSG("Old data:");
+        CNS_WARN(logKey, "Old node with different OpData '{}':", String(old));
         fmt::print(fOUT, "{}\n\n", dump(old));
-        CNS_WARN_MSG("New data:");
+        CNS_WARN(logKey, "New OpData '{}':", String(node));
         fmt::print(fOUT, "{}\n\n", dump(node));
     }
-    CNS_DEBUG_MSG(" end");
+    CNS_DEBUG_MSG(logKey, "end");
 }
 
 void addDomNode(OpData const &dom) {
-    CNS_DEBUG_MSG("");
+    auto const logKey = String(dom);
+    CNS_DEBUG_MSG(logKey, "begin");
     if(census.find(dom.qn_) == std::end(census)) {
-        CNS_INFO_MSG("Inserting new node for 'dom (census 'from')'.");
+        CNS_INFO_MSG(logKey, "Inserting new node for 'dom (census 'from')'.");
         census.insert(makeCensusSourceNode(dom));
         return;
     }
-    CNS_INFO_MSG("'dom (census 'from')' is already in census.");
+    CNS_INFO_MSG(logKey, "'dom (census 'from')' is already in census.");
     // If dominator is in census, do nothing
     // except warning of decl data change, if any.
     chkNodeDataForChange(dom);
-    CNS_DEBUG_MSG(" end");
+    CNS_DEBUG_MSG(logKey, "end");
 }
 
 void updateHistory(
         OpData const &from,
         OpData const &to,
         DominatorData const& domInfo) {
-    CNS_DEBUG_MSG("");
-    CNS_DEBUG("Updating History of {} with {}[{}]", from.qn_, to.qn_, domInfo.exprType_);
+
+    auto const logKey = from.qn_ + "->" + to.qn_;
+
+    CNS_DEBUG_MSG(logKey, "begin");
+    CNS_DEBUG(logKey, "History update using dom '{}'", domInfo.exprType_);
 
     // Ensure H(to) first.
     // Retrieve H(to)
     if(TypeTransforms.find(to.qn_) == std::end(TypeTransforms)) {
         // Add H(to)
-        CNS_INFO(":to: New history started for {}", to.qn_);
+        CNS_INFO(logKey, ":to: New history started for '{}'", to.qn_);
         TypeTransforms.emplace(to.qn_, to.qn_);
         //TypeTransforms.insert({to.qn_, History(to.qn_)});
         // sanity check
         if(TypeTransforms.find(to.qn_) == std::end(TypeTransforms)) {
-            CNS_ERROR(":to: Could not insert history for {}", to.qn_);
-            CNS_DEBUG_MSG("end");
+            CNS_ERROR(logKey, ":to: Could not insert history for '{}'", to.qn_);
+            CNS_DEBUG_MSG(logKey, "end");
             return;
         }
     }
     else {
-        CNS_INFO(":to: History of {} already on record. No action needed.", to.qn_);
+        CNS_INFO(logKey, ":to: History of '{}' already on record. No action needed.", to.qn_);
     }
 
     // Retrieve H(from)
     if(TypeTransforms.find(from.qn_) == std::end(TypeTransforms)) {
         // Add H(from)
-        CNS_INFO(":from: New history started for {}", from.qn_);
+        CNS_INFO(logKey, ":from: New history started for '{}'", from.qn_);
         TypeTransforms.emplace(from.qn_, from.qn_);
         //TypeTransforms.insert({from.qn_, History(from.qn_)});
         // sanity check
         if(TypeTransforms.find(from.qn_) == std::end(TypeTransforms)) {
-            CNS_ERROR(":from: Could not insert history for {}", from.qn_);
-            CNS_DEBUG_MSG("end");
+            CNS_ERROR(logKey, ":from: Could not insert history for '{}'", from.qn_);
+            CNS_DEBUG_MSG(logKey, "end");
             return;
         }
     }
@@ -188,35 +196,35 @@ void updateHistory(
         //  -> Or in instantiation, keep a reference to global history with local context.
         //     -> i.e. branch will keep references instead of copies.
         //     -> seems like a better approach.
-        CNS_INFO(":toFP: Creating new context {{key, value}} = {{{},{}}}", to.qn_, from.qn_);
+        CNS_INFO(logKey, ":toFP: Creating new context {{key, value}} = {{'{}','{}'}}", to.qn_, from.qn_);
         HistoryContext hc;
         hc[to.qn_] = from.qn_;
 
         auto &foh = TypeTransforms.at(from.qn_);
         auto &toh = TypeTransforms.at(to.qn_);
-        CNS_INFO(":toFP: Adding context to ToHistory: {}", toh.idversion());
+        CNS_INFO(logKey, ":toFP: Adding context to ToHistory: '{}'", toh.idversion());
         //auto ech = toh.addContext(hc);
         toh.addContext(hc);
-        CNS_INFO(":toFP: New ToHistory version: {}", toh.idversion());
-        CNS_INFO(":toFP: Extending history from {} with {}", foh.idversion(), toh.idversion());
+        CNS_INFO(logKey, ":toFP: New ToHistory version: '{}'", toh.idversion());
+        CNS_INFO(logKey, ":toFP: Extending history from '{}' with '{}'", foh.idversion(), toh.idversion());
         //TypeTransforms.at(from.qn_).extend(ech);
         //foh.extend({toh, hc}); //ech);
         foh.extend(toh, domInfo);
-        CNS_INFO(":toFP: New from version: {}", foh.idversion());
+        CNS_INFO(logKey, ":toFP: New from version: '{}'", foh.idversion());
     }
     else {
         // Extend H(from) with H(to)
-        // CNS_INFO(":from: Extending history of {} with {}", from.qn_, to.qn_);
+        // CNS_INFO(":from: Extending history of '{}' with '{}'", from.qn_, to.qn_);
         //TypeTransforms.at(from.qn_).extend(TypeTransforms.at(to.qn_));
         auto &foh = TypeTransforms.at(from.qn_);
         auto const &toh = TypeTransforms.at(to.qn_);
-        CNS_INFO(":from: Extending history {} with {}", foh.idversion(), toh.idversion());
-        CNS_INFO(":from: New from version: {}", foh.idversion());
+        CNS_INFO(logKey, ":from: Extending history '{}' with '{}'", foh.idversion(), toh.idversion());
+        CNS_INFO(logKey, ":from: New from version: '{}'", foh.idversion());
         foh.extend(toh, domInfo);
-        CNS_INFO(":from: New from version: {}", foh.idversion());
+        CNS_INFO(logKey, ":from: New from version: '{}'", foh.idversion());
     }
 
-    CNS_DEBUG_MSG("end");
+    CNS_DEBUG_MSG(logKey, "end");
 }
 
 void updateCensus(
@@ -224,29 +232,32 @@ void updateCensus(
         OpData &to,
         DominatorData const &dom) {
 
-    CNS_DEBUG_MSG("<from, to, dom>");
+    auto const logKey = from.qn_ + "->" + to.qn_;
+    CNS_DEBUG_MSG(logKey, "begin");
 
     addDomNode(from);
     auto it = census.find(to.qn_);
     if(it == std::end(census)) {
         // `to` not in census
-        CNS_INFO_MSG("<0> Inserting new node for 'to'.");
+        CNS_INFO(logKey, "<0> Inserting new node for 'to'('{}')", String(to));
         census.insert(makeCensusNode(to, dom));
 
+        CNS_INFO(logKey, "Updating history with dom '{}'", String(dom));
         updateHistory(from, to, dom);
-        CNS_DEBUG_MSG("<from, to, dom> end");
+        CNS_DEBUG_MSG(logKey, "end");
         return;
     }
 
-    CNS_INFO_MSG("<0> 'to' already in census.");
+    CNS_INFO_MSG(logKey, "<0> 'to' already in census");
     chkNodeDataForChange(to);
     if(isNodeDominatorNew(to, dom)) {
-        CNS_INFO_MSG("<0> 'to' has new dominator.");
+        CNS_INFO(logKey, "<0> 'to' has new dominator '{}'", String(dom));
         appendNodeDominator(to, dom);
     }
 
+    CNS_INFO(logKey, "Updating history with dom '{}'", String(dom));
     updateHistory(from, to, dom);
-    CNS_DEBUG_MSG("<from, to, dom> end");
+    CNS_DEBUG_MSG(logKey, "end");
 }
 
 void updateCensusNoHistory(
@@ -254,27 +265,29 @@ void updateCensusNoHistory(
         OpData &to,
         DominatorData const &dom) {
 
-    CNS_DEBUG_MSG("");
+    auto const logKey = from.qn_ + "->" + to.qn_;
+    CNS_DEBUG_MSG(logKey, "begin");
 
     addDomNode(from);
     auto it = census.find(to.qn_);
     if(it == std::end(census)) {
         // `to` not in census
-        CNS_INFO_MSG("Inserting new node for 'to'.");
+        CNS_INFO(logKey, "Inserting new node for 'to'('{}')", String(to));
         census.insert(makeCensusNode(to, dom));
-        CNS_DEBUG_MSG("end");
+        CNS_DEBUG_MSG(logKey, "end");
         return;
     }
 
-    CNS_INFO_MSG("'to' already in census.");
+    CNS_INFO_MSG(logKey, "'to' already in census");
     chkNodeDataForChange(to);
     if(isNodeDominatorNew(to, dom)) {
-        CNS_INFO_MSG("'to' has new dominator.");
+        CNS_INFO(logKey, "'to' has new dominator '{}'", String(dom));
         appendNodeDominator(to, dom);
     }
 
     //updateHistory(from, to);
-    CNS_DEBUG_MSG("end");
+    CNS_DEBUG_MSG(logKey, "end");
+//}
 }
 
 
@@ -302,12 +315,13 @@ void updateCensus(
         clang::DeclRefExpr const &castSource,
         T const &dest) {
 
-    CNS_DEBUG_MSG("<T>");
+    auto const logKey = String(context, castExpr);
+    CNS_DEBUG_MSG(logKey, "<T> begin");
     preprocess(context, dest);
 
-    CNS_INFO_MSG("<Cast> building lhs data.");
+    CNS_INFO_MSG(logKey, "<Cast> building lhs data.");
     auto lhs = buildOpData(context, sm, castExpr, castSource);
-    CNS_INFO_MSG("<Cast> building rhs data.");
+    CNS_INFO_MSG(logKey, "<Cast> building rhs data.");
     auto rhs = buildOpData<CS_t>(context, sm, castExpr, dest);
     // Cast kind update
     //rhs.castKind_ = castExpr.getCastKindName();
@@ -321,28 +335,29 @@ void updateCensus(
 
     updateCensus(lhs, rhs, dom);
     logCensusUpdate(lhs, rhs, dom);
-    CNS_DEBUG_MSG("<T> end");
+    CNS_DEBUG_MSG(logKey, "<T> end");
 }
 
 void processCast(MatchFinder::MatchResult const &result) {
-    CNS_DEBUG_MSG("");
+    constexpr auto logKey = "<CastMatch>";
+    CNS_DEBUG_MSG(logKey, "begin");
     auto *context = result.Context;
     if(!context) {
-        CNS_ERROR_MSG("Null context");
-        CNS_DEBUG_MSG("end.");
+        CNS_ERROR_MSG(logKey, "Null context");
+        CNS_DEBUG_MSG(logKey, "end.");
         return;
     }
     assert(context);
     auto const *castExpr = result.Nodes.getNodeAs<CastExpr>("cast");
     if(!castExpr) {
-        CNS_ERROR_MSG("Null cast expr");
-        CNS_DEBUG_MSG("end.");
+        CNS_ERROR_MSG(logKey, "Null cast expr");
+        CNS_DEBUG_MSG(logKey, "end.");
         return;
     }
     assert(castExpr);
 
-    CNS_DEBUG("Cast match at: '{}'", castExpr->getExprLoc().printToString(*result.SourceManager));
-    CNS_DEBUG("Cast : '{}'", String(*context, *castExpr));
+    CNS_DEBUG(logKey, "Cast match at: '{}'", castExpr->getExprLoc().printToString(*result.SourceManager));
+    CNS_DEBUG(logKey, "Cast : '{}'", String(*context, *castExpr));
 
     // Source
     auto const *s_unaryCastee = result.Nodes.getNodeAs<DeclRefExpr>("unaryCastee");
@@ -353,27 +368,27 @@ void processCast(MatchFinder::MatchResult const &result) {
     auto const *unaryOp = result.Nodes.getNodeAs<UnaryOperator>("unaryOp");
 
     if(!!unaryOp) {
-        CNS_DEBUG_MSG("Processing cast: Unary operation");
+        CNS_DEBUG_MSG(logKey, "Processing cast: Unary operation");
         updateCensus<CastSourceType::UnaryOp>(*context, *result.SourceManager, *castExpr, *s_unaryCastee, *unaryOp);
     }
     else if(!!binOp) {
-        CNS_DEBUG_MSG("Processing cast: Binary operation");
+        CNS_DEBUG_MSG(logKey, "Processing cast: Binary operation");
         auto const *bl = result.Nodes.getNodeAs<DeclRefExpr>("lhsref");
         auto const *br = result.Nodes.getNodeAs<DeclRefExpr>("rhsref");
         if(!bl) {
-            CNS_ERROR_MSG("binop lHS == nullptr.");
-            CNS_DEBUG_MSG(" end");
+            CNS_ERROR_MSG(logKey, "binop lHS == nullptr.");
+            CNS_DEBUG_MSG(logKey, "end");
             return;
         }
         if(!br) {
-            CNS_ERROR_MSG("binop RHS == nullptr.");
-            CNS_DEBUG_MSG(" end");
+            CNS_ERROR_MSG(logKey, "binop RHS == nullptr.");
+            CNS_DEBUG_MSG(logKey, "end");
             return;
         }
         updateCensus<CastSourceType::BinaryOp>(*context, *result.SourceManager, *castExpr, *br, *bl);
     }
 
-    CNS_DEBUG_MSG(" end");
+    CNS_DEBUG_MSG(logKey, "end");
 }
 
 void updateCensus(
@@ -382,40 +397,24 @@ void updateCensus(
         clang::DeclRefExpr const &src,
         clang::VarDecl const &dest) {
 
-    CNS_DEBUG_MSG("<declrefexpr, varDecl>");
+    auto const logKey = String(context, src) + "->" + String(context, dest);
+    CNS_DEBUG_MSG(logKey, "<declrefexpr, varDecl> begin");
     auto const *lhsDecl = src.getDecl();
     assert(lhsDecl);
-    CNS_INFO_MSG("<declrefexpr, varDecl> building lhs data.");
+    CNS_INFO_MSG(logKey, "<declrefexpr, varDecl> building lhs data.");
     auto lhs = buildOpData(context, sm, src, *lhsDecl);
-    CNS_INFO_MSG("<declrefexpr, varDecl> building rhs data.");
+    CNS_INFO_MSG(logKey, "<declrefexpr, varDecl> building rhs data.");
     auto rhs = buildOpData(context, sm, dest);
 
-    DominatorData dom;
-    auto const *inx = dest.getInit();
-    if(inx) {
-        auto const *inc = dyn_cast<clang::CastExpr>(inx);
-        if(inc) {
-            CNS_DEBUG("Cast expression in var decl init '{}'", String(context, *inc));
-            //rhs.castKind_ = inc->getCastKindName();
-            dom = {lhs, String(context, *inc), inc->getCastKindName()};
-        }
-        else {
-            dom = {lhs, String(context, *inx), "InitVarDecl"};
-        }
-    }
-    else {
-        CNS_ERROR("No init expr found for vardecl '{}'", String(context, dest));
-        dom = {lhs, "NoInitExprFound", "VarDecl"};
-    }
-
-    //DominatorData dom{lhs, {}, {}};
+    DominatorData dom = buildVarDeclDom(context, lhs, dest);
     updateCensus(lhs, rhs, dom);
     logCensusUpdate(lhs, rhs, dom);
-    CNS_DEBUG_MSG("<declrefexpr, varDecl> end");
+    CNS_DEBUG_MSG(logKey, "<declrefexpr, varDecl> end");
 }
 
 void processVar(MatchFinder::MatchResult const &result) {
-    CNS_DEBUG_MSG("");
+    constexpr auto logKey = "<VarMatch>";
+    CNS_DEBUG_MSG(logKey, "begin");
     assert(result);
     auto *context = result.Context;
     assert(context);
@@ -428,8 +427,8 @@ void processVar(MatchFinder::MatchResult const &result) {
     auto const *rhs = result.Nodes.getNodeAs<clang::VarDecl>("varDecl");
     assert(rhs);
 
-    CNS_DEBUG("VarDecl match at: '{}'", rhs->getLocation().printToString(*result.SourceManager));
-    CNS_DEBUG("VarDecl : '{}'", String(*context, *rhs));
+    CNS_DEBUG(logKey, "VarDecl match at: '{}'", rhs->getLocation().printToString(*result.SourceManager));
+    CNS_DEBUG(logKey, "VarDecl : '{}'", String(*context, *rhs));
 
     auto const *lhsRef = result.Nodes.getNodeAs<clang::DeclRefExpr>("assignee");
     auto const *lhsLit = result.Nodes.getNodeAs<clang::Expr>("literal");
@@ -444,13 +443,32 @@ void processVar(MatchFinder::MatchResult const &result) {
              << "          : inside " << rhsData.container_ << "()\n"
              << "\n";
         */
-        CNS_INFO_MSG("Skipping VarDecl init with a literal.");
+        CNS_INFO_MSG(logKey, "Skipping VarDecl init with a literal.");
         return;
     }
 
     assert(lhsRef);
     updateCensus(*context, *result.SourceManager, *lhsRef, *rhs);
-    CNS_DEBUG_MSG(" end");
+    CNS_DEBUG_MSG(logKey, "end");
+}
+
+inline OpData buildLimitedArgOp(clang::ASTContext &context,
+        clang::SourceManager const &sm,
+        clang::CallExpr const &call,
+        clang::Expr const &arg) {
+
+        return {
+            cnsHash(context, arg),
+            String(context, arg),
+            Typename(context, arg),
+            TypeCategory(context, arg),
+            linkedParmPos(context, call, arg),
+            getContainerFunction(context, arg),
+            getLinkedRecord(arg),
+            linkedTypeCategory(arg),
+            call.getExprLoc().printToString(sm),
+            qualifiedName(context, call, arg)
+        };
 }
 
 OpData buildArgOp(clang::ASTContext &context,
@@ -458,35 +476,27 @@ OpData buildArgOp(clang::ASTContext &context,
         clang::CallExpr const &call,
         clang::Expr const &arg) {
 
-    CNS_DEBUG_MSG("");
+    auto const logKey = String(context, call) + "(): " + String(context, arg);
+    CNS_DEBUG_MSG(logKey, "begin");
     auto const *e = arg.IgnoreImplicit();
     if(!e) {
-        CNS_DEBUG_MSG("Null from IgnoreImplicit()");
-        CNS_DEBUG_MSG(" end");
-        // get declref expr for arg
-        return {
-            cnsHash(context, arg),
-            String(context, arg),
-            Typename(context, arg),
-            TypeCategory(context, arg),
-            String(context, arg),
-            getContainerFunction(context, arg),
-            getLinkedRecord(arg),
-            linkedTypeCategory(arg),
-            call.getExprLoc().printToString(sm),
-            qualifiedName(context, call, arg)
-        };
+        CNS_DEBUG_MSG(logKey, "No expr from arg.IgnoreImplicit()");
+        CNS_DEBUG_MSG(logKey, "end");
+        return buildLimitedArgOp(context, sm, call, arg);
     }
-    auto const *dre = dyn_cast<DeclRefExpr>(e);
+
+    auto const *dre = getDREChild(e);
     if(!dre) {
-        CNS_DEBUG_MSG("Null DRE");
-        auto const *dre2 = getDREChild(e);
-        if(dre2) {
-            CNS_DEBUG_MSG("Found dre from child expr");
-            CNS_DEBUG_MSG(" end");
-            // get declref expr for arg
-            return {
-                cnsHash(context, arg),
+        CNS_WARN(logKey, "Null DRE from expr '{}'", String(context, *e));
+        CNS_WARN_MSG(logKey, "end");
+        return buildLimitedArgOp(context, sm, call, *e);
+    }
+
+    CNS_DEBUG_MSG(logKey, "Found dre from child expr");
+
+    CNS_DEBUG(logKey, "Building arg op to return from '{}'", String(context, *e));
+    OpData to = {
+                cnsHash(context, *e),
                 String(context, *e),
                 Typename(context, *e),
                 TypeCategory(context, *e),
@@ -495,41 +505,27 @@ OpData buildArgOp(clang::ASTContext &context,
                 getLinkedRecord(*e),
                 linkedTypeCategory(*e),
                 call.getExprLoc().printToString(sm),
+                //String(context, *e), //
                 qualifiedName(context, call, *e)
             };
-        }
-        else {
-            CNS_WARN_MSG("No DRE in child expr");
-            CNS_WARN_MSG(" end");
-            return {
-                cnsHash(context, arg),
-                String(context, arg),
-                "", //Typename(context, arg),
-                "", //TypeCategory(context, arg),
-                String(context, arg),
-                getContainerFunction(context, arg),
-                getLinkedRecord(arg),
-                linkedTypeCategory(arg),
-                call.getExprLoc().printToString(sm),
-                qualifiedName(context, call, arg)
-            };
-        }
-    }
-    CNS_INFO_MSG("Got DRE from arg.");
-    CNS_DEBUG_MSG(" end");
-    return buildOpData(context, sm, arg, *dre);
+
+    CNS_DEBUG_MSG(logKey, "end");
+    // 'to' will be the dom for the function param
+    return to;
 }
 
 void buildOpDatas(clang::ASTContext &context,
         clang::SourceManager const &sm,
         clang::CallExpr const &call) {
 
-    CNS_INFO_MSG("");
+    auto const logKey = String(context, call);
+    CNS_INFO_MSG(logKey, "begin");
+
     // for each arg
     unsigned pos = 0;
     std::for_each(call.arg_begin(), call.arg_end(),
         [&](auto const *arg) {
-            CNS_INFO_MSG("Building lhs(Arg) opData.");
+            CNS_INFO(logKey, "Building lhs(Arg) opData for '{}'", String(context, *arg));
             OpData lhs, rhs;
             // create source(arg) op
             lhs = buildArgOp(context, sm, call, *arg);
@@ -548,14 +544,14 @@ void buildOpDatas(clang::ASTContext &context,
             }
 
             // create target(param) op
-            CNS_INFO_MSG("Building rhs(Param) opData.");
+            CNS_INFO_MSG(logKey, "Building rhs(Param) opData");
             auto const *parmd = getParamDecl(context, call, pos);
             if(parmd) {
-                CNS_INFO_MSG("Got ParamDecl.");
+                CNS_INFO(logKey, "Got ParamDecl '{}'", String(context, *parmd));
                 auto const *parm = dyn_cast<clang::ParmVarDecl>(parmd);
                 if(!parm) {
-                    CNS_ERROR_MSG("Got ParamDecl but no ParmVarDecl.");
-                    CNS_INFO_MSG("end");
+                    CNS_ERROR_MSG(logKey, "Got ParamDecl but no ParmVarDecl");
+                    CNS_INFO_MSG(logKey, "end");
                     return;
                 }
 
@@ -576,50 +572,50 @@ void buildOpDatas(clang::ASTContext &context,
             }
 
             else {
-                CNS_INFO_MSG("No ParamDecl.");
+                CNS_INFO_MSG(logKey, "No ParamDecl.");
 
                 // getcalleedecl() will not work
                 auto const *fn = call.getCallee();
                 if(fn) {
-                    CNS_INFO_MSG("Got Callee expr.");
+                    CNS_INFO_MSG(logKey, "Got Callee expr.");
                     // In case of fptr, it is likely that function decl is not available.
                     // Get the qn of fptr
                     std::string qns;
                     qns.reserve(64);
                     auto const *fptrp = call.IgnoreImplicit();
                     if(fptrp) {
-                        CNS_INFO_MSG("Got fptr from call expr after implicitignore.");
+                        CNS_INFO_MSG(logKey, "Got fptr from call expr after implicitignore.");
                         auto const * dre = dyn_cast<clang::DeclRefExpr>(fptrp);
                         if(dre) {
-                            CNS_INFO_MSG("Got dre from fptr.");
+                            CNS_INFO_MSG(logKey, "Got dre from fptr.");
                             qns = qualifiedName(context, *dre);
                         }
                         else {
-                            CNS_INFO_MSG("No dre from fptr.");
+                            CNS_INFO_MSG(logKey, "No dre from fptr.");
                             for(auto child: call.children()) {
                                 auto const *ce = dyn_cast<clang::CastExpr>(child);
                                 if(ce) {
-                                    CNS_INFO_MSG("Got castexpr from fptr.");
+                                    CNS_INFO_MSG(logKey, "Got castexpr from fptr.");
                                     auto const *dre = dyn_cast<clang::DeclRefExpr>(ce->getSubExpr());
                                     if(dre) {
-                                        CNS_INFO_MSG("Got dre from castexpr.");
+                                        CNS_INFO_MSG(logKey, "Got dre from castexpr.");
                                         qns = qualifiedName(context, *dre);
                                         break;
                                     }
                                     else {
-                                        CNS_INFO_MSG("No dre from castexpr.");
+                                        CNS_INFO_MSG(logKey, "No dre from castexpr.");
                                     }
                                 }
                                 else {
-                                    CNS_INFO_MSG("No castexpr from fptr.");
+                                    CNS_INFO_MSG(logKey, "No castexpr from fptr.");
                                     auto const *dre = dyn_cast<clang::DeclRefExpr>(child);
                                     if(dre) {
-                                        CNS_INFO_MSG("Got dre from child.");
+                                        CNS_INFO_MSG(logKey, "Got dre from child.");
                                         qns = qualifiedName(context, *dre);
                                         break;
                                     }
                                     else {
-                                        CNS_INFO_MSG("No dre from child.");
+                                        CNS_INFO_MSG(logKey, "No dre from child.");
                                     }
                                 }
                             }
@@ -642,7 +638,7 @@ void buildOpDatas(clang::ASTContext &context,
                         }
                     }
                     else {
-                        CNS_INFO_MSG("No fptr from call expr after implicitignore.");
+                        CNS_INFO_MSG(logKey, "No fptr from call expr after implicitignore.");
                     }
                     if(qns.empty()) {
                         qns = String(context, *fn); // + ".$" + to_string(pos);
@@ -662,7 +658,7 @@ void buildOpDatas(clang::ASTContext &context,
                     };
                 }
                 else {
-                    CNS_INFO_MSG("No Callee either.");
+                    CNS_INFO_MSG(logKey, "No Callee either.");
                     rhs = {
                         cnsHash(context, *arg),
                         String(context, *arg),
@@ -692,13 +688,13 @@ void buildOpDatas(clang::ASTContext &context,
             */
             if(TypeTransforms.find(lhs.qn_) == std::end(TypeTransforms)) {
                 // Add H(from)
-                CNS_INFO(":from: New history started for {}", lhs.qn_);
+                CNS_INFO(logKey, ":from: New history started for {}", lhs.qn_);
                 TypeTransforms.emplace(lhs.qn_, lhs.qn_);
                 //TypeTransforms.insert({lhs.qn_, History(lhs.qn_)});
             }
             if(TypeTransforms.find(rhs.qn_) == std::end(TypeTransforms)) {
                 // Add H(to)
-                CNS_INFO(":to: New history started for {}", rhs.qn_);
+                CNS_INFO(logKey, ":to: New history started for {}", rhs.qn_);
                 TypeTransforms.emplace(rhs.qn_, rhs.qn_);
                 //TypeTransforms.insert({rhs.qn_, History(rhs.qn_)});
                 // Why is this needed?
@@ -707,28 +703,29 @@ void buildOpDatas(clang::ASTContext &context,
             logCensusUpdate(lhs, rhs, dom);
             pos++;
         });
-    CNS_INFO_MSG("end");
+    CNS_INFO_MSG(logKey, "end");
 }
 
 void addCallHistory(clang::ASTContext & context, clang::CallExpr const& call) {
-    CNS_INFO_MSG("");
-    auto const *calledFn = getCalleeDecl(call);
+    auto const logKey = String(context, call) + "()";
+    CNS_INFO_MSG(logKey, "begin");
+    auto const *calledFn = getCalleeDecl(context, call);
     assert(calledFn);
     std::string fn;
     if(!calledFn) {
-        CNS_ERROR_MSG("Null callee decl. Maybe an fptr.");
+        CNS_ERROR_MSG(logKey, "Null callee decl. Maybe an fptr.");
 
         auto const *fptr = getFptrFromFptrCall(context, call);
         if(!fptr) {
-            CNS_ERROR_MSG("No fptr either. end");
+            CNS_ERROR_MSG(logKey, "No fptr either. end");
             return;
         }
 
         fn = qualifiedNameFromFptrCall(context, call);
         auto it = std::find(begin(TransformTemplates), end(TransformTemplates), fn);
         if(it == std::end(TransformTemplates)) {
-            CNS_DEBUG("No template found for: {}()", fn);
-            CNS_DEBUG("Adding new template for: {}()", fn);
+            CNS_DEBUG(logKey, "No template found for: {}()", fn);
+            CNS_DEBUG(logKey, "Adding new template for: {}()", fn);
             TransformTemplates.push_back({context, call, *fptr});
         }
     }
@@ -737,15 +734,15 @@ void addCallHistory(clang::ASTContext & context, clang::CallExpr const& call) {
     }
     auto it = std::find(begin(TransformTemplates), end(TransformTemplates), fn);
     if(it == std::end(TransformTemplates)) {
-        CNS_DEBUG("No template found for: {}()", fn);
-        CNS_DEBUG("Adding new template for: {}()", fn);
+        CNS_DEBUG(logKey, "No template found for: {}()", fn);
+        CNS_DEBUG(logKey, "Adding new template for: {}()", fn);
         // Likely to happen.
         // Create new template from calleeDecl and instantiate.
         TransformTemplates.push_back({*calledFn});
         auto it2 = std::find(begin(TransformTemplates), end(TransformTemplates), fn);
         if(it2 == std::end(TransformTemplates)) {
-            CNS_ERROR("New template insertion failed for {}()", fn);
-            CNS_DEBUG_MSG("end");
+            CNS_ERROR(logKey, "New template insertion failed for {}()", fn);
+            CNS_DEBUG_MSG(logKey, "end");
             return;
         }
         else {
@@ -756,44 +753,44 @@ void addCallHistory(clang::ASTContext & context, clang::CallExpr const& call) {
     // Instantiate template and add to history
     auto hs = it->instantiate(context, call);
     if(hs.size() != call.getNumArgs()) {
-        CNS_ERROR_MSG("History count does not match arg count, cannot assign history to args.");
-        CNS_DEBUG_MSG("end");
+        CNS_ERROR_MSG(logKey, "History count does not match arg count, cannot assign history to args.");
+        CNS_DEBUG_MSG(logKey, "end");
         return;
     }
 
     // For each arg operand opA, H(opA) is extended by H(A).
     unsigned i = 0;
     std::for_each(call.arg_begin(), call.arg_end(), [&](auto const *a) {
-            CNS_DEBUG_MSG("for_each arg");
+            CNS_DEBUG_MSG(logKey, "for_each arg");
             // get key for a
             auto const argQn = qualifiedName(context, call, *a);
 
             // Contextualized history = local history; arg history gets extended by local contextual parm history
             // Search history of a
             if(TypeTransforms.find(argQn) != std::end(TypeTransforms)) {
-                CNS_DEBUG("Found existing history for {}", argQn);
+                CNS_DEBUG(logKey, "Found existing history for {}", argQn);
                 // extend history
                 if(i < hs.size()) {
-                    CNS_INFO("Extending history for {} with {}", argQn, hs[i].id());
+                    CNS_INFO(logKey, "Extending history for {} with {}", argQn, hs[i].id());
                     TypeTransforms.at(argQn).extend(hs.at(i));
                 }
                 else {
-                    CNS_ERROR_MSG("Out of bound history insert.");
+                    CNS_ERROR_MSG(logKey, "Out of bound history insert.");
                 }
             }
             else {
                 // add new history
-                CNS_DEBUG("Adding new history for {}", argQn);
+                CNS_DEBUG(logKey, "Adding new history for {}", argQn);
                 //TypeTransforms.insert({hs[i].opId(), hs[i]});
                 auto hqn = History(argQn);
-                CNS_DEBUG("Extending history for {} with {}", argQn, hs[i].id());
+                CNS_DEBUG(logKey, "Extending history for {} with {}", argQn, hs[i].id());
                 hqn.extend(hs[i]);
                 TypeTransforms.emplace(argQn, std::move(hqn));
                 //TypeTransforms.insert({qn, hqn});
             }
             ++i;
         });
-    CNS_DEBUG_MSG("end");
+    CNS_DEBUG_MSG(logKey, "end");
 }
 
 // For call expressions:
@@ -802,12 +799,13 @@ void preprocess(
         clang::SourceManager const &sm,
         clang::CallExpr const &call) {
 
-    CNS_DEBUG_MSG("<CallExpr>");
-    auto const *calledFn = getCalleeDecl(call);
+    auto const logKey = String(context, call);
+    CNS_DEBUG_MSG(logKey, "begin");
+    auto const *calledFn = getCalleeDecl(context, call);
     assert(calledFn);
     if(!calledFn) {
-        CNS_ERROR_MSG("<CallExpr> null callee decl");
-        CNS_DEBUG_MSG("<CallExpr> end");
+        CNS_ERROR_MSG(logKey, "Null callee decl");
+        CNS_DEBUG_MSG(logKey, "end");
         return;
     }
 
@@ -817,20 +815,20 @@ void preprocess(
     auto const fcs = sm.getFileCharacteristic(call.getExprLoc());
     if(clang::SrcMgr::isSystem(fcs)) {
         ignoreFunctions.push_back(fn);
-        CNS_INFO("Ignoring system function: {}", String(context, *calledFn));
-        CNS_DEBUG_MSG("<CallExpr> end");
+        CNS_INFO(logKey, "Ignoring system function: {}", String(context, *calledFn));
+        CNS_DEBUG_MSG(logKey, "end");
         return; // ignore
     }
     if(std::find(begin(ignoreFunctions), end(ignoreFunctions), fn) != end(ignoreFunctions)) {
-        CNS_INFO("Skipping ignored function: {}", String(context, *calledFn));
-        CNS_DEBUG_MSG("<CallExpr> end");
+        CNS_INFO(logKey, "Skipping ignored function: {}", String(context, *calledFn));
+        CNS_DEBUG_MSG(logKey, "end");
         return; // ignore
     }
 
     auto h = cnsHash(context, *calledFn);
     if(std::find(begin(seenFunctions), end(seenFunctions), h) != end(seenFunctions)) {
-        CNS_INFO("Skipping seen function: {}", String(context, *calledFn));
-        CNS_DEBUG_MSG("<CallExpr> end");
+        CNS_INFO(logKey, "Skipping seen function: {}", String(context, *calledFn));
+        CNS_DEBUG_MSG(logKey, "end");
         return; // seen
     }
 
@@ -852,15 +850,15 @@ void preprocess(
     // Perhaps that's not true TODO Check
     auto it = std::find(begin(TransformTemplates), end(TransformTemplates), fn);
     if(it == std::end(TransformTemplates)) {
-        CNS_INFO("Adding template for function: {}()", fn);
+        CNS_INFO(logKey, "Adding template for function: {}()", fn);
         TransformTemplates.push_back({*calledFn});
     }
     else {
-        CNS_INFO("Template for function: {}() exists", fn);
+        CNS_INFO(logKey, "Template for function: {}() exists", fn);
     }
     // TODO end
 
-    CNS_DEBUG_MSG("<CallExpr> end");
+    CNS_DEBUG_MSG(logKey, "end");
 }
 
 // Earlier, all process functions would take ASTContext and match result as input
@@ -875,7 +873,8 @@ void preprocess(
 //
 //
 void processFunctionCall(MatchFinder::MatchResult const &result) {
-    CNS_DEBUG_MSG("");
+    constexpr auto logKey = "<FunctionCallMatch>";
+    CNS_DEBUG_MSG(logKey, "begin");
 
     assert(result);
     auto *context = result.Context;
@@ -883,25 +882,27 @@ void processFunctionCall(MatchFinder::MatchResult const &result) {
 
     auto const *call = result.Nodes.getNodeAs<CallExpr>("ce");
     assert(call);
-    CNS_DEBUG("FunctionCall match at: '{}'", call->getExprLoc().printToString(*result.SourceManager));
-    CNS_DEBUG("Call : '{}'", String(*context, *call));
+    CNS_DEBUG(logKey, "Match at: '{}'", call->getExprLoc().printToString(*result.SourceManager));
+    CNS_DEBUG(logKey, "Call : '{}'", String(*context, *call));
 
-    auto const *calledFn = getCalleeDecl(*call);
+    auto const *calledFn = getCalleeDecl(*context, *call);
     if(calledFn) {
         auto const& fn = calledFn->getNameAsString();
         auto const fcs = result.SourceManager->getFileCharacteristic(call->getExprLoc());
         if(clang::SrcMgr::isSystem(fcs)) {
             ignoreFunctions.push_back(fn);
-            CNS_INFO("Ignoring system function: {}", fn);
-            CNS_DEBUG_MSG(" end");
+            CNS_INFO(logKey, "Ignoring system function: {}", fn);
+            CNS_DEBUG_MSG(logKey, "end");
             return; // ignore
         }
     }
+    /*
     else {
-        CNS_INFO("Cannot find decl for call '{}', skipping", String(*context, *call));
-        CNS_DEBUG_MSG(" end");
+        CNS_INFO(logKey, "Cannot find decl for call '{}', skipping", String(*context, *call));
+        CNS_DEBUG_MSG(logKey, "end");
         return;
     }
+    */
 
     // - Preprocess call.
     preprocess(*context, *result.SourceManager, *call);
@@ -910,7 +911,7 @@ void processFunctionCall(MatchFinder::MatchResult const &result) {
     //
     addCallHistory(*context, *call);
 
-    CNS_DEBUG_MSG(" end");
+    CNS_DEBUG_MSG(logKey, "end");
 }
 
 //----------------------------------------------------------------------------
@@ -1017,9 +1018,10 @@ public:
         }
         */
 
-        CNS_INFO_MSG("# Census summary so far:");
+        constexpr auto logKey = "<summary>";
+        CNS_INFO_MSG(logKey, "# Census summary so far:");
         censusSummary();
-        CNS_INFO_MSG("# end Census summary so far");
+        CNS_INFO_MSG(logKey, "# end Census summary so far");
 
         /*
         std::for_each(begin(TypeTransforms), end(TypeTransforms),
