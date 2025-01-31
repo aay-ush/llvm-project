@@ -321,6 +321,7 @@ std::vector<CensusKey> UseChain(OpData const &op) {
     return usechain;
 }
 
+/*
 void elaborateUse(OpData const &node, std::optional<int> level) {
     CNS_DEBUG_MSG(node.qn_, "begin");
     node.use_.clear();
@@ -343,6 +344,7 @@ void elaborateUse(OpData const &node, std::optional<int> level) {
     }
     CNS_DEBUG_MSG(node.qn_, "end");
 }
+*/
 
 //--
 /*

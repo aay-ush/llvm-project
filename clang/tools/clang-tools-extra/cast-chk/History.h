@@ -1608,7 +1608,8 @@ void summarize(std::ostream &os, TypeSummary const &ts, unsigned depth = 0) {
 
 // Create copies of typetransforms. Then resolve and update history branches as needed.
 // Eliminate local history with history by using context.
-void elaborateHistory(History const &h) {//, std::optional<int> level) {
+//void elaborateHistory(History const &histree) {//, std::optional<int> level) {
+void elaborateHistories() {
     LOG_FUNCTION_TIME;
     constexpr auto logKey = "<elab>";
     CNS_DEBUG_MSG(logKey, "begin");

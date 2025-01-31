@@ -1149,10 +1149,13 @@ void printCollection(std::FILE *fp) {
 void printCollection() {
     LOG_FUNCTION_TIME;
 
+    elaborateHistories();
+    /*
     std::for_each(begin(TypeTransforms), end(TypeTransforms),
         [&](auto &h) {
             elaborateHistory(h.second); //, {3});
         });
+    */
 
     printCollection(fOUT);
     printCollection(stdout);
