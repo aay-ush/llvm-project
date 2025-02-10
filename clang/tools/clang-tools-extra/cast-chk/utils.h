@@ -53,7 +53,7 @@ void vlog(char const * severity, char const * func, int line, std::string const&
 
 template <typename S, typename... Args>
 void log(char const * severity, char const * func, int line, std::string const& key, S const & format, Args&&... args) {
-    vlog(severity, func, line, key, format, fmt::internal::make_args_checked<Args...>(format, args...));
+    vlog(severity, func, line, key, format, fmt::make_args_checked<Args...>(format, args...));
 }
 
 /*

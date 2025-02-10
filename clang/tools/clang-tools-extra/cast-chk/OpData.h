@@ -148,7 +148,7 @@ OpData buildOpData(
         clang::SourceManager const &sm,
         clang::CastExpr const &castExpr,
         T const &e) {
-    static_assert(impl_false<s_type>, "Unknown cast source type used");
+    static_assert(impl_false<T>, "Unknown cast source type used");
 }
 
 // Build operand from ParamDecl
