@@ -456,6 +456,7 @@ void censusSummary() {
     constexpr auto logKey = "<cenSus>";
     CNS_DEBUG_MSG(logKey, "<void> begin");
 
+    if(SEVERITY_FILTER & cns::logging::severity::Info) {
     // build usechain
     /*
     for(auto const &[_, info]: census) {
@@ -503,6 +504,7 @@ void censusSummary() {
         }
         FOUT << "\n\n";
         */
+    }
     }
     CNS_DEBUG_MSG(logKey, "<void> end");
 }

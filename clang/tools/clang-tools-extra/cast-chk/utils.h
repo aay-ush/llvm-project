@@ -47,13 +47,46 @@ FILE * fOUT = nullptr;
 #include <fmt/core.h>
 #include <fmt/format.h>
 
-void vlog(char const * severity, char const * func, int line, std::string const& key, fmt::string_view fmt, fmt::format_args args) {
+namespace cns {
+    namespace logging {
+    enum severity: unsigned {
+        None = 0,
+        Debug = 1 << 0,
+        Info = 1 << 1,
+        Warn = 1 << 2,
+        Error = 1 << 3,
+    };
+
+    constexpr auto format_as(cns::logging::severity s) {
+        switch(s) {
+            case cns::logging::severity::None:
+                return "None";
+            case cns::logging::severity::Debug:
+                return "DEBUG";
+            case cns::logging::severity::Info:
+                return "INFO";
+            case cns::logging::severity::Warn:
+                return "WARN";
+            case cns::logging::severity::Error:
+                return "ERROR";
+        };
+
+        return "None";
+    }
+    }
+}
+
+void vlog(cns::logging::severity severity, char const * func, int line, std::string const& key, fmt::string_view fmt, fmt::format_args args) {
     fmt::print(fOUT, "[{}] {}():{}: {} | {}\n" , severity, func, line, key, fmt::vformat(fmt, args));
 }
 
+unsigned SEVERITY_FILTER = 1<<4;
+
 template <typename S, typename... Args>
-void log(char const * severity, char const * func, int line, std::string const& key, S const & format, Args&&... args) {
-    vlog(severity, func, line, key, format, fmt::make_args_checked<Args...>(format, args...));
+void log(cns::logging::severity severity, char const * func, int line, std::string const& key, S const & format, Args&&... args) {
+    if(SEVERITY_FILTER & severity) {
+        vlog(severity, func, line, key, format, fmt::make_args_checked<Args...>(format, args...));
+    }
 }
 
 /*
@@ -63,8 +96,11 @@ void log(char const * severity, char const * func, int line, fmt::format_string<
 }
 */
 
-void logm(char const * severity, char const * func, int line, std::string const& key, fmt::string_view msg) {
-    fmt::print(fOUT, "[{}] {}():{}: {} | {}\n" , severity, func, line, key, msg);
+//void logm(char const * severity, char const * func, int line, std::string const& key, fmt::string_view msg) {
+void logm(cns::logging::severity severity, char const * func, int line, std::string const& key, fmt::string_view msg) {
+    if(SEVERITY_FILTER & severity) {
+        fmt::print(fOUT, "[{}] {}():{}: {} | {}\n" , severity, func, line, key, msg);
+    }
 }
 
 #define CNS_LOG_LEVEL_DEBUG {}
@@ -73,32 +109,32 @@ void logm(char const * severity, char const * func, int line, std::string const&
 #define CNS_LOG_LEVEL_ERROR {}
 
 #ifdef CNS_LOG_LEVEL_DEBUG
-#define CNS_DEBUG(key, fmt, ...) {log("DEBUG", __FUNCTION__, __LINE__, key, fmt, __VA_ARGS__);}
-#define CNS_DEBUG_MSG(key, msg) {logm("DEBUG", __FUNCTION__, __LINE__, key, msg);}
+#define CNS_DEBUG(key, fmt, ...) {log(cns::logging::severity::Debug, __FUNCTION__, __LINE__, key, fmt, __VA_ARGS__);}
+#define CNS_DEBUG_MSG(key, msg) {logm(cns::logging::severity::Debug, __FUNCTION__, __LINE__, key, msg);}
 #else
 #define CNS_DEBUG(key, fmt, ...) {}
 #define CNS_DEBUG_MSG(key, msg) {}
 #endif
 
 #ifdef CNS_LOG_LEVEL_INFO
-#define CNS_INFO(key, fmt, ...) {log(" INFO", __FUNCTION__, __LINE__, key, fmt, __VA_ARGS__);}
-#define CNS_INFO_MSG(key, msg) {logm(" INFO", __FUNCTION__, __LINE__, key, msg);}
+#define CNS_INFO(key, fmt, ...) {log(cns::logging::severity::Info, __FUNCTION__, __LINE__, key, fmt, __VA_ARGS__);}
+#define CNS_INFO_MSG(key, msg) {logm(cns::logging::severity::Info, __FUNCTION__, __LINE__, key, msg);}
 #else
 #define CNS_INFO(key, fmt, ...) {}
 #define CNS_INFO_MSG(key, msg) {}
 #endif
 
 #ifdef CNS_LOG_LEVEL_WARN
-#define CNS_WARN(key, fmt, ...) {log(" WARN", __FUNCTION__, __LINE__, key, fmt, __VA_ARGS__);}
-#define CNS_WARN_MSG(key, msg) {logm(" WARN", __FUNCTION__, __LINE__, key, msg);}
+#define CNS_WARN(key, fmt, ...) {log(cns::logging::severity::Warn, __FUNCTION__, __LINE__, key, fmt, __VA_ARGS__);}
+#define CNS_WARN_MSG(key, msg) {logm(cns::logging::severity::Warn, __FUNCTION__, __LINE__, key, msg);}
 #else
 #define CNS_WARN(key, fmt, ...) {}
 #define CNS_WARN_MSG(key, msg) {}
 #endif
 
 #ifdef CNS_LOG_LEVEL_ERROR
-#define CNS_ERROR(key, fmt, ...) {log("ERROR", __FUNCTION__, __LINE__, key, fmt, __VA_ARGS__);}
-#define CNS_ERROR_MSG(key, msg) {logm("ERROR", __FUNCTION__, __LINE__, key, msg);}
+#define CNS_ERROR(key, fmt, ...) {log(cns::logging::severity::Error, __FUNCTION__, __LINE__, key, fmt, __VA_ARGS__);}
+#define CNS_ERROR_MSG(key, msg) {logm(cns::logging::severity::Error, __FUNCTION__, __LINE__, key, msg);}
 #else
 #define CNS_ERROR(key, fmt, ...) {}
 #define CNS_ERROR_MSG(key, msg) {}

@@ -113,7 +113,9 @@ void appendNodeDominator(
     }
 
     CNS_INFO_MSG(logKey, "New Dominator Appended: {");
-    fmt::print(fOUT, "{}\n\n", dump(dom));
+    if(SEVERITY_FILTER & cns::logging::severity::Info) {
+        fmt::print(fOUT, "{}\n\n", dump(dom));
+    }
     CNS_INFO_MSG(logKey, "}");
     CNS_DEBUG_MSG(logKey, "end");
 }
@@ -124,9 +126,13 @@ void chkNodeDataForChange(OpData const &node) {
     auto const& [old, _] = census[node.qn_];
     if(old != node) {
         CNS_WARN(logKey, "Old node with different OpData '{}':", String(old));
-        fmt::print(fOUT, "{}\n\n", dump(old));
+        if(SEVERITY_FILTER & cns::logging::severity::Warn) {
+            fmt::print(fOUT, "{}\n\n", dump(old));
+        }
         CNS_WARN(logKey, "New OpData '{}':", String(node));
-        fmt::print(fOUT, "{}\n\n", dump(node));
+        if(SEVERITY_FILTER & cns::logging::severity::Warn) {
+            fmt::print(fOUT, "{}\n\n", dump(node));
+        }
     }
     CNS_DEBUG_MSG(logKey, "end");
 }
@@ -334,7 +340,9 @@ void updateCensus(
     };
 
     updateCensus(lhs, rhs, dom);
-    logCensusUpdate(lhs, rhs, dom);
+    if(SEVERITY_FILTER & cns::logging::severity::Info) {
+        logCensusUpdate(lhs, rhs, dom);
+    }
     CNS_DEBUG_MSG(logKey, "<T> end");
 }
 
@@ -408,7 +416,9 @@ void updateCensus(
 
     DominatorData dom = buildVarDeclDom(context, lhs, dest);
     updateCensus(lhs, rhs, dom);
-    logCensusUpdate(lhs, rhs, dom);
+    if(SEVERITY_FILTER & cns::logging::severity::Info) {
+        logCensusUpdate(lhs, rhs, dom);
+    }
     CNS_DEBUG_MSG(logKey, "<declrefexpr, varDecl> end");
 }
 
@@ -739,7 +749,9 @@ void buildOpDatas(clang::ASTContext &context,
                 // Why is this needed?
                 //TypeTransforms.at(lhs.qn_).extend(TypeTransforms.at(rhs.qn_));
             }
-            logCensusUpdate(lhs, rhs, dom);
+            if(SEVERITY_FILTER & cns::logging::severity::Info) {
+                logCensusUpdate(lhs, rhs, dom);
+            }
             pos++;
         });
     CNS_INFO_MSG(logKey, "end");
@@ -1116,7 +1128,22 @@ public:
 //-----------------------------------------------------------------------------------------
 
 // Apply a custom category to all cli options so that they are the only ones displayed
-static llvm::cl::OptionCategory MyToolCategory("my-tool options");
+static llvm::cl::OptionCategory tccCategory("tcc run options");
+
+static cl::opt<int> optSummaryDepth(
+        "summary-depth",
+        cl::desc("Control depth of summary tree in output"),
+        cl::init(4), cl::cat(tccCategory));
+
+static cl::opt<unsigned> optVerbosity(
+        "v",
+        cl::desc("Control output log level: 0(None), 1(All), 2(Info), 4(Warn), 8(Errors)"),
+        cl::init(0), cl::cat(tccCategory));
+
+static cl::opt<bool> optIgnoreCDB(
+        "no-cdb",
+        cl::desc("Ignore compile db and use input c filenames"),
+        cl::init(false), cl::cat(tccCategory));
 
 // CommonOptionsParser declares HelpMessage with a description of the common cli options
 // related to the compilation db and input files. (Nice to have help)
@@ -1127,22 +1154,42 @@ static cl::extrahelp Morehelp("\nMore help text...\n");
 
 void buildIgnoreList();
 void printCollection();
+std::vector<std::string> filterC(CompilationDatabase const& cdb);
 
 int main(int argc, const char **argv) {
-    if(argc > 1) {
-        // Make sure last arg is summary depth
-        SUMMARY_DEPTH = std::atoi(argv[argc - 1]);
-        argc = argc - 1;
-    }
-    auto ExpectedParser = CommonOptionsParser::create(argc, argv, MyToolCategory);
+    auto ExpectedParser = CommonOptionsParser::create(argc, argv, tccCategory);
     if(!ExpectedParser) {
         llvm::errs() << ExpectedParser.takeError();
         return 1;
     }
 
     CommonOptionsParser &OptionsParser = ExpectedParser.get();
+
+    SUMMARY_DEPTH = optSummaryDepth;
+    SEVERITY_FILTER = optVerbosity;
+
+    std::vector<std::string> cfiles;
+    if(!optIgnoreCDB) {
+        auto &cdb = OptionsParser.getCompilations();
+        cfiles = filterC(cdb);
+        if(cfiles.empty()) {
+            // No files to process
+            fmt::print("Compile DB is empty!");
+            return 1;
+        }
+    }
+    else {
+        auto optSources = OptionsParser.getSourcePathList();
+        cfiles = optSources;
+        fmt::print("Input files: ");
+        for(auto const& os: optSources) {
+            fmt::print("{}\n", os);
+        }
+        fmt::print("\n");
+    }
+
     ClangTool Tool(OptionsParser.getCompilations(),
-                   OptionsParser.getSourcePathList());
+                   cfiles);
 
     CastMatchCallback historian;
     MatchFinder Finder;
@@ -1164,6 +1211,28 @@ int main(int argc, const char **argv) {
     fclose(fOUT);
     return rc;
 }
+
+std::vector<std::string> filterC(CompilationDatabase const& cdb) {
+    auto sources = cdb.getAllFiles();
+    std::vector<std::string> verified_sources;
+    for(auto const& s: sources) {
+        // Check that source has a valid path
+        SmallString<255> AbsPath;
+        if (s.empty()) {
+        // Strangely, llvm::sys::fs::real_path successfully returns the empty string
+        // in this case. Return ENOENT, as realpath(3) would.
+            //EC = std::error_code(ENOENT, std::generic_category());
+            continue;
+        }
+        if(s.substr(s.size()-2) == ".c") {
+            if(!(llvm::sys::fs::real_path(s, AbsPath))) {
+                verified_sources.push_back(s);
+            }
+        }
+    }
+    return verified_sources;
+}
+
 
 void printCollection(std::FILE *fp) {
     LOG_FUNCTION_TIME;
