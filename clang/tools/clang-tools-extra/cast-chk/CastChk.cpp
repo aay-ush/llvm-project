@@ -1155,8 +1155,15 @@ static cl::extrahelp Morehelp("\nMore help text...\n");
 void buildIgnoreList();
 void printCollection();
 std::vector<std::string> filterC(CompilationDatabase const& cdb);
+std::vector<std::string> filterC(std::vector<std::string> input);
 
 int main(int argc, const char **argv) {
+    fOUT = fopen("census-dump.txt", "w");
+    if(fOUT == nullptr) {
+        fmt::print(stderr, "Error opening census-dump.txt\n");
+        return 1;
+    }
+
     auto ExpectedParser = CommonOptionsParser::create(argc, argv, tccCategory);
     if(!ExpectedParser) {
         llvm::errs() << ExpectedParser.takeError();
@@ -1174,18 +1181,16 @@ int main(int argc, const char **argv) {
         cfiles = filterC(cdb);
         if(cfiles.empty()) {
             // No files to process
-            fmt::print("Compile DB is empty!");
+            fmt::print("Compile DB has no C files to process!");
             return 1;
         }
     }
     else {
-        auto optSources = OptionsParser.getSourcePathList();
-        cfiles = optSources;
-        fmt::print("Input files: ");
-        for(auto const& os: optSources) {
-            fmt::print("{}\n", os);
+        cfiles = filterC(OptionsParser.getSourcePathList());
+        if(cfiles.empty()) {
+            fmt::print("No C file in input!");
+            return 1;
         }
-        fmt::print("\n");
     }
 
     ClangTool Tool(OptionsParser.getCompilations(),
@@ -1198,12 +1203,6 @@ int main(int argc, const char **argv) {
     Finder.addMatcher(CastMatcher, &historian);
 
     buildIgnoreList();
-    //FOUT.open("census-dump.old.txt", std::ios::out);
-    fOUT = fopen("census-dump.txt", "w");
-    if(fOUT == nullptr) {
-        fmt::print(stderr, "Error opening census-dump.txt\n");
-        return 1;
-    }
     //return Tool.run(newFrontendActionFactory<clang::SyntaxOnlyAction>().get());
     //return Tool.run(newFrontendActionFactory(&Finder).get());
     auto rc = Tool.run(newFrontendActionFactory(&Finder).get());
@@ -1212,18 +1211,11 @@ int main(int argc, const char **argv) {
     return rc;
 }
 
-std::vector<std::string> filterC(CompilationDatabase const& cdb) {
-    auto sources = cdb.getAllFiles();
+std::vector<std::string> filterC(std::vector<std::string> input) {
     std::vector<std::string> verified_sources;
-    for(auto const& s: sources) {
+    for(auto const& s: input) {
         // Check that source has a valid path
         SmallString<255> AbsPath;
-        if (s.empty()) {
-        // Strangely, llvm::sys::fs::real_path successfully returns the empty string
-        // in this case. Return ENOENT, as realpath(3) would.
-            //EC = std::error_code(ENOENT, std::generic_category());
-            continue;
-        }
         if(s.substr(s.size()-2) == ".c") {
             if(!(llvm::sys::fs::real_path(s, AbsPath))) {
                 verified_sources.push_back(s);
@@ -1231,6 +1223,11 @@ std::vector<std::string> filterC(CompilationDatabase const& cdb) {
         }
     }
     return verified_sources;
+}
+
+std::vector<std::string> filterC(CompilationDatabase const& cdb) {
+    auto sources = cdb.getAllFiles();
+    return filterC(sources);
 }
 
 
