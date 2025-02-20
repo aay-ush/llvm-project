@@ -49,35 +49,39 @@ FILE * fOUT = nullptr;
 
 namespace cns {
     namespace logging {
-    enum severity: unsigned {
-        None = 0,
-        Debug = 1 << 0,
-        Info = 1 << 1,
-        Warn = 1 << 2,
-        Error = 1 << 3,
-    };
-
-    constexpr auto format_as(cns::logging::severity s) {
-        switch(s) {
-            case cns::logging::severity::None:
-                return "None";
-            case cns::logging::severity::Debug:
-                return "DEBUG";
-            case cns::logging::severity::Info:
-                return "INFO";
-            case cns::logging::severity::Warn:
-                return "WARN";
-            case cns::logging::severity::Error:
-                return "ERROR";
+        enum severity: unsigned {
+            None = 0,
+            Debug = 1 << 0,
+            Info = 1 << 1,
+            Warn = 1 << 2,
+            Error = 1 << 3,
         };
-
-        return "None";
-    }
     }
 }
 
+template<>
+struct fmt::formatter<cns::logging::severity>: formatter<string_view> {
+    format_context::iterator format(cns::logging::severity s, format_context& ctx) const {
+        string_view ret = "None";
+        switch(s) {
+            case cns::logging::severity::None:
+                ret = "None"; break;
+            case cns::logging::severity::Debug:
+                ret = "DEBUG"; break;
+            case cns::logging::severity::Info:
+                ret = "INFO"; break;
+            case cns::logging::severity::Warn:
+                ret = "WARN"; break;
+            case cns::logging::severity::Error:
+                ret = "ERROR"; break;
+        }
+        return formatter<string_view>::format(ret, ctx);
+    }
+};
+
+
 void vlog(cns::logging::severity severity, char const * func, int line, std::string const& key, fmt::string_view fmt, fmt::format_args args) {
-    fmt::print(fOUT, "[{}] {}():{}: {} | {}\n" , severity, func, line, key, fmt::vformat(fmt, args));
+    fmt::print(fOUT, "[{:<5}] {}():{}: {} | {}\n" , severity, func, line, key, fmt::vformat(fmt, args));
 }
 
 unsigned SEVERITY_FILTER = 1<<4;
@@ -99,7 +103,7 @@ void log(char const * severity, char const * func, int line, fmt::format_string<
 //void logm(char const * severity, char const * func, int line, std::string const& key, fmt::string_view msg) {
 void logm(cns::logging::severity severity, char const * func, int line, std::string const& key, fmt::string_view msg) {
     if(SEVERITY_FILTER & severity) {
-        fmt::print(fOUT, "[{}] {}():{}: {} | {}\n" , severity, func, line, key, msg);
+        fmt::print(fOUT, "[{:<5}] {}():{}: {} | {}\n" , severity, func, line, key, msg);
     }
 }
 
@@ -1422,7 +1426,7 @@ private:
 
 //--
 
-template<typename T>
+template<class>
 constexpr bool impl_false = false;
 
 /*

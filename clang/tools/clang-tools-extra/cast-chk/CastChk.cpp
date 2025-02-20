@@ -1137,7 +1137,7 @@ static cl::opt<int> optSummaryDepth(
 
 static cl::opt<unsigned> optVerbosity(
         "v",
-        cl::desc("Control output log level: 0(None), 1(All), 2(Info), 4(Warn), 8(Errors)"),
+        cl::desc("Control output log level: 0(None), 1(Errors), 2(Warnings), 3(Info), 4(Debug)"),
         cl::init(0), cl::cat(tccCategory));
 
 static cl::opt<bool> optIgnoreCDB(
@@ -1173,7 +1173,20 @@ int main(int argc, const char **argv) {
     CommonOptionsParser &OptionsParser = ExpectedParser.get();
 
     SUMMARY_DEPTH = optSummaryDepth;
-    SEVERITY_FILTER = optVerbosity;
+    switch(optVerbosity) {
+        case 0: // None
+            SEVERITY_FILTER = 0; break;
+        case 1: // Errors
+            SEVERITY_FILTER = 8; break;
+        case 2: // Warnings
+            SEVERITY_FILTER = 12; break;
+        case 3: // Info
+            SEVERITY_FILTER = 14; break;
+        case 4: // Debug
+            SEVERITY_FILTER = 15; break;
+        default: // Turn on errors
+            SEVERITY_FILTER = 8; break;
+    }
 
     std::vector<std::string> cfiles;
     if(!optIgnoreCDB) {
