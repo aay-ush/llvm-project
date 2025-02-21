@@ -195,7 +195,8 @@ OpData buildOpData(
         getLinkedRecord(arg),
         linkedTypeCategory(arg),
         arg.getExprLoc().printToString(sm),
-        String(context, arg), //qualifiedName(context, arg),
+        qualifiedName(context, arg)
+        //String(context, arg)
     };
 }
 
@@ -288,7 +289,7 @@ OpData buildOpData(
         getLinkedRecord(castExpr),
         linkedTypeCategory(castExpr),
         castExpr.getExprLoc().printToString(sm),
-        qualifiedName(context, s, e.getNameInfo())
+        String(context, s)//qualifiedName(context, s, e.getNameInfo())
     };
 }
 
@@ -379,7 +380,7 @@ OpData buildOpData(
         getLinkedRecord(castExpr),
         linkedTypeCategory(castExpr),
         castExpr.getExprLoc().printToString(sm),
-        String(context, e)
+        qualifiedName(context, e) //String(context, e)
     };
 }
 
@@ -440,7 +441,7 @@ OpData buildOpDataArg(
             getLinkedRecord(arg),
             linkedTypeCategory(arg),
             arg.getExprLoc().printToString(sm),
-            qualifiedName(context, *stmt, e.getNameInfo())
+            String(context, e) //qualifiedName(context, *stmt, e.getNameInfo())
         };
     }
 
@@ -456,7 +457,7 @@ OpData buildOpDataArg(
         getLinkedRecord(arg),
         linkedTypeCategory(arg),
         arg.getExprLoc().printToString(sm),
-        String(context, e)
+        qualifiedName(context, e) //String(context, e)
     };
 }
 
@@ -479,7 +480,7 @@ OpData buildOpData<CastSourceType::UnaryOp>(
         getLinkedRecord(castExpr),
         linkedTypeCategory(castExpr),
         castExpr.getExprLoc().printToString(sm),
-        String(context, op)
+        qualifiedName(context, op) //String(context, op)
     };
 }
 

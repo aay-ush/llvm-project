@@ -106,7 +106,7 @@ namespace {
         std::for_each(call.arg_begin(), call.arg_end(), [&](auto const *a) {
             CNS_DEBUG_MSG(logKey, "for_each arg.");
             // get arg qn
-            auto const key = qualifiedName(context, call, *a);
+            auto const key = qualifiedName(context, *a); //qualifiedName(context, call, *a);
             if(census.find(key) == census.end()) {
                 // Shouldn't really happen.
                 CNS_ERROR(logKey, "arg operand ({}) not in Census", key);
@@ -1099,7 +1099,7 @@ std::vector<LocalHistory> HistoryTemplate::instantiate(clang::ASTContext &contex
             else {
                 auto const *arge = call.getArg(pos);
                 if(!!arge) {
-                    auto const argqn = qualifiedName(context, call, *arge);
+                    auto const argqn = qualifiedName(context, *arge); //qualifiedName(context, call, *arge);
                     auto pdoms = doms(*itp);
                     if(!pdoms) {
                         CNS_ERROR(logKey, "Param '{}' has no doms", p);

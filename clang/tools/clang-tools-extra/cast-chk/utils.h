@@ -207,6 +207,192 @@ clang::Decl const* getParamDecl(ASTContext const &context, CallExpr const &call,
 std::optional<unsigned> getParameterMatch(clang::FunctionDecl const &fn, clang::DeclarationNameInfo const &matchInfo);
 
 //---//
+namespace {
+    /*
+    inline clang::Expr const* getSubExpr_(clang::UnaryOperator const& e) {
+        return e.getSubExpr();
+    }
+    inline clang::Expr const* getSubExpr_(clang::CastExpr const &e) {
+        return e.getSubExpr();
+    }
+    */
+    inline clang::Expr const* getSubExpr_(clang::MemberExpr const& e){
+        return e.getBase(); // Also checkout getMemberDecl
+    }
+    inline clang::Expr const* getSubExpr_(clang::ArraySubscriptExpr const&e) {
+        return e.getBase();
+    }
+    inline clang::Expr const* getSubExpr_(clang::UnaryExprOrTypeTraitExpr const&e) {
+        return e.getArgumentExpr();
+    }
+    template<typename T>
+    clang::Expr const* getSubExpr_(T const& expr) {
+        return expr.getSubExpr();
+    }
+
+    inline clang::UnaryOperator const* unaryExpr_(clang::Expr const *e) {
+        return dyn_cast<clang::UnaryOperator>(e);
+    }
+
+    inline clang::MemberExpr const* memberExpr_(clang::Expr const *e) {
+        return dyn_cast<clang::MemberExpr>(e);
+    }
+
+    inline clang::ArraySubscriptExpr const* arraySubscriptExpr_(clang::Expr const *e) {
+        return dyn_cast<clang::ArraySubscriptExpr>(e);
+    }
+
+    inline clang::CastExpr const* castExpr_(clang::Expr const *e) {
+        return dyn_cast<clang::CastExpr>(e);
+    }
+
+    inline clang::DeclRefExpr const* declRefExpr_(clang::Expr const *e) {
+        return dyn_cast<clang::DeclRefExpr>(e);
+    }
+
+    inline clang::ParenExpr const* parenExpr_(clang::Expr const *e) {
+        return dyn_cast<clang::ParenExpr>(e);
+    }
+
+    // No subexpr
+    /*
+    inline clang::PredefinedExpr const* predefinedExpr_(clang::Expr const *e) {
+        return dyn_cast<clang::PredefinedExpr>(e);
+    }
+    inline clang::SourceLocExpr const* sourceLocExpr_(clang::Expr const *e) {
+        return dyn_cast<clang::SourceLocExpr>(e);
+    }
+    */
+    inline clang::UnaryExprOrTypeTraitExpr const* unaryExprOrTypeTraitExpr_(clang::Expr const *e) {
+        return dyn_cast<clang::UnaryExprOrTypeTraitExpr>(e);
+    }
+    inline clang::VAArgExpr const* vaArgExpr_(clang::Expr const *e) {
+        return dyn_cast<clang::VAArgExpr>(e);
+    }
+
+    clang::DeclRefExpr const* getDREChild(clang::ASTContext &context, clang::Expr const *e);
+
+    template<typename T>
+    clang::DeclRefExpr const* getDREChild(clang::ASTContext &context, T const *e) {
+        constexpr auto logKey = "<T>";
+        if(!e) {
+            CNS_DEBUG_MSG(logKey, "Null expr");
+            return nullptr;
+        }
+        CNS_DEBUG_MSG(logKey, "Working out subexpr");
+        auto const * sub = getSubExpr_(*e);
+        return getDREChild(context, sub);
+    }
+
+    clang::DeclRefExpr const* getDREChild(clang::ASTContext &context, clang::Expr const *e) {
+        auto const logKey = String(context, *e);
+        if(unaryExpr_(e)) {
+            CNS_DEBUG_MSG(logKey, "Getting dre child from unary expr");
+            return getDREChild(context, unaryExpr_(e));
+        }
+        if(memberExpr_(e)) {
+            CNS_DEBUG_MSG(logKey, "Getting child from member expr");
+            return getDREChild(context, memberExpr_(e));
+        }
+        if(arraySubscriptExpr_(e)) {
+            CNS_DEBUG_MSG(logKey, "Getting child from array subscript expr");
+            return getDREChild(context, arraySubscriptExpr_(e));
+        }
+        if(castExpr_(e)) {
+            CNS_DEBUG_MSG(logKey, "Getting child from cast expr");
+            return getDREChild(context, castExpr_(e));
+        }
+        if(parenExpr_(e)) {
+            CNS_DEBUG_MSG(logKey, "Getting child from paren expr");
+            return getDREChild(context, parenExpr_(e));
+        }
+
+        auto const *dre = dyn_cast<clang::DeclRefExpr>(e);
+        if(dre) {
+            CNS_DEBUG_MSG(logKey, "Found DRE");
+            return dre;
+        }
+
+        CNS_DEBUG_MSG(logKey, "No DRE found");
+        return nullptr;
+    }
+}
+
+clang::DeclRefExpr const* getSubExprDRE(
+        clang::ASTContext &context,
+        clang::Expr const &e) {
+
+    auto logKey = String(context, e);
+    CNS_DEBUG_MSG(logKey, "begin");
+
+    auto const * uop = unaryExpr_(&e);
+    auto const * mem = memberExpr_(&e);
+    auto const * asubs = arraySubscriptExpr_(&e);
+    auto const * caste = castExpr_(&e);
+    auto const * parene = parenExpr_(&e);
+    //auto const * calle = callExpr_(&e);
+    //auto const * varg = vaArgExpr_(&e);
+    //auto const * uort = unaryExprOrTypeTraitExpr_(&e);
+
+    if(uop) {
+        CNS_DEBUG_MSG(logKey, "Found subexpr unaryOp");
+        CNS_DEBUG_MSG(logKey, "end");
+        return getDREChild(context, uop);
+    }
+    if(mem) {
+        CNS_DEBUG_MSG(logKey, "Found subexpr memberExpr");
+        CNS_DEBUG_MSG(logKey, "end");
+        return getDREChild(context, mem);
+    }
+    if(asubs) {
+        CNS_DEBUG_MSG(logKey, "Found subexpr arraySubscript");
+        CNS_DEBUG_MSG(logKey, "end");
+        return getDREChild(context, asubs);
+    }
+    if(caste) {
+        CNS_DEBUG_MSG(logKey, "Found subexpr castExpr");
+        CNS_DEBUG_MSG(logKey, "end");
+        return getDREChild(context, caste);
+    }
+    if(parene) {
+        CNS_DEBUG_MSG(logKey, "Found subexpr parenExpr");
+        CNS_DEBUG_MSG(logKey, "end");
+        return getDREChild(context, parene);
+    }
+    /*
+    if(calle) {
+        return getDREChild(calle);
+    }
+    auto cbegin = e.child_begin();
+    auto cend = e.child_begin();
+    ConstStmtIterator it = cbegin;
+    unsigned pos = 0;
+    while(it != cend) {
+        CNS_DEBUG(logKey, "{} pos = {}", watch, pos);
+        auto const *dre = dyn_cast<clang::DeclRefExpr>(*it);
+        if(dre) {
+            CNS_DEBUG(logKey, "{}: found dre", watch);
+            CNS_DEBUG(logKey, "{}: end", watch);
+            return dre;
+        }
+        CNS_DEBUG("{}: expr = {}", watch, String(logKey, context, **it));
+        it = (*it)->child_begin();
+        cend = (*it)->child_end();
+        pos++;
+    }
+    */
+
+    if(!e.children().empty()) {
+        // TODO
+        CNS_WARN_MSG(logKey, "No DRE found; expr has children that may not have been visited");
+        CNS_DEBUG_MSG(logKey, "end");
+        return nullptr;
+    }
+
+    CNS_DEBUG_MSG(logKey, "no dre found");
+    CNS_DEBUG_MSG(logKey, "end");
+    return nullptr;
+}
 clang::FunctionDecl const* getDeclFromFunctionPtr(clang::ASTContext const &context, clang::VarDecl const &fp) {
     auto const logKey = String(context, fp);
     CNS_DEBUG_MSG(logKey, "<VarDecl>");
@@ -233,6 +419,7 @@ clang::FunctionDecl const* getDeclFromFunctionPtr(clang::ASTContext const &conte
     CNS_DEBUG_MSG(logKey, "<VarDecl> end");
     return func;
 }
+//---//
 
 clang::FunctionDecl const* getDeclFromFunctionPtr(clang::ASTContext const &context, clang::CallExpr const &call) {
     auto const logKey = String(context, call);
@@ -808,25 +995,26 @@ std::string getLinkedParm(
     return getLinkedParm(context, node, nameInfo.getName());
 }
 
-/*
-std::string qualifiedName(
+std::string getLinkedParm(
         clang::ASTContext &context,
-        clang::Stmt const &node,
-        clang::DeclarationName const &name) {
-    CNS_INFO_MSG(logKey, "");
+        clang::UnaryOperator const &e) {
 
-    // Check if node is function type, if yes just return name as string
-    auto const *tty = name.getCXXNameType().getTypePtr();
-    if(tty && tty->isFunctionType()) {
-    //if(TypeCategory(context, node) == "FunctionProto") {
-        CNS_INFO_MSG(logKey, "Function type.");
-        return name.getAsString();
+    auto const logKey = String(context, e);
+    CNS_DEBUG_MSG(logKey, "begin");
+    auto const * dre = getDREChild(context, &e);
+    if(dre) {
+        CNS_DEBUG(logKey, "Found DREchild '{}'", String(context, *dre));
+        CNS_DEBUG_MSG(logKey, "end");
+        return getLinkedParm(context, e, dre->getNameInfo());
     }
 
-    CNS_INFO_MSG(logKey, "Not a function type.");
-
-    CNS_INFO_MSG(logKey, "end");
+    // Highly unlikely
+    CNS_DEBUG_MSG(logKey, "No DRE in unary op => no linked parm");
+    CNS_DEBUG_MSG(logKey, "end");
+    return "{nolp}";
 }
+
+/*
 std::string qualifiedName(
         clang::ASTContext &context,
         clang::ValueDecl const &node,
@@ -842,13 +1030,16 @@ std::string qualifiedName(
     CNS_INFO_MSG(logKey, "end");
     return qualifiedName<>(context, node, name);
 }
-
 */
 
-template<typename T>
+std::string qualifiedName(clang::ASTContext &context, clang::DeclRefExpr const& dre);
+std::string qualifiedName(clang::ASTContext &context, clang::VarDecl const &var);
+
+//template<typename T>
 std::string qualifiedName(
         clang::ASTContext &context,
-        T const &node,
+        //T const &node,
+        clang::ValueDecl const &node,
         clang::DeclarationName const &name) {
 
     auto const logKey = String(context, node) + "(" + name.getAsString() + ")";
@@ -873,10 +1064,11 @@ std::string qualifiedName(
     return getContainerFunction(context, node) + "." + name.getAsString();
 }
 
-template<typename T>
+//template<typename T>
 std::string qualifiedName(
         clang::ASTContext &context,
-        T const &node,
+        //T const &node,
+        clang::ValueDecl const &node,
         clang::DeclarationNameInfo const &nameInfo) {
 
     auto const logKey = String(context, node) + "(" + nameInfo.getAsString() + ")";
@@ -885,6 +1077,134 @@ std::string qualifiedName(
     CNS_DEBUG_MSG(logKey, "<T, DeclarationNameInfo> end");
     return qualifiedName(context, node, nameInfo.getName());
 }
+
+/*
+void buildQualifiedName(clang::ASTContext &context,
+        clang::Expr const* e,
+        std::string &qn) {
+    if(!e) {
+        CNS_ERROR_MSG("<invalid expr>", "No valid expression to build qn");
+        return;
+    }
+
+    auto logKey = String(context, *e);
+    CNS_DEBUG_MSG(logKey, "begin");
+
+    if(unaryExpr_(e)) {
+        CNS_DEBUG(logKey, "Building unary expr qn; qn so far '{}'", qn);
+        buildUnaryQn(context, unaryExpr_(e), qn);
+    }
+    if(memberExpr_(e)) {
+        CNS_DEBUG(logKey, "Building member expr qn; qn so far '{}'", qn);
+        buildMemberQn(context, unaryExpr_(e), qn);
+    }
+    if(castExpr_(e)) {
+        CNS_DEBUG(logKey, "Building cast expr qn; qn so far '{}'", qn);
+        buildCastQn(context, unaryExpr_(e), qn);
+    }
+    if(arraySubscriptExpr_(e)) {
+        CNS_DEBUG(logKey, "Building array subscript expr qn; qn so far '{}'", qn);
+        buildArraySubscriptQn(context, unaryExpr_(e), qn);
+    }
+    CNS_DEBUG_MSG(logKey, "end");
+}
+*/
+
+std::string qualifiedName(clang::ASTContext &context,
+        clang::Expr const& e) {
+
+    auto logKey = String(context, e);
+    CNS_DEBUG_MSG(logKey, "begin");
+    /*
+    if(e.children().empty()) {
+        CNS_DEBUG_MSG(logKey, "No children found for expression");
+        CNS_DEBUG_MSG(logKey, "end");
+        return String(context, e);
+    }
+    */
+
+    auto const *dre = getSubExprDRE(context, e);
+    if(!dre) {
+        CNS_DEBUG_MSG(logKey, "No DRE found for expression");
+        CNS_DEBUG_MSG(logKey, "end");
+        return String(context, e);
+    }
+
+    CNS_DEBUG(logKey, "Found DRE for expression: '{}'", String(context, *dre));
+
+    if(auto const * vd = dre->getDecl()) {
+        CNS_DEBUG(logKey, "Got decl from DRE: '{}'", String(context, *vd));
+        if(vd->isFunctionPointerType() || vd->isFunctionOrFunctionTemplate()) {
+            CNS_DEBUG(logKey, "DRE is fptr type: '{}'", String(context, *dre));
+            CNS_DEBUG_MSG(logKey, "end");
+            // Any operations on function/fptr are non-type changing
+            return qualifiedName(context, *dre);
+        }
+        else {
+            CNS_DEBUG(logKey, "DRE is not fptr type: '{}'", String(context, *dre));
+        }
+    }
+
+    CNS_DEBUG(logKey, "No decl in dre: '{}'", String(context, *dre));
+
+    auto dreqn = qualifiedName(context, *dre);
+    CNS_DEBUG(logKey, "DRE qn: '{}'", dreqn);
+    auto dres = String(context, *dre);
+    CNS_DEBUG(logKey, "DRE string: '{}'", dres);
+    // replace dre name in expr string with dreqn
+    auto eqn = String(context, e);
+    if(auto pos = eqn.find(dres); pos != std::string::npos) {
+        CNS_DEBUG(logKey, "Found identifier '{}' in expr", dres);
+        eqn.replace(pos, dres.size(), dreqn);
+        CNS_DEBUG(logKey, "Replaced identifier '{}' with qn '{}'", dres, dreqn);
+    }
+
+    CNS_DEBUG(logKey, "Expr qn: '{}'", eqn);
+    CNS_DEBUG_MSG(logKey, "end");
+    return eqn;
+}
+
+// TODO TODO: For declrefexpr -> always get the declaration to get the correct qn
+// For memeber access; get the type from declref and type from member
+/*
+std::string qualifiedName(clang::ASTContext &context,
+        clang::Stmt const &stmt) {
+}
+
+std::string unaryKind(enum clang::UnaryOperatorKind op) {
+    switch(op) {
+        case UO_PostInc: return "++";
+        case UO_PreInc: return "++";
+        case UO_PostDec: return "--";
+        case UO_Pre: return "--";
+        case UO_AddrOf: return  "&";
+        case UO_Deref: return  "*";
+        case UO_Plus: return  "NTC";//"+";      // Non type changing -> ignored
+        case UO_Minus: return  "NTC";//"-";
+        case UO_Not: return  "NTC";//"~";
+        case UO_LNot: return  "NTC";//"!";
+        case UO_Real: return  "NTC";//"__real";
+        case UO_Imag: return  "NTC";//"__imag";
+        case UO_Extension: return  "NTC";//"__extension__";
+    }
+}
+
+std::string buildUnaryQn(clang::ASTContext &context,
+        clang::UnaryOperator const &e,
+        std::string &qn) {
+
+    auto nqn = "UOP(" + qn + ")";
+}
+std::string qualifiedName(clang::ASTContext &context,
+        clang::CastExpr const &e) {
+}
+std::string qualifiedName(clang::ASTContext &context,
+        clang::MemberExpr const &e) {
+}
+std::string qualifiedName(clang::ASTContext &context,
+        clang::ArraySubscript const &e) {
+}
+*/
 
 std::string getLinkedParm(
         clang::DeclContext const *context,
@@ -911,7 +1231,7 @@ std::string getLinkedParm(
     return "{local}";
 }
 
-// REDO
+/*
 std::string qualifiedName(
         clang::DeclContext const *context,
         clang::VarDecl const &var) {
@@ -920,11 +1240,18 @@ std::string qualifiedName(
     auto const logKey = String(astContext, var);
     CNS_DEBUG_MSG(logKey, "begin");
     auto const *func = getContainerFunctionDecl(astContext, var);
-    // REDO: Could be global
     if(!func) {
-        CNS_ERROR_MSG(logKey, "<DC>No Parent function found.");
-        CNS_DEBUG_MSG(logKey, "end");
-        return ""; //"{n/a}";
+        CNS_DEBUG_MSG(logKey, "<DC> No Parent function found.");
+        if(var.hasGlobalStorage()) {
+            CNS_DEBUG_MSG(logKey, "<DC> VarDecl is for global var.");
+            CNS_DEBUG_MSG(logKey, "end");
+            return "global." + String(astContext, var);
+        }
+        else {
+            CNS_ERROR_MSG(logKey, "<DC> VarDecl is not global but container function not found");
+            CNS_DEBUG_MSG(logKey, "end");
+            return String(astContext, var);// return ""; //"{n/a}";
+        }
     }
 
     if(auto parmPos = getParameterMatch(*func, var.getDeclName())) {
@@ -937,6 +1264,7 @@ std::string qualifiedName(
     CNS_DEBUG_MSG(logKey, "end");
     return  getContainerFunction(astContext, var) + "." + String(astContext, var);
 }
+*/
 
 std::string qualifiedName(
         clang::ASTContext &context,
@@ -947,7 +1275,8 @@ std::string qualifiedName(
     if(var.hasGlobalStorage()) {
         CNS_INFO_MSG(logKey, "VarDecl is global");
         CNS_DEBUG_MSG(logKey, "end");
-        return "global." + String(context, var);
+        //return "global." + String(context, var);
+        return "::" + String(context, var);
     }
     if(var.isLocalVarDecl()) {
         CNS_INFO_MSG(logKey, "VarDecl is local var & not parm");
@@ -959,9 +1288,10 @@ std::string qualifiedName(
 
         auto const *func = getContainerFunctionDecl(context, var);
         if(!func) {
-            CNS_ERROR_MSG(logKey, "No Parent function found.");
+            CNS_ERROR_MSG(logKey, "Cannot find container function decl for Local VarDecl");
             CNS_DEBUG_MSG(logKey, "end");
-            return qualifiedName(var.getDeclContext(), var);
+            return String(context, var);
+            //return qualifiedName(var.getDeclContext(), var);
             //return "{n/a}";
         }
 
@@ -1025,123 +1355,6 @@ std::string qualifiedName(
     return getContainerFunction(context, dre) + "." + String(context, dre);
 }
 
-namespace {
-    inline clang::Expr const* getSubExpr_(clang::UnaryOperator const& e) {
-        return e.getSubExpr();
-    }
-    inline clang::Expr const* getSubExpr_(clang::MemberExpr const& e){
-        return e.getBase(); // Also checkout getMemberDecl
-    }
-    inline clang::Expr const* getSubExpr_(clang::ArraySubscriptExpr const&e) {
-        return e.getBase();
-    }
-    inline clang::Expr const* getSubExpr_(clang::CastExpr const &e) {
-        return e.getSubExpr();
-    }
-
-    inline clang::UnaryOperator const* unaryExpr_(clang::Expr const *e) {
-        return dyn_cast<clang::UnaryOperator>(e);
-    }
-
-    inline clang::MemberExpr const* memberExpr_(clang::Expr const *e) {
-        return dyn_cast<clang::MemberExpr>(e);
-    }
-
-    inline clang::ArraySubscriptExpr const* arraySubscriptExpr_(clang::Expr const *e) {
-        return dyn_cast<clang::ArraySubscriptExpr>(e);
-    }
-
-    inline clang::CastExpr const* castExpr_(clang::Expr const *e) {
-        return dyn_cast<clang::CastExpr>(e);
-    }
-
-    clang::DeclRefExpr const* getDREChild(clang::Expr const *e);
-
-    template<typename T>
-    clang::DeclRefExpr const* getDREChild(T const *e) {
-        if(!e) {
-            return nullptr;
-        }
-        auto const * sub = getSubExpr_(*e);
-        return getDREChild(sub);
-    }
-
-    clang::DeclRefExpr const* getDREChild(clang::Expr const *e) {
-        if(unaryExpr_(e)) {
-            return getDREChild(unaryExpr_(e));
-        }
-        if(memberExpr_(e)) {
-            return getDREChild(memberExpr_(e));
-        }
-        if(arraySubscriptExpr_(e)) {
-            return getDREChild(arraySubscriptExpr_(e));
-        }
-        if(castExpr_(e)) {
-            return getDREChild(castExpr_(e));
-        }
-
-        auto const *dre = dyn_cast<clang::DeclRefExpr>(e);
-        if(dre) {
-            return dre;
-        }
-
-        return nullptr;
-    }
-}
-
-clang::DeclRefExpr const* getSubExprDRE(
-        clang::ASTContext &context,
-        clang::Expr const &e) {
-
-    auto logKey = String(context, e);
-    CNS_DEBUG_MSG(logKey, "begin");
-
-    auto const * uop = unaryExpr_(&e);
-    auto const * mem = memberExpr_(&e);
-    auto const * asubs = arraySubscriptExpr_(&e);
-    //auto const * calle = callExpr_(&e);
-    auto const * caste = castExpr_(&e);
-
-    if(uop) {
-        return getDREChild(uop);
-    }
-    if(mem) {
-        return getDREChild(mem);
-    }
-    if(asubs) {
-        return getDREChild(asubs);
-    }
-    if(caste) {
-        return getDREChild(caste);
-    }
-    /*
-    if(calle) {
-        return getDREChild(calle);
-    }
-    auto cbegin = e.child_begin();
-    auto cend = e.child_begin();
-    ConstStmtIterator it = cbegin;
-    unsigned pos = 0;
-    while(it != cend) {
-        CNS_DEBUG(logKey, "{} pos = {}", watch, pos);
-        auto const *dre = dyn_cast<clang::DeclRefExpr>(*it);
-        if(dre) {
-            CNS_DEBUG(logKey, "{}: found dre", watch);
-            CNS_DEBUG(logKey, "{}: end", watch);
-            return dre;
-        }
-        CNS_DEBUG("{}: expr = {}", watch, String(logKey, context, **it));
-        it = (*it)->child_begin();
-        cend = (*it)->child_end();
-        pos++;
-    }
-    */
-
-    CNS_DEBUG_MSG(logKey, "no dre found");
-    CNS_DEBUG_MSG(logKey, "end");
-    return nullptr;
-}
-
 std::string qualifiedNameX(
         clang::ASTContext &context,
         clang::CallExpr const& call,
@@ -1168,22 +1381,24 @@ std::string qualifiedNameX(
     return  String(context, e);
 }
 
+/*
 std::string qualifiedName(clang::ASTContext &context, clang::MemberExpr const &e) {
     std::string logKey =  String(context, e);
     CNS_INFO_MSG(logKey, "begin");
     auto const *dre = getDREChild(&e);
     if(dre) {
-        CNS_INFO(logKey, "Found dre '{}'", String(context, *dre));
+        CNS_INFO(logKey, "Found dre from memberExpr '{}'", String(context, *dre));
         CNS_INFO_MSG(logKey, "end");
         return qualifiedName(context, *dre) + "." + String(context, e);
     }
 
-    CNS_WARN_MSG(logKey, "Cannot find dre from the member expr");
+    CNS_WARN_MSG(logKey, "Cannot find dre from memberExpr");
     CNS_INFO_MSG(logKey, "end");
     return "VarUnk." + String(context, e);
 }
+*/
 
-std::string qualifiedName(
+std::string qualifiedNameNO(
         clang::ASTContext &context,
         clang::CallExpr const& call,
         clang::Expr const &e) {
@@ -1333,6 +1548,13 @@ std::string getLinkedParm(
         CNS_ERROR_MSG(logKey, "<DC>parmPos nullopt.");
         CNS_DEBUG_MSG(logKey, "end");
         return "{local}";
+    }
+
+    CNS_INFO_MSG(logKey, "VarDecl is not local var or parm");
+    if(var.hasGlobalStorage()) {
+        CNS_INFO_MSG(logKey, "VarDecl has global storage => no linked parm");
+        CNS_DEBUG_MSG(logKey, "end");
+        return "{global}";
     }
 
     CNS_DEBUG_MSG(logKey, "end");
@@ -1571,7 +1793,8 @@ std::string qualifiedNameFromFptrCall(clang::ASTContext &context, clang::CallExp
             return String(context, call);
         }
         CNS_DEBUG_MSG(logKey, "end");
-        return String(context, *fn);
+        //return String(context, *fn);
+        return qualifiedName(context, *fn);
     }
     CNS_DEBUG_MSG(logKey, "end");
     return qualifiedName(context, *fptr);

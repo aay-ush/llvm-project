@@ -477,7 +477,7 @@ inline OpData buildLimitedArgOp(clang::ASTContext &context,
             getLinkedRecord(arg),
             linkedTypeCategory(arg),
             call.getExprLoc().printToString(sm),
-            qualifiedName(context, call, arg)
+            qualifiedName(context, arg) //qualifiedName(context, call, arg)
         };
 }
 
@@ -549,13 +549,14 @@ OpData buildArgOp(clang::ASTContext &context,
                 String(context, *e),
                 Typename(context, *e),
                 TypeCategory(context, *e),
-                String(context, arg),
+                //String(context, arg),
+                linkedParmPos(context, call, *e),
                 getContainerFunction(context, *e),
                 getLinkedRecord(*e),
                 linkedTypeCategory(*e),
                 call.getExprLoc().printToString(sm),
                 //String(context, *e), //
-                qualifiedName(context, call, *e)
+                qualifiedName(context, *e) //qualifiedName(context, call, *e)
             };
 
     CNS_DEBUG_MSG(logKey, "end");
@@ -814,7 +815,7 @@ void addCallHistory(clang::ASTContext & context, clang::CallExpr const& call) {
     std::for_each(call.arg_begin(), call.arg_end(), [&](auto const *a) {
             CNS_DEBUG_MSG(logKey, "for_each arg");
             // get key for a
-            auto const argQn = qualifiedName(context, call, *a);
+            auto const argQn = qualifiedName(context, *a); //qualifiedName(context, call, *a);
 
             // Contextualized history = local history; arg history gets extended by local contextual parm history
             // Search history of a
