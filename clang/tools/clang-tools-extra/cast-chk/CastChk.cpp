@@ -1240,7 +1240,7 @@ void printCollection(std::FILE *fp) {
     std::for_each(begin(TypeSummaries), end(TypeSummaries),
         [&](auto const &s) {
             CastStat cst("Cast stats for " + s.first);
-            fmt::print(fp, "History of ({}):\n", s.first);
+            fmt::print(fp, "History of ({}) [{}]:\n", s.first, ops(s.first).location_);
             auto tsummary = s.second.summarize(cst, {SUMMARY_DEPTH});
             tcst.extend(cst);
 
