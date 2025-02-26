@@ -302,13 +302,24 @@ HistoryTemplate::HistoryTemplate(clang::ASTContext &context, clang::CallExpr con
                 pop.qn_ = qn;   // Other than qn
                 CNS_INFO(logKey, "<SEE>Built param opdata '{}' for '{}'", pop.qn_, String(context, *p));
                 //census.insert(makeCensusSourceNode(pop));
-                DominatorData dom = {aop, String(context, *p), "TODOArg"};
+                DominatorData dom = {
+                    aop,
+                    String(context, *p),
+                    "TODOArg",
+                    "regularArg",
+                    getOriginCondition(context, *p)
+                };
+
+                // TODO TODO Can have nested cast
                 auto lhsce = dyn_cast<CastExpr>(p);
                 if(lhsce) {
-                    dom.exprType_ = lhsce->getCastKindName();
+                    dom.castType_ = lhsce->getCastKindName();
                 }
                 else {
-                    dom.exprType_ = "NotACast";
+                    dom.castType_ = "NotACast";
+                }
+                if(auto const *memex = getMemberExpr(context, p); memex) {
+                    dom.exprType_ = "Member: " + String(context, *memex);
                 }
 
                 census.insert(makeCensusNode(pop, dom));
@@ -604,7 +615,7 @@ void History::extend(History const &h, DominatorData const& linkInfo) {
     auto const logKey = h.opId() + "(<- " + linkInfo.from_.qn_ + ")";
     CNS_DEBUG_MSG(logKey, "<g> begin");
     CNS_DEBUG(logKey, "<g> Current version: {}", idversion());
-    CNS_DEBUG(logKey, "<g> Input history version: {}; Dominator{{{}, {}}}", h.idversion(), linkInfo.from_.qn_, linkInfo.exprType_);
+    CNS_DEBUG(logKey, "<g> Input history version: {}; Dominator{{{}, {}}}", h.idversion(), linkInfo.from_.qn_, linkInfo.castType_);
     CNS_DEBUG(logKey, "<g> Current context size for H({}): {}", h.op_, h.hc_.size());
     CNS_DEBUG(logKey, "<g> Extending input context using current version: {}", idversion());
     // Check if needed, maybe not since local context is stored with histories now.
@@ -639,7 +650,7 @@ void History::extend(LocalHistory const &h) {
     auto const logKey = h.id();
     CNS_DEBUG_MSG(logKey, "<lh> begin");
     CNS_DEBUG(logKey, "<lh> Current version: {}", idversion());
-    CNS_DEBUG(logKey, "<lh> Input history version: {}; Dominator{{{}, {}}}", h.history().idversion(), h.linkInfo().from_.qn_, h.linkInfo().exprType_);
+    CNS_DEBUG(logKey, "<lh> Input history version: {}; Dominator{{{}, {}}}", h.history().idversion(), h.linkInfo().from_.qn_, h.linkInfo().castType_);
     if(h.context()) {
         CNS_DEBUG(logKey, "<lh> Input local context size: {}", h.context().value().size());
     }
@@ -1110,6 +1121,7 @@ std::vector<LocalHistory> HistoryTemplate::instantiate(clang::ASTContext &contex
                             CNS_ERROR(logKey, "Param '{}' is not dominated by arg '{}'", p, argqn);
                         }
                         else {
+                            CNS_DEBUG(logKey, "Found dom for arg '{}' -> param '{}': '{}'", argqn, p, String(*itpd));
                             linkInfo = *itpd;
                         }
                     }
@@ -1160,6 +1172,7 @@ class TypeSummary {
 
     TypeSummary(const TypeSummary& t): //= default;
         key_(t.key_),
+        linkInfo_(t.linkInfo_),
         linkLabel_(t.linkLabel_),
         nexts_(t.nexts_) {
 
@@ -1169,6 +1182,7 @@ class TypeSummary {
 
     TypeSummary(TypeSummary&& t): // = default;
         key_(std::move(t.key_)),
+        linkInfo_(std::move(t.linkInfo_)),
         linkLabel_(std::move(t.linkLabel_)),
         nexts_(std::move(t.nexts_)) {
 
@@ -1186,7 +1200,7 @@ class TypeSummary {
         return sid;
     }
 
-    void setlabel(std::string const& label) {
+    void setLabel(std::string const& label) {
         CNS_DEBUG(key_, "Setting label '{}' to TypeSummary", label);
         linkLabel_ = label;
     }
@@ -1195,12 +1209,18 @@ class TypeSummary {
         return linkLabel_;
     }
 
+    void setLinkInfo(DominatorData linkInfo) {
+        CNS_DEBUG(key_, "Setting linkInfo '{}' to TypeSummary", String(linkInfo));
+        linkInfo_ = linkInfo;
+    }
+
     unsigned size() const {
         return nexts_.size();
     }
 
     private:
     CensusKey key_;
+    DominatorData linkInfo_;
     std::string linkLabel_; //{"root"};
     std::vector<TypeSummary> nexts_;
     static unsigned num_;
@@ -1261,7 +1281,7 @@ TypeSummary::TypeSummary(History const&h) {
     CNS_DEBUG_MSG(logKey, "end");
 }
 
-TypeSummary makeResolvedSummary(std::string const& keyOp, std::string const& keyRops, std::string const& linkType = {}) {
+TypeSummary makeResolvedSummary(std::string const& keyOp, std::string const& keyRops, DominatorData linkInfo, std::string const& linkType = {}) {
     LOG_FUNCTION_TIME;
     auto const logKey = keyOp + "(" + keyRops + ")";
     CNS_DEBUG_MSG(logKey, "begin");
@@ -1269,7 +1289,8 @@ TypeSummary makeResolvedSummary(std::string const& keyOp, std::string const& key
     auto const& op = ops(keyOp);
     CNS_DEBUG(logKey, "{{{}}}: A", keyOp);
     TypeSummary ts (TypeTransforms.at(keyOp));
-    ts.setlabel(linkType);
+    ts.setLabel(linkType);
+    ts.setLinkInfo(linkInfo);
 
     if(keyRops == keyOp) {
         CNS_INFO(logKey, "{{{} = {}}}", keyOp, keyRops);
@@ -1332,7 +1353,7 @@ TypeSummary makeResolvedSummary(std::string const& keyOp, std::string const& key
     CNS_INFO(logKey, "{{{}}}: Adding branch from resolved keyRops{{{}}}", ts.id(), keyRops);
     CNS_DEBUG(logKey, "{{{}}}: B", ts.id());
     auto tts = TypeSummary(TypeTransforms.at(keyRops));
-    tts.setlabel(linkType);
+    tts.setLabel(linkType);
     ts.addNextBranch(tts);
 
     CNS_DEBUG(logKey, "{{{}}}: end", ts.id());
@@ -1354,7 +1375,8 @@ bool isIgnoredFunction(std::string const& key) {
 }
 
 TypeSummary makeTypeSummaryLH(LocalHistory const& lh) {
-    auto const logKey = lh.id() + "_" + lh.linkInfo().exprType_;
+    auto const linkInfo = lh.linkInfo();
+    auto const logKey = lh.id() + "_" + String(linkInfo);
     CNS_DEBUG_MSG(logKey, "begin");
 
     auto const &h = lh.history();
@@ -1362,16 +1384,16 @@ TypeSummary makeTypeSummaryLH(LocalHistory const& lh) {
 
     if(isIgnoredFunction(h.opId())) {
         CNS_INFO(logKey, "skipping, ignored function: {}", hid);
-        auto ts = makeResolvedSummary(hid, hid, lh.linkInfo().exprType_);
-        //ts.setlabel(lh.linkInfo().exprType_);
+        auto ts = makeResolvedSummary(hid, hid, linkInfo, linkInfo.castType_);
+        //ts.setlabel(lh.linkInfo().castType_);
         CNS_DEBUG_MSG(logKey, "end");
         return ts;
     }
 
     auto rops = h.getContextResolvedOpStr(lh.context());
     CNS_DEBUG_MSG(logKey, "1");
-    auto ts = makeResolvedSummary(hid, rops, lh.linkInfo().exprType_);
-    //ts.setlabel(lh.linkInfo().exprType_);
+    auto ts = makeResolvedSummary(hid, rops, linkInfo, linkInfo.castType_);
+    //ts.setlabel(lh.linkInfo().castType_);
     if(!lh.context()) {
         CNS_DEBUG(logKey, "{{{}}}: No local context; end", ts.id());
         return ts;
@@ -1468,7 +1490,7 @@ public:
         extendStat(std::begin(cst.categoryCounts_), std::end(cst.categoryCounts_), categoryCounts_);
     }
 
-    void record(OpData const& op, std::string const& origin) {
+    void record(OpData const& op, DominatorData const& domInfo, std::string const& origin) {
         if(op.type_.empty()) {
             typeCounts_["T"] += 1;
         }
@@ -1516,7 +1538,8 @@ std::string TypeSummary::summarize(CastStat &cst, std::optional<unsigned> level,
     ssr.reserve(1024);
     CNS_DEBUG(logKey, "LEVEL = {}", level.value_or(599)); // TODO Level upper limit
     auto const& op = ops(key_);
-    cst.record(op, linkLabel_);
+    cst.record(op, linkInfo_, linkLabel_);
+
     if(op.type_.empty()) {
         ssr = "T {" + key_ + "}(" + linkLabel_ + ")";
     }
@@ -1526,6 +1549,7 @@ std::string TypeSummary::summarize(CastStat &cst, std::optional<unsigned> level,
     if(!op.linkedRecord_.empty()) {
         ssr += "{" + op.linkedRecord_ + ": " + op.linkedRecordCategory_ + "}";
     }
+    ssr.append(" (" + linkInfo_.exprType_ + "){" + String(linkInfo_.originCondition_) + "}");
 
     if(level <= 0 && nexts_.size() > 0) {
         ssr.append("-> <...>\n");

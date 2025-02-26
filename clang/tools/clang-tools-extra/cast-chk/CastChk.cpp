@@ -160,7 +160,7 @@ void updateHistory(
     auto const logKey = from.qn_ + "->" + to.qn_;
 
     CNS_DEBUG_MSG(logKey, "begin");
-    CNS_DEBUG(logKey, "History update using dom '{}'", domInfo.exprType_);
+    CNS_DEBUG(logKey, "History update using dom '{}'", String(domInfo));
 
     // Ensure H(to) first.
     // Retrieve H(to)
@@ -308,7 +308,8 @@ void logCensusUpdate(
             rhs.qn_, rhs.expr_, rhs.linkedParm_);
     fmt::print(fOUT, "      from: [{}]{}\n", lhs.category_, lhs.type_);
     fmt::print(fOUT, "        to: [{}]{}\n", rhs.category_, rhs.type_);
-    fmt::print(fOUT, "      expr: [{}]{}\n", dom.exprType_, dom.expr_);
+    fmt::print(fOUT, "      expr: [{}:{}]{}\n", dom.castType_, dom.exprType_, dom.expr_);
+    fmt::print(fOUT, "      origin condition: {}\n", String(dom.originCondition_));
     //fmt::print(fOUT, "FuncsLinked: {}() -> {}()\n", lhs.container_, dom.callee_.value_or("(n/a)"));
 
 }
@@ -336,8 +337,13 @@ void updateCensus(
         lhs,
         String(context, castExpr),
         castExpr.getCastKindName(), //{}, //getCastExprType(dest),
+        "regularCast",
+        getOriginCondition(context, castExpr)
         //{}, //getLinkedFunction(context, castExpr, dest)
     };
+    if(auto const *memex = getMemberExpr(context, &castExpr); memex) {
+        dom.exprType_ = "Member: " + String(context, *memex);
+    }
 
     updateCensus(lhs, rhs, dom);
     if(SEVERITY_FILTER & cns::logging::severity::Info) {
@@ -583,14 +589,19 @@ void buildOpDatas(clang::ASTContext &context,
                 lhs,
                 String(context, *arg),
                 "TODOArg", //getCastExprType(arg),
+                "regularCast",
+                getOriginCondition(context, *arg)
                 //{} //getLinkedFunction(context, call, arg)
             };
             auto lhsce = dyn_cast<CastExpr>(arg);
             if(lhsce) {
-                dom.exprType_ = lhsce->getCastKindName();
+                dom.castType_ = lhsce->getCastKindName();
             }
             else {
-                dom.exprType_ = "NotACast";
+                dom.castType_ = "NotACast";
+            }
+            if(auto const *memex = getMemberExpr(context, arg); memex) {
+                dom.exprType_ = "Member: " + String(context, *memex);
             }
 
             // create target(param) op

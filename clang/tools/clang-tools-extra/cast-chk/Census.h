@@ -4,13 +4,85 @@
 #include "OpData.h"
 
 //--
+struct CNSCondition {
+    std::string condition_;
+    std::string location_;
+};
+
+std::string String(CNSCondition const &c) {
+    return c.condition_;
+}
+
+template<typename T>
+CNSCondition getOriginCondition(ASTContext &context, T const &node) {
+    auto const logKey = String(context, node) + " <T>";
+    CNS_DEBUG_MSG(logKey, "begin");
+    auto parents = context.getParents(node);
+    if (parents.size() == 0) {
+        CNS_INFO_MSG(logKey, "No parents found on node => no Origin Condition");
+        CNS_DEBUG_MSG(logKey, "end");
+        return {"NoCond", "N/A"};
+    }
+
+    CNS_DEBUG_MSG(logKey, "Found parents");
+    while(parents.size() != 0) {
+        if(auto const *casestmt = parents[0].template get<clang::CaseStmt>(); casestmt) {
+            CNS_DEBUG_MSG(logKey, "Found parent case statement");
+
+            // For switch-case, switch has condition (lhs), and case has match (rhs) value
+            std::string rhs = String(context, *(casestmt->getLHS()));
+            CNS_DEBUG(logKey, "Case match: {}", rhs);
+
+            std::string lhs;
+            auto cstmt = context.getParents(*casestmt); // Compound block
+            auto swstmt = context.getParents(cstmt[0]);
+            if(auto const* swt = swstmt[0].template get<clang::SwitchStmt>(); swt) {
+                CNS_DEBUG_MSG(logKey, "Found parent switch statement");
+                lhs = String(context, *(swt->getCond()));
+                CNS_DEBUG(logKey, "Switch condition: {}", lhs);
+            }
+
+            CNS_DEBUG_MSG(logKey, "end");
+            return {
+                lhs + " == " + rhs,
+                casestmt->getCaseLoc().printToString(context.getSourceManager())
+            };
+        }
+
+        else if(auto const *ifstmt = parents[0].template get <clang::IfStmt>(); ifstmt) {
+            CNS_DEBUG_MSG(logKey, "Found parent if statement");
+
+            auto condition = String(context, *(ifstmt->getCond()));
+            CNS_DEBUG(logKey, "Condition: {}", condition);
+
+            CNS_DEBUG_MSG(logKey, "end");
+            return {
+                condition,
+                ifstmt->getIfLoc().printToString(context.getSourceManager())
+            };
+        }
+
+        CNS_DEBUG_MSG(logKey, "Checking grandparent");
+        parents = context.getParents(parents[0]);
+    }
+
+    CNS_INFO_MSG(logKey, "Could not find origin condition");
+    CNS_DEBUG_MSG(logKey, "end");
+    return {"NoCond", "N/A"};
+}
+//
+
+// TODO make class
 // Dominator info.
 struct DominatorData {
     OpData from_;
     std::string expr_;
-    std::string exprType_;
+    std::string castType_ {};
+    std::string exprType_ {};
+    CNSCondition originCondition_ {"NoCond", "N/A"};    // e.g. condition of a conditional cast (different from expr_)
     //std::optional<std::string> callee_;
 };
+
 
 bool operator==(DominatorData const &lhs, DominatorData const &rhs) {
     return lhs.from_ == rhs.from_;
@@ -20,16 +92,17 @@ bool operator!=(DominatorData const &lhs, DominatorData const &rhs) {
 }
 
 std::string String(DominatorData const &d) {
-    return d.from_.qn_ + "_" + d.exprType_;
+    return d.from_.qn_ + "{" + d.castType_ + ":" + d.exprType_ + "(" + String(d.originCondition_) + ")}";
 }
 //
 
-DominatorData buildVarDeclDom(clang::ASTContext const& context, OpData const& domOp, clang::VarDecl const& var) {
+DominatorData buildVarDeclDom(clang::ASTContext &context, OpData const& domOp, clang::VarDecl const& var) {
     auto logKey = String(context, var);
     CNS_DEBUG_MSG(logKey, "begin");
     DominatorData ret;
     auto const *inx = var.getInit();
     if(inx) {
+        // TODO TODO: can have a nested cast
         CNS_DEBUG(logKey, "Found init expr: '{}'", String(context, *inx));
         auto const *inc = dyn_cast<clang::CastExpr>(inx);
         if(inc) {
@@ -41,10 +114,18 @@ DominatorData buildVarDeclDom(clang::ASTContext const& context, OpData const& do
             CNS_DEBUG(logKey, "Init expression '{}' is not a cast expr", String(context, *inx));
             ret = {domOp, String(context, *inx), "InitVarDecl"};
         }
+        if(auto const *memex = getMemberExpr(context, inx); memex) {
+            ret.exprType_ = "Member: " + String(context, *memex);
+        }
+        else {
+            ret.exprType_ = "regularDecl";
+        }
+
+        ret.originCondition_ = getOriginCondition(context, *inx);
     }
     else {
         CNS_ERROR_MSG(logKey, "No init expr found for vardecl");
-        ret = {domOp, "NoInitExprFound", "VarDecl"};
+        ret = {domOp, "NoInitExprFound", "VarDecl", "N/A"};
     }
 
     CNS_DEBUG_MSG(logKey, "end");
@@ -388,7 +469,7 @@ std::ostream& dump(std::ostream &os, DominatorData const &domInfo) {
     os << "{from: ";
     dump(os, domInfo.from_);
     os << "', LinkingExpr: '" << domInfo.expr_
-       << "', ExprType: '" << domInfo.exprType_
+       << "', ExprType: '" << domInfo.castType_
        //<< "', CalledFunction: '" << domInfo.callee_.value_or("(N/A)")
        << "}\n";
 
@@ -443,7 +524,9 @@ std::string dump(DominatorData const& domInfo) {
     std::string sd;
     sd = "{from: " + dump(domInfo.from_)
         + "', LinkingExpr: '" + domInfo.expr_
+        + "', CastType: '" + domInfo.castType_
         + "', ExprType: '" + domInfo.exprType_
+        + "', OriginExpr: '" + String(domInfo.originCondition_)
         //+ "', CalledFunction: '" + domInfo.callee_.value_or("(N/A)")
         + "}\n";
     return sd;

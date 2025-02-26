@@ -277,7 +277,8 @@ namespace {
     }
 
     clang::DeclRefExpr const* getDREChild(clang::ASTContext &context, clang::Expr const *e) {
-        auto const logKey = String(context, *e);
+        //auto const logKey = String(context, *e);
+        constexpr auto logKey = "<e>";
         if(unaryExpr_(e)) {
             CNS_DEBUG_MSG(logKey, "Getting dre child from unary expr");
             return getDREChild(context, unaryExpr_(e));
@@ -308,6 +309,62 @@ namespace {
         CNS_DEBUG_MSG(logKey, "No DRE found");
         return nullptr;
     }
+}
+
+clang::MemberExpr const* getMemberExpr(clang::ASTContext const &context, clang::Expr const *e);
+
+template<typename T>
+clang::MemberExpr const* getMemberExpr(clang::ASTContext const &context, T const *e) {
+    constexpr auto logKey = "<T>";
+    if(!e) {
+        CNS_DEBUG_MSG(logKey, "Null expr");
+        return nullptr;
+    }
+    CNS_DEBUG_MSG(logKey, "Working out subexpr");
+    auto const * sub = getSubExpr_(*e);
+    return getMemberExpr(context, sub);
+}
+
+clang::MemberExpr const* getMemberExpr(
+        clang::ASTContext const &context,
+        clang::Expr const *e) {
+
+    constexpr auto logKey = "<e>";
+    CNS_DEBUG_MSG(logKey, "begin");
+
+    auto const * uop = unaryExpr_(e);
+    auto const * mem = memberExpr_(e);
+    auto const * asubs = arraySubscriptExpr_(e);
+    auto const * caste = castExpr_(e);
+    auto const * parene = parenExpr_(e);
+
+    if(mem) {
+        return mem;
+    }
+
+    if(uop) {
+        CNS_DEBUG_MSG(logKey, "Found subexpr unaryOperator");
+        CNS_DEBUG_MSG(logKey, "end");
+        return getMemberExpr(context, uop);
+    }
+    if(asubs) {
+        CNS_DEBUG_MSG(logKey, "Found subexpr arraySubscript");
+        CNS_DEBUG_MSG(logKey, "end");
+        return getMemberExpr(context, asubs);
+    }
+    if(caste) {
+        CNS_DEBUG_MSG(logKey, "Found subexpr castExpr");
+        CNS_DEBUG_MSG(logKey, "end");
+        return getMemberExpr(context, caste);
+    }
+    if(parene) {
+        CNS_DEBUG_MSG(logKey, "Found subexpr parenExpr");
+        CNS_DEBUG_MSG(logKey, "end");
+        return getMemberExpr(context, parene);
+    }
+
+    CNS_DEBUG_MSG(logKey, "end");
+    return nullptr;
 }
 
 clang::DeclRefExpr const* getSubExprDRE(
@@ -1509,6 +1566,7 @@ std::string qualifiedNameFromFptrCall(clang::ASTContext &context, clang::CallExp
     CNS_DEBUG_MSG(logKey, "end");
     return qualifiedName(context, *fptr);
 }
+
 //--
 
 #endif // UTILS_H
