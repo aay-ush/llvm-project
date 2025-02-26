@@ -90,7 +90,7 @@ bool isNodeDominatorNew(
         return true;
     }
 
-    CNS_DEBUG(logKey, "Checking current doms for this dom [{}]", dom.from_.qn_);
+    CNS_DEBUG(logKey, "Checking current doms for this dom [{}]", dom.op().qn_);
     auto doms = doms_.value();
     CNS_DEBUG_MSG(logKey, "end");
     return std::find(begin(doms), end(doms), dom) == end(doms);
@@ -308,8 +308,8 @@ void logCensusUpdate(
             rhs.qn_, rhs.expr_, rhs.linkedParm_);
     fmt::print(fOUT, "      from: [{}]{}\n", lhs.category_, lhs.type_);
     fmt::print(fOUT, "        to: [{}]{}\n", rhs.category_, rhs.type_);
-    fmt::print(fOUT, "      expr: [{}:{}]{}\n", dom.castType_, dom.exprType_, dom.expr_);
-    fmt::print(fOUT, "      origin condition: {}\n", String(dom.originCondition_));
+    fmt::print(fOUT, "      expr: [{}]{}\n", dom.linkType(), dom.linkExpr());
+    fmt::print(fOUT, "      origin condition: {}\n", String(dom.parentCondition()));
     //fmt::print(fOUT, "FuncsLinked: {}() -> {}()\n", lhs.container_, dom.callee_.value_or("(n/a)"));
 
 }
@@ -333,17 +333,7 @@ void updateCensus(
     // Cast kind update
     //rhs.castKind_ = castExpr.getCastKindName();
 
-    DominatorData dom{
-        lhs,
-        String(context, castExpr),
-        castExpr.getCastKindName(), //{}, //getCastExprType(dest),
-        "regularCast",
-        getOriginCondition(context, castExpr)
-        //{}, //getLinkedFunction(context, castExpr, dest)
-    };
-    if(auto const *memex = getMemberExpr(context, &castExpr); memex) {
-        dom.exprType_ = "Member: " + String(context, *memex);
-    }
+    auto dom = makeDominatorData(context, lhs, castExpr);
 
     updateCensus(lhs, rhs, dom);
     if(SEVERITY_FILTER & cns::logging::severity::Info) {
@@ -420,7 +410,7 @@ void updateCensus(
     CNS_INFO_MSG(logKey, "<declrefexpr, varDecl> building rhs data.");
     auto rhs = buildOpData(context, sm, dest);
 
-    DominatorData dom = buildVarDeclDom(context, lhs, dest);
+    DominatorData dom = makeDominatorData(context, lhs, dest);
     updateCensus(lhs, rhs, dom);
     if(SEVERITY_FILTER & cns::logging::severity::Info) {
         logCensusUpdate(lhs, rhs, dom);
@@ -487,6 +477,7 @@ inline OpData buildLimitedArgOp(clang::ASTContext &context,
         };
 }
 
+/*
 void processMidCall(clang::ASTContext &context,
         clang::SourceManager const &sm,
         clang::CallExpr const &call,
@@ -520,6 +511,7 @@ void processMidCall(clang::ASTContext &context,
     updateCensus(from, to, dom);
     CNS_DEBUG_MSG(logKey, "end");
 }
+*/
 
 
 OpData buildArgOp(clang::ASTContext &context,
@@ -585,24 +577,8 @@ void buildOpDatas(clang::ASTContext &context,
             OpData lhs, rhs;
             // create source(arg) op
             lhs = buildArgOp(context, sm, call, *arg);
-            DominatorData dom{
-                lhs,
-                String(context, *arg),
-                "TODOArg", //getCastExprType(arg),
-                "regularCast",
-                getOriginCondition(context, *arg)
-                //{} //getLinkedFunction(context, call, arg)
-            };
-            auto lhsce = dyn_cast<CastExpr>(arg);
-            if(lhsce) {
-                dom.castType_ = lhsce->getCastKindName();
-            }
-            else {
-                dom.castType_ = "NotACast";
-            }
-            if(auto const *memex = getMemberExpr(context, arg); memex) {
-                dom.exprType_ = "Member: " + String(context, *memex);
-            }
+
+            DominatorData dom = makeDominatorData(context, lhs, *arg);
 
             // create target(param) op
             CNS_INFO_MSG(logKey, "Building rhs(Param) opData");

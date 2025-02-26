@@ -71,66 +71,124 @@ CNSCondition getOriginCondition(ASTContext &context, T const &node) {
     return {"NoCond", "N/A"};
 }
 //
+//
 
-// TODO make class
+std::string getDomExprType(clang::ASTContext &context, clang::Expr const &e) {
+    if(auto const * ce = castExpr_(&e); ce) {
+        return "Cast";
+    }
+
+    if(auto const *memex = getMemberExpr(context, &e); memex) {
+        // TODO CHK: Maybe get record type::member name/type
+        return  "Member: `" + String(context, *memex) + "`";
+    }
+
+    return "N/A";
+    // TODO check for decl
+}
+
 // Dominator info.
-struct DominatorData {
+class DominatorData {
+public:
+
+    OpData op() const {
+        return from_;
+    }
+
+    std::string linkType() const {
+        return exprType_ + "(" + castKind_ + ")";
+    }
+
+    std::string exprType() const {
+        return exprType_;
+    }
+
+    std::string castKind() const {
+        return castKind_;
+    }
+
+    std::string linkExpr() const {
+        return expr_;
+    }
+
+    CNSCondition parentCondition() const {
+        return originCondition_;
+    }
+
+    DominatorData(OpData from, std::string expr, std::string exprType, std::string castKind, CNSCondition originCondition):
+        from_(from),
+        expr_(expr),
+        exprType_(exprType),
+        castKind_(castKind),
+        originCondition_(originCondition) {}
+
+    DominatorData() = default;
+    ~DominatorData() = default;
+    DominatorData(DominatorData const&) = default;
+    DominatorData(DominatorData &&) = default;
+    DominatorData& operator=(DominatorData const&) = default;
+    DominatorData& operator=(DominatorData &&) = default;
+
+private:
     OpData from_;
     std::string expr_;
-    std::string castType_ {};
     std::string exprType_ {};
-    CNSCondition originCondition_ {"NoCond", "N/A"};    // e.g. condition of a conditional cast (different from expr_)
+    std::string castKind_ {};
+    CNSCondition originCondition_ {"NoCond", "N/A"};
     //std::optional<std::string> callee_;
 };
 
+DominatorData makeDominatorData(clang::ASTContext &context, OpData from, clang::Expr const &expr) {
+    return {
+        from,
+        String(context, expr),
+        getDomExprType(context, expr),
+        getCastKind(context, expr),
+        getOriginCondition(context, expr)
+        //getLinkedFunction(context, castExpr, dest)
+    };
+}
+
+DominatorData makeDominatorData(clang::ASTContext &context, OpData from, clang::VarDecl const& var) {
+    auto logKey = String(context, var);
+    CNS_DEBUG_MSG(logKey, "begin");
+    if(auto const *initEx = var.getInit(); initEx) {
+        CNS_DEBUG(logKey, "Found init expr: '{}'", String(context, *initEx));
+        CNS_DEBUG_MSG(logKey, "end");
+        return {
+            from,
+            String(context, *initEx),
+            "InitVarDecl " + getDomExprType(context, *initEx),
+            getCastKind(context, *initEx),
+            getOriginCondition(context, *initEx)
+        };
+    }
+
+    CNS_DEBUG_MSG(logKey, "No init expr found for vardecl");
+    CNS_DEBUG_MSG(logKey, "end");
+    return {
+        from,
+        String(context, var),
+        "VarDecl (No init)",
+        "N/A",
+        {"N/A", "N/A"}
+    };
+}
+
 
 bool operator==(DominatorData const &lhs, DominatorData const &rhs) {
-    return lhs.from_ == rhs.from_;
+    return lhs.op() == rhs.op();
+    //return (lhs.linkExpr() == rhs.linkExpr())
+    //    && (lhs.linkType() == rhs.linkType());
 }
 bool operator!=(DominatorData const &lhs, DominatorData const &rhs) {
     return !(lhs == rhs);
 }
 
 std::string String(DominatorData const &d) {
-    return d.from_.qn_ + "{" + d.castType_ + ":" + d.exprType_ + "(" + String(d.originCondition_) + ")}";
+    return d.op().qn_ + "{" + d.linkType() + "(" + String(d.parentCondition()) + ")}";
 }
 //
-
-DominatorData buildVarDeclDom(clang::ASTContext &context, OpData const& domOp, clang::VarDecl const& var) {
-    auto logKey = String(context, var);
-    CNS_DEBUG_MSG(logKey, "begin");
-    DominatorData ret;
-    auto const *inx = var.getInit();
-    if(inx) {
-        // TODO TODO: can have a nested cast
-        CNS_DEBUG(logKey, "Found init expr: '{}'", String(context, *inx));
-        auto const *inc = dyn_cast<clang::CastExpr>(inx);
-        if(inc) {
-            CNS_DEBUG(logKey, "Init expression is cast expr '{}'", String(context, *inc));
-            //rhs.castKind_ = inc->getCastKindName();
-            ret = {domOp, String(context, *inc), inc->getCastKindName()};
-        }
-        else {
-            CNS_DEBUG(logKey, "Init expression '{}' is not a cast expr", String(context, *inx));
-            ret = {domOp, String(context, *inx), "InitVarDecl"};
-        }
-        if(auto const *memex = getMemberExpr(context, inx); memex) {
-            ret.exprType_ = "Member: " + String(context, *memex);
-        }
-        else {
-            ret.exprType_ = "regularDecl";
-        }
-
-        ret.originCondition_ = getOriginCondition(context, *inx);
-    }
-    else {
-        CNS_ERROR_MSG(logKey, "No init expr found for vardecl");
-        ret = {domOp, "NoInitExprFound", "VarDecl", "N/A"};
-    }
-
-    CNS_DEBUG_MSG(logKey, "end");
-    return ret;
-}
 
 //--
 using Dominators = std::vector<DominatorData>;
@@ -148,7 +206,7 @@ Census census;
 using CensusNode = decltype(census)::value_type;
 
 bool operator==(DominatorData const &lhs, CensusKey const &rhs) {
-    return lhs.from_.qn_ == rhs;
+    return lhs.op().qn_ == rhs;
 }
 bool operator!=(DominatorData const &lhs, CensusKey const &rhs) {
     return !(lhs == rhs);
@@ -385,7 +443,7 @@ std::vector<CensusKey> UseChain(OpData const &op) {
         auto const &doms = doms_.value();
         auto match = std::find_if(std::begin(doms), std::end(doms),
                 [&op](auto const &d) {
-                    return op == d.from_;
+                    return op == d.op();
                 });
         //if(match != std::end(doms)) {
             //CNS_DEBUG("Op dominates {}", in.second.first.hash_);
@@ -522,11 +580,10 @@ std::string dump(Dominators const& doms) {
 
 std::string dump(DominatorData const& domInfo) {
     std::string sd;
-    sd = "{from: " + dump(domInfo.from_)
-        + "', LinkingExpr: '" + domInfo.expr_
-        + "', CastType: '" + domInfo.castType_
-        + "', ExprType: '" + domInfo.exprType_
-        + "', OriginExpr: '" + String(domInfo.originCondition_)
+    sd = "{from: " + dump(domInfo.op())
+        + "', LinkingExpr: '" + domInfo.linkExpr()
+        + "', LinkType: '" + domInfo.linkType()
+        + "', OriginExpr: '" + String(domInfo.parentCondition())
         //+ "', CalledFunction: '" + domInfo.callee_.value_or("(N/A)")
         + "}\n";
     return sd;

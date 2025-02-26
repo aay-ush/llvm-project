@@ -302,25 +302,7 @@ HistoryTemplate::HistoryTemplate(clang::ASTContext &context, clang::CallExpr con
                 pop.qn_ = qn;   // Other than qn
                 CNS_INFO(logKey, "<SEE>Built param opdata '{}' for '{}'", pop.qn_, String(context, *p));
                 //census.insert(makeCensusSourceNode(pop));
-                DominatorData dom = {
-                    aop,
-                    String(context, *p),
-                    "TODOArg",
-                    "regularArg",
-                    getOriginCondition(context, *p)
-                };
-
-                // TODO TODO Can have nested cast
-                auto lhsce = dyn_cast<CastExpr>(p);
-                if(lhsce) {
-                    dom.castType_ = lhsce->getCastKindName();
-                }
-                else {
-                    dom.castType_ = "NotACast";
-                }
-                if(auto const *memex = getMemberExpr(context, p); memex) {
-                    dom.exprType_ = "Member: " + String(context, *memex);
-                }
+                DominatorData dom = makeDominatorData(context, aop, *p);
 
                 census.insert(makeCensusNode(pop, dom));
             }
@@ -612,10 +594,10 @@ class History {
 
 void History::extend(History const &h, DominatorData const& linkInfo) {
     LOG_FUNCTION_TIME;
-    auto const logKey = h.opId() + "(<- " + linkInfo.from_.qn_ + ")";
+    auto const logKey = h.opId() + "(<- " + linkInfo.op().qn_ + ")";
     CNS_DEBUG_MSG(logKey, "<g> begin");
     CNS_DEBUG(logKey, "<g> Current version: {}", idversion());
-    CNS_DEBUG(logKey, "<g> Input history version: {}; Dominator{{{}, {}}}", h.idversion(), linkInfo.from_.qn_, linkInfo.castType_);
+    CNS_DEBUG(logKey, "<g> Input history version: {}; Dominator{{{}, {}}}", h.idversion(), linkInfo.op().qn_, linkInfo.linkType());
     CNS_DEBUG(logKey, "<g> Current context size for H({}): {}", h.op_, h.hc_.size());
     CNS_DEBUG(logKey, "<g> Extending input context using current version: {}", idversion());
     // Check if needed, maybe not since local context is stored with histories now.
@@ -650,7 +632,7 @@ void History::extend(LocalHistory const &h) {
     auto const logKey = h.id();
     CNS_DEBUG_MSG(logKey, "<lh> begin");
     CNS_DEBUG(logKey, "<lh> Current version: {}", idversion());
-    CNS_DEBUG(logKey, "<lh> Input history version: {}; Dominator{{{}, {}}}", h.history().idversion(), h.linkInfo().from_.qn_, h.linkInfo().castType_);
+    CNS_DEBUG(logKey, "<lh> Input history version: {}; Dominator{{{}, {}}}", h.history().idversion(), h.linkInfo().op().qn_, h.linkInfo().linkType());
     if(h.context()) {
         CNS_DEBUG(logKey, "<lh> Input local context size: {}", h.context().value().size());
     }
@@ -700,10 +682,6 @@ History const& LocalHistory::history() const {
 
 
 std::unordered_map<CensusKey, History> TypeTransforms;
-
-std::string History::getContextResolvedOpStr0(std::optional<HistoryContext const> lc) const {
-    return "";
-}
 
 std::string History::getContextResolvedOpStr(std::optional<HistoryContext const> lc) const {
     LOG_FUNCTION_TIME;
@@ -1101,6 +1079,7 @@ std::vector<LocalHistory> HistoryTemplate::instantiate(clang::ASTContext &contex
             auto const &hp = TypeTransforms.at(p);
             //h.emplace_back(hp, lc);
             // get Dominator data for arg(from) -> parm(to)
+            // TODO TODO CHK why is it okay to have linkInfo empty
             DominatorData linkInfo;
             auto itp = census.find(p);
             if(itp == census.end()) {
@@ -1131,6 +1110,7 @@ std::vector<LocalHistory> HistoryTemplate::instantiate(clang::ASTContext &contex
                 }
             }
             pos++;
+            // TODO TODO CHK why is it okay to have linkInfo empty
             h.emplace_back(hp, linkInfo, lc);
             CNS_DEBUG(logKey, "Current context size for H({}): {}", p, hp.getContext().size());
 
@@ -1384,16 +1364,14 @@ TypeSummary makeTypeSummaryLH(LocalHistory const& lh) {
 
     if(isIgnoredFunction(h.opId())) {
         CNS_INFO(logKey, "skipping, ignored function: {}", hid);
-        auto ts = makeResolvedSummary(hid, hid, linkInfo, linkInfo.castType_);
-        //ts.setlabel(lh.linkInfo().castType_);
+        auto ts = makeResolvedSummary(hid, hid, linkInfo, linkInfo.castKind());
         CNS_DEBUG_MSG(logKey, "end");
         return ts;
     }
 
     auto rops = h.getContextResolvedOpStr(lh.context());
     CNS_DEBUG_MSG(logKey, "1");
-    auto ts = makeResolvedSummary(hid, rops, linkInfo, linkInfo.castType_);
-    //ts.setlabel(lh.linkInfo().castType_);
+    auto ts = makeResolvedSummary(hid, rops, linkInfo, linkInfo.castKind());
     if(!lh.context()) {
         CNS_DEBUG(logKey, "{{{}}}: No local context; end", ts.id());
         return ts;
@@ -1549,7 +1527,7 @@ std::string TypeSummary::summarize(CastStat &cst, std::optional<unsigned> level,
     if(!op.linkedRecord_.empty()) {
         ssr += "{" + op.linkedRecord_ + ": " + op.linkedRecordCategory_ + "}";
     }
-    ssr.append(" (" + linkInfo_.exprType_ + "){" + String(linkInfo_.originCondition_) + "}");
+    ssr.append(" (" + linkInfo_.linkType() + "){" + String(linkInfo_.parentCondition()) + "}");
 
     if(level <= 0 && nexts_.size() > 0) {
         ssr.append("-> <...>\n");

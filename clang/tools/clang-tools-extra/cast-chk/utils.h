@@ -610,7 +610,7 @@ std::string String(ASTContext const &context, FunctionDecl const &fn, unsigned p
     assert(parm);
 
     // Get parm type
-    auto const parmType = parm->getOriginalType(); 
+    auto const parmType = parm->getOriginalType();
     ret.append(Typename(context, parmType));
 
     // Get parm id
@@ -1565,6 +1565,15 @@ std::string qualifiedNameFromFptrCall(clang::ASTContext &context, clang::CallExp
     }
     CNS_DEBUG_MSG(logKey, "end");
     return qualifiedName(context, *fptr);
+}
+
+std::string getCastKind(clang::ASTContext &context, clang::Expr const &e) {
+    // Can have nested cast, but then that's to be handled with cast matcher
+    if(auto const * ce = castExpr_(&e); ce) {
+        return ce->getCastKindName();
+    }
+
+    return "NotACast";
 }
 
 //--
