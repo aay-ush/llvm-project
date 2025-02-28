@@ -13,6 +13,64 @@ std::string String(CNSCondition const &c) {
     return c.condition_;
 }
 
+CNSCondition buildSwitchCaseCondition(ASTContext &context, clang::SwitchCase const& sct) {
+    auto const logKey = String(context, sct);
+    CNS_DEBUG_MSG(logKey, "begin");
+
+    auto get_case = [](clang::ASTContext &context, clang::SwitchCase const* sc)
+        -> std::string {
+            if(auto const* scc = dyn_cast<clang::CaseStmt>(sc)) {
+                return String(context, *(scc->getLHS()));
+            }
+            else if(auto const* scd = dyn_cast<clang::DefaultStmt>(sc)) {
+                return "default";
+            }
+            return "";
+        };
+
+    auto get_loc = [](clang::ASTContext &context, clang::SwitchCase const* sc)
+        -> std::string {
+            if(auto const* scc = dyn_cast<clang::CaseStmt>(sc)) {
+                return scc->getCaseLoc().printToString(context.getSourceManager());
+            }
+            else if(auto const* scd = dyn_cast<clang::DefaultStmt>(sc)) {
+                return scd->getDefaultLoc().printToString(context.getSourceManager());
+            }
+            return "";
+        };
+
+    auto rhs = get_case(context, &sct);
+    CNS_DEBUG(logKey, "Case so far: {}", rhs);
+
+    auto parents = context.getParents(sct);
+    while(parents.size() != 0
+            && parents[0].template get<clang::SwitchStmt>() == nullptr) {
+        if(auto const* case2 = parents[0].template get<clang::SwitchCase>()) {
+            rhs.append(" | " + get_case(context, case2));
+        }
+        CNS_DEBUG(logKey, "Case so far: {}", rhs);
+        CNS_DEBUG_MSG(logKey, "Checking grandparents");
+        parents = context.getParents(parents[0]);
+    }
+
+    std::string lhs;
+    auto const* swtch = parents[0].template get<clang::SwitchStmt>();
+    if(!swtch) {
+        CNS_ERROR_MSG(logKey, "Could not find parent switch statement");
+        return {};
+    }
+
+    CNS_DEBUG_MSG(logKey, "Found parent switch statement");
+    lhs = String(context, *(swtch->getCond()));
+    CNS_DEBUG(logKey, "Switch condition: {}", lhs);
+    CNS_DEBUG_MSG(logKey, "end");
+
+    return {
+        lhs + " == " + rhs,
+        get_loc(context, &sct)
+    };
+}
+
 template<typename T>
 CNSCondition getOriginCondition(ASTContext &context, T const &node) {
     auto const logKey = String(context, node) + " <T>";
@@ -26,30 +84,12 @@ CNSCondition getOriginCondition(ASTContext &context, T const &node) {
 
     CNS_DEBUG_MSG(logKey, "Found parents");
     while(parents.size() != 0) {
-        if(auto const *casestmt = parents[0].template get<clang::CaseStmt>(); casestmt) {
-            CNS_DEBUG_MSG(logKey, "Found parent case statement");
-
-            // For switch-case, switch has condition (lhs), and case has match (rhs) value
-            std::string rhs = String(context, *(casestmt->getLHS()));
-            CNS_DEBUG(logKey, "Case match: {}", rhs);
-
-            std::string lhs;
-            auto cstmt = context.getParents(*casestmt); // Compound block
-            auto swstmt = context.getParents(cstmt[0]);
-            if(auto const* swt = swstmt[0].template get<clang::SwitchStmt>(); swt) {
-                CNS_DEBUG_MSG(logKey, "Found parent switch statement");
-                lhs = String(context, *(swt->getCond()));
-                CNS_DEBUG(logKey, "Switch condition: {}", lhs);
-            }
-
-            CNS_DEBUG_MSG(logKey, "end");
-            return {
-                lhs + " == " + rhs,
-                casestmt->getCaseLoc().printToString(context.getSourceManager())
-            };
+        if(auto const *sct = parents[0].template get<clang::SwitchCase>()) {
+            CNS_DEBUG_MSG(logKey, "Found parent switch-case statement");
+            return buildSwitchCaseCondition(context, *sct);
         }
 
-        else if(auto const *ifstmt = parents[0].template get <clang::IfStmt>(); ifstmt) {
+        else if(auto const *ifstmt = parents[0].template get <clang::IfStmt>()) {
             CNS_DEBUG_MSG(logKey, "Found parent if statement");
 
             auto condition = String(context, *(ifstmt->getCond()));
@@ -74,16 +114,19 @@ CNSCondition getOriginCondition(ASTContext &context, T const &node) {
 //
 
 std::string getDomExprType(clang::ASTContext &context, clang::Expr const &e) {
+    std::string exprType;
+    /*
     if(auto const * ce = castExpr_(&e); ce) {
-        return "Cast";
+        exprType.append("`Cast` ");
     }
+    */
 
     if(auto const *memex = getMemberExpr(context, &e); memex) {
         // TODO CHK: Maybe get record type::member name/type
-        return  "Member: `" + String(context, *memex) + "`";
+        exprType = "Member: `" + String(context, *memex) + "`";
     }
 
-    return "N/A";
+    return exprType;
     // TODO check for decl
 }
 

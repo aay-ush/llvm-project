@@ -1364,14 +1364,14 @@ TypeSummary makeTypeSummaryLH(LocalHistory const& lh) {
 
     if(isIgnoredFunction(h.opId())) {
         CNS_INFO(logKey, "skipping, ignored function: {}", hid);
-        auto ts = makeResolvedSummary(hid, hid, linkInfo, linkInfo.castKind());
+        auto ts = makeResolvedSummary(hid, hid, linkInfo);//, linkInfo.castKind());
         CNS_DEBUG_MSG(logKey, "end");
         return ts;
     }
 
     auto rops = h.getContextResolvedOpStr(lh.context());
     CNS_DEBUG_MSG(logKey, "1");
-    auto ts = makeResolvedSummary(hid, rops, linkInfo, linkInfo.castKind());
+    auto ts = makeResolvedSummary(hid, rops, linkInfo);//, linkInfo.castKind());
     if(!lh.context()) {
         CNS_DEBUG(logKey, "{{{}}}: No local context; end", ts.id());
         return ts;
@@ -1519,15 +1519,23 @@ std::string TypeSummary::summarize(CastStat &cst, std::optional<unsigned> level,
     cst.record(op, linkInfo_, linkLabel_);
 
     if(op.type_.empty()) {
-        ssr = "T {" + key_ + "}(" + linkLabel_ + ")";
+        ssr = "T {" + key_ + "}";
     }
     else {
-        ssr = op.type_ + "{" + key_ + "}(" + linkLabel_ + ")";
+        ssr = op.type_ + "{" + key_ + "}";
+    }
+    if(!linkLabel_.empty()) {
+        ssr.append("(" + linkLabel_ + ")");
     }
     if(!op.linkedRecord_.empty()) {
         ssr += "{" + op.linkedRecord_ + ": " + op.linkedRecordCategory_ + "}";
     }
-    ssr.append(" (" + linkInfo_.linkType() + "){" + String(linkInfo_.parentCondition()) + "}");
+
+    ssr.append(" (" + linkInfo_.linkType() + ")");
+    if(!linkInfo_.parentCondition().condition_.empty()
+            && linkInfo_.parentCondition().condition_ != "NoCond") {
+        ssr.append(" {" + String(linkInfo_.parentCondition()) + "}");
+    }
 
     if(level <= 0 && nexts_.size() > 0) {
         ssr.append("-> <...>\n");

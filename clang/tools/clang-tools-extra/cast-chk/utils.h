@@ -185,7 +185,7 @@ std::string Typename(ASTContext const &context, QualType qtype);
 // Get type name of Expr.
 std::string Typename(ASTContext const &context, Expr const &expr);
 // Get type name of Type
-std::string Typename(ASTContext const &context, clang::Type const *type);
+//std::string Typename(ASTContext const &context, clang::Type const *type);
 // Get type name from VarDecl
 std::string Typename(ASTContext const &context, clang::ValueDecl const &d);
 // Get type class of Expr (pointer, array)
@@ -197,7 +197,7 @@ std::string TypeCategory(ASTContext const &context, ValueDecl const &d);
 std::string getLinkedRecord(clang::QualType const &qt);
 std::string getLinkedRecord(clang::Expr const &expr);
 std::string getLinkedRecord(clang::ValueDecl const &decl);
-std::string getLinkedRecord(clang::Type const &type);
+//std::string getLinkedRecord(clang::Type const &type);
 
 //clang::FunctionDecl const* getContainerFunctionDecl(ASTContext &context, clang::Stmt const &stmt);
 //std::string getContainerFunction(ASTContext &context, clang::Stmt const &stmt);
@@ -647,13 +647,35 @@ std::string String(ASTContext const &context, Decl const &decl) {
 std::string getLinkedRecord(clang::QualType const &qt) {
     constexpr auto logKey = "<QualType>";
     CNS_DEBUG_MSG(logKey, "begin");
+    if(auto const* rdecl = qt->getAsRecordDecl()) {
+        // Record type found
+        return qt.getAsString();
+    /* TODO use field info for field access
+        if(auto const* rdef = rdecl->getDefinition()) {
+            for(auto *const field: rdef->fields()) {
+                // getNameAsString()
+                // typename(decl)
+                // getFieldIndex()
+                // field type or category
+            }
+        }
+
+    */
+    }
+
+    CNS_DEBUG_MSG(logKey, "end");
+    return "";  // Not a record
+
+    /*
     auto const *type = qt.getTypePtrOrNull();
     if(!type) {
         CNS_DEBUG_MSG(logKey, "end");
         return "";
     }
+
     CNS_DEBUG_MSG(logKey, "end");
     return getLinkedRecord(*type);
+    */
 }
 
 std::string getLinkedRecord(clang::Expr const &expr) {
@@ -670,6 +692,7 @@ std::string getLinkedRecord(clang::ValueDecl const &decl) {
     return getLinkedRecord(decl.getType());
 }
 
+/*
 std::string getLinkedRecord(clang::Type const &type) {
     constexpr auto logKey = "<Type>";
     CNS_DEBUG_MSG(logKey, "begin");
@@ -703,6 +726,7 @@ std::string getLinkedRecord(clang::Type const &type) {
     CNS_DEBUG_MSG(logKey, "end");
     return declType->getTypeClassName();
 }
+*/
 
 // Get type name of QualType
 std::string Typename(ASTContext const &context, QualType qtype) {
@@ -721,6 +745,7 @@ std::string Typename(ASTContext const &context, Expr const &expr) {
     return Typename(context, expr.getType());
 }
 
+/*
 // Get type name of Type
 std::string Typename(ASTContext const &context, clang::Type const *type) {
     constexpr auto logKey = "<Type>";
@@ -734,6 +759,7 @@ std::string Typename(ASTContext const &context, clang::Type const *type) {
     CNS_DEBUG_MSG(logKey, "end");
     return oStr; 
 }
+*/
 
 // Get type name from VarDecl
 std::string Typename(ASTContext const &context, clang::ValueDecl const &d) {
@@ -747,16 +773,18 @@ std::string Typename(ASTContext const &context, clang::ValueDecl const &d) {
 std::string TypeCategory(QualType const &qtype) {
     constexpr auto logKey = "<QualType>";
     CNS_DEBUG_MSG(logKey, "begin");
+    /*
     auto const *type = qtype.getTypePtr();
     assert(type);
-    if(type->isFunctionPointerType()){ // No type class for fptr in clang.
+    */
+    if(qtype->isFunctionPointerType()){ // No type class for fptr in clang.
         CNS_INFO_MSG(logKey, "Assinging FunctionPointer TypeCategory not defined in clang::Type::TypeClass.");
         CNS_DEBUG_MSG(logKey, "end");
         return "FunctionPointer";
     }
 
     CNS_DEBUG_MSG(logKey, "end");
-    return type->getTypeClassName();
+    return qtype->getTypeClassName();
 }
 
 // Get type class of Expr (pointer, array)
@@ -779,14 +807,16 @@ std::string TypeCategory(ASTContext const &context, ValueDecl const &d) {
 std::string linkedTypeCategory(QualType const &qtype) {
     constexpr auto logKey = "<QualType>";
     CNS_DEBUG_MSG(logKey, "begin");
+    /*
     auto *type = qtype.getTypePtrOrNull();
     if(!type) {
         CNS_DEBUG_MSG(logKey, "end");
         return "";
     }
+    */
 
-    auto const *stype = type->getAsStructureType();
-    auto const *utype = type->getAsUnionType();
+    auto const *stype = qtype->getAsStructureType();
+    auto const *utype = qtype->getAsUnionType();
 
     if(stype) {
         CNS_DEBUG_MSG(logKey, "end");
@@ -799,6 +829,7 @@ std::string linkedTypeCategory(QualType const &qtype) {
 
     CNS_DEBUG_MSG(logKey, "end");
     return "";
+    //return TypeCategory(qtype);
 }
 
 std::string linkedTypeCategory(Expr const &e) {
