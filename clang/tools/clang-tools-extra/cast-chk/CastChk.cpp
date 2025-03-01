@@ -38,6 +38,7 @@
 #include "utils.h"
 #include "Census.h"
 #include "History.h"
+#include "Recognizer.h"
 #include "OpData.h"
 
 using namespace clang::tooling;
@@ -1142,6 +1143,8 @@ static cl::extrahelp Morehelp("\nMore help text...\n");
 
 void buildIgnoreList();
 void printCollection();
+void printScores();
+
 std::vector<std::string> filterC(CompilationDatabase const& cdb);
 std::vector<std::string> filterC(std::vector<std::string> input);
 
@@ -1207,7 +1210,9 @@ int main(int argc, const char **argv) {
     //return Tool.run(newFrontendActionFactory<clang::SyntaxOnlyAction>().get());
     //return Tool.run(newFrontendActionFactory(&Finder).get());
     auto rc = Tool.run(newFrontendActionFactory(&Finder).get());
+    elaborateHistories();
     printCollection();
+    printScores();
     fclose(fOUT);
     return rc;
 }
@@ -1231,66 +1236,86 @@ std::vector<std::string> filterC(CompilationDatabase const& cdb) {
     return filterC(sources);
 }
 
-
-void printCollection(std::FILE *fp) {
-    LOG_FUNCTION_TIME;
-
-    CastStat tcst("Total Cast Statistics");
-    fmt::print(fp, "History collection:\n");
-    std::for_each(begin(TypeSummaries), end(TypeSummaries),
-        [&](auto const &s) {
-            CastStat cst("Cast stats for " + s.first);
-            fmt::print(fp, "History of ({}) [{}]:\n", s.first, ops(s.first).location_);
-            auto tsummary = s.second.summarize(cst, {SUMMARY_DEPTH});
-            tcst.extend(cst);
-
-            fmt::print(fp, "{}\n\n", tsummary);
-            cst.print(fp);
-            fmt::print(fp, "\n");
-        });
-    tcst.print(fp);
-    std::fflush(fp);
+// Tee data on all output streams
+inline void tprint(std::string const& data) {
+    std::fprintf(fOUT, "%s", data.c_str());
+    std::printf("%s", data.c_str());
 }
 
 void printCollection() {
     LOG_FUNCTION_TIME;
 
-    elaborateHistories();
-    /*
-    std::for_each(begin(TypeTransforms), end(TypeTransforms),
-        [&](auto &h) {
-            elaborateHistory(h.second); //, {3});
-        });
-    */
+    auto teeStat = [](auto const &stat) {
+        stat.print(fOUT);
+        stat.print(stdout);
+    };
 
-    printCollection(fOUT);
-    printCollection(stdout);
-    /*
-    std::for_each(begin(TypeTransforms), end(TypeTransforms),
-        [&](auto &h) {
-            elaborateHistory(h.second); //, {3});
-        });
-
-    CastStat tcst;
-    fmt::print(fOUT, "History collection:\n");
-    fmt::print(stdout, "History collection:\n");
+    CastStat tcst("Total Cast Statistics");
+    tprint("History collection:\n");
     std::for_each(begin(TypeSummaries), end(TypeSummaries),
         [&](auto const &s) {
-            CastStat cst;
-            fmt::print(fOUT, "History of ({}):\n", s.first);
-            fmt::print(stdout, "History of ({}):\n", s.first);
-            //std::cout << "History of (" << s.first << "):\n";
+            CastStat cst("Cast stats for " + s.first);
+            tprint(fmt::format("History of ({}) [{}]:\n", s.first, ops(s.first).location_));
             auto tsummary = s.second.summarize(cst, {SUMMARY_DEPTH});
-            fmt::print(fOUT, "{}\n\n", tsummary);
-            fmt::print(stdout, "{}\n\n", tsummary);
-            cst.print(fOUT);
-            cst.print(stdout);
-            std::fflush(stdout);
             tcst.extend(cst);
+
+            tprint(tsummary);
+            tprint("\n\n");
+            teeStat(cst);
+            tprint("\n");
+
+            std::fflush(fOUT);
+            std::fflush(stdout);
         });
-    fmt::print(fOUT, "end History collection\n");
-    fmt::print(stdout, "end History collection\n");
-    */
+    teeStat(tcst);
+}
+
+void printInScore(CensusKey const &op) {
+    auto const &ss = SummarizedScores.at(op);
+
+    auto const &types = ss.inTypes();
+    tprint(fmt::format("{}: {}\n", op, types));
+}
+
+void printOutScore(CensusKey const &op) {
+    auto const &ss = SummarizedScores.at(op);
+
+    auto const &types = ss.outTypes();
+    tprint(fmt::format("{}: {}\n", op, types));
+}
+
+void printScores() {
+    initScores();
+    std::for_each(begin(TypeSummaries), end(TypeSummaries),
+        [](auto const &node) {
+            scoreSummary(node.second);
+        });
+
+    tprint("Summarized scores:\n");
+    std::for_each(begin(SummarizedScores), end(SummarizedScores),
+        [](auto const &node) {
+            tprint(fmt::format("{}: in({}), out({})\n", node.first, node.second.inScore(), node.second.outScore()));
+        });
+    tprint("\n");
+
+    tprint("Possible generic uses:\n");
+    std::for_each(begin(SummarizedScores), end(SummarizedScores),
+        [](auto const &node) {
+            //auto const &op = ops(node.first);
+            if(isPotentiallyGeneric(node.first)) {
+                printInScore(node.first);
+            }
+        });
+
+    tprint("\n");
+    tprint("Possible subtype uses:\n");
+    std::for_each(begin(SummarizedScores), end(SummarizedScores),
+        [](auto const &node) {
+            //auto const &op = ops(node.first);
+            if(isPotentiallySubtype(node.first)) {
+                printOutScore(node.first);
+            }
+        });
 }
 
 void buildIgnoreList() {

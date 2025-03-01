@@ -1,0 +1,105 @@
+#ifndef RECOGNIZER_H
+#define RECOGNIZER_H
+
+#include "Census.h"
+#include "History.h"
+#include "utils.h"
+
+#include <numeric>
+
+class TypeScore {
+public:
+    unsigned inScore() const {
+        return inTypes_.size();
+    }
+    unsigned outScore() const {
+        return outTypes_.size();
+    }
+
+    std::string inTypes() const {
+        return in_.types();
+    }
+
+    std::string outTypes() const {
+        return out_.types();
+    }
+
+    void addInType(std::string type) {
+        CNS_DEBUG(id_, "Inserting inType: {}", type);
+        auto st = inTypes_.insert(type);
+        CNS_DEBUG(id_, "Insert status: {}", st.second);
+    }
+
+    void addOutType(std::string type) {
+        CNS_DEBUG(id_, "Inserting outType: {}", type);
+        auto st = outTypes_.insert(type);
+        CNS_DEBUG(id_, "Insert status: {}", st.second);
+    }
+
+    TypeScore(CensusKey const& id): id_(id) {}
+
+private:
+    struct Score {
+        std::unordered_set<std::string> types_;
+        std::string types() const {
+            if(types_.empty()) {
+                return "";
+            }
+
+            return std::accumulate(next(begin(types_)), end(types_), *begin(types_),
+                [](std::string a, std::string b) {
+                    CNS_DEBUG("accumulating", "Accumulated: {}; adding: {}", a, b);
+                    return std::move(a) + ", " + b;
+                });
+        }
+    };
+
+    CensusKey id_;
+    Score in_;
+    Score out_;
+
+    decltype(Score::types_) & inTypes_ = in_.types_;
+    decltype(Score::types_) & outTypes_ = out_.types_;
+};
+
+std::unordered_map<CensusKey, TypeScore> SummarizedScores;
+
+void scoreEdge(CensusKey const &from, CensusKey const &to) {
+    auto const logKey = from + " -> " + to;
+    CNS_DEBUG_MSG(logKey, "begin");
+    SummarizedScores.at(from).addOutType(ops(to).type_);
+    CNS_DEBUG(logKey, "Updated out score for '{}': {}", from, SummarizedScores.at(from).outScore());
+
+    SummarizedScores.at(to).addInType(ops(from).type_);
+    CNS_DEBUG(logKey, "Updated in score for '{}': {}", to, SummarizedScores.at(to).inScore());
+
+    CNS_DEBUG_MSG(logKey, "end");
+}
+
+void initScores() {
+    std::for_each(begin(TypeSummaries), end(TypeSummaries),
+        [](auto const &node) {
+            SummarizedScores.emplace(node.first, node.first);
+        });
+}
+
+// TODO TODO add score propagation
+void scoreSummary(TypeSummary const &ts) {
+    auto const logKey = ts.key();
+    CNS_DEBUG_MSG(logKey, "begin");
+    for(auto const &to: ts.nexts()) {
+        scoreEdge(ts.key(), to.key());
+        scoreSummary(to);
+    }
+    CNS_DEBUG_MSG(logKey, "end");
+}
+
+bool isPotentiallyGeneric(CensusKey const &op) {
+    return SummarizedScores.at(op).inScore() > 1;
+}
+
+bool isPotentiallySubtype(CensusKey const &op) {
+    return SummarizedScores.at(op).outScore() > 1;
+}
+
+#endif // RECOGNIZER_H

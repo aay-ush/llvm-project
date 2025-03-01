@@ -1128,6 +1128,14 @@ class TypeSummary {
 
     explicit TypeSummary(History const &h);
 
+    std::vector<TypeSummary> nexts() const {
+        return nexts_;
+    }
+
+    CensusKey key() const {
+        return key_;
+    }
+
     void addNextBranch(TypeSummary const& branch) {
         auto const logKey = id();
         CNS_DEBUG_MSG(logKey, "begin");
