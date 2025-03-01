@@ -736,7 +736,7 @@ std::string History::getContextResolvedOpStr(std::optional<HistoryContext const>
         }
         else {
             CNS_DEBUG_MSG(logKey, "New rop found in census.");
-            if(ops(rop).type_.empty()) {
+            if(ops(rop).type_.empty() || ops(rop).type_ == "T") {
                 CNS_DEBUG(logKey, "rOp({}) has no type, trying to remove container for correct rop", rop);
                 // Try removing the container:
                 auto ropn = rop.substr(rop.find(".") + 1);
@@ -747,7 +747,7 @@ std::string History::getContextResolvedOpStr(std::optional<HistoryContext const>
                 else {
                     CNS_DEBUG_MSG(logKey, "Removing container led to census match.");
                     rop = ropn;
-                    if(ops(rop).type_.empty()) {
+                    if(ops(rop).type_.empty() || ops(rop).type_ == "T") {
                         CNS_DEBUG(logKey, "rOp({}) has no type defined either", rop);
                     }
                     else {
@@ -891,13 +891,13 @@ std::string dumpH(std::string const &ops_, std::string const &rops, int indent =
     auto const &op = ops(ops_);
     std::string sdh;
     sdh.reserve(64);
-    if(op.type_.empty()) {
+    if(op.type_.empty() || op.type_ == "T") {
         if(census.find(rops) == std::end(census)) {
             sdh.append("T{" + rops + " = " + ops_ + "}");
         }
         else {
             auto rop = ops(rops);
-            if(rop.type_.empty() && (!rop.qn_.empty())) {
+            if((rop.type_.empty() || rop.type_ == "T") && (!rop.qn_.empty())) {
                 sdh.append("T{" + rop.qn_ + "}");
             }
             else if(rop.qn_.empty()) {
@@ -1300,7 +1300,7 @@ TypeSummary makeResolvedSummary(std::string const& keyOp, std::string const& key
     }
 
     // If op.type is not empty
-    if(!op.type_.empty()) {
+    if(!op.type_.empty() && op.type_ != "T") {
         CNS_INFO(logKey, "{{{}}} has defined type. Not using {{{}}}", ts.id(), keyRops);
         CNS_DEBUG(logKey, "{{{}}}: end", ts.id());
         return ts;
@@ -1477,12 +1477,7 @@ public:
     }
 
     void record(OpData const& op, DominatorData const& domInfo, std::string const& origin) {
-        if(op.type_.empty()) {
-            typeCounts_["T"] += 1;
-        }
-        else {
-            typeCounts_[op.type_] += 1;
-        }
+        typeCounts_[op.type_] += 1;
 
         if(origin == "BitCast") {
             castCount_++;
@@ -1526,12 +1521,7 @@ std::string TypeSummary::summarize(CastStat &cst, std::optional<unsigned> level,
     auto const& op = ops(key_);
     cst.record(op, linkInfo_, linkLabel_);
 
-    if(op.type_.empty()) {
-        ssr = "T {" + key_ + "}";
-    }
-    else {
-        ssr = op.type_ + "{" + key_ + "}";
-    }
+    ssr = op.type_ + "{" + key_ + "}";
     if(!linkLabel_.empty()) {
         ssr.append("(" + linkLabel_ + ")");
     }
@@ -1546,7 +1536,7 @@ std::string TypeSummary::summarize(CastStat &cst, std::optional<unsigned> level,
     }
 
     if(level <= 0 && nexts_.size() > 0) {
-        ssr.append("-> <...>\n");
+        ssr.append("\n|-> <+>... (increase summary depth to expand)\n");
         return ssr;
     }
 
@@ -1580,12 +1570,7 @@ std::string TypeSummary::summarizeNoStat(std::optional<unsigned> level, int inde
     ssr.reserve(1024);
     CNS_DEBUG(logKey, "LEVEL = {}", level.value_or(599)); // TODO Level upper limit
     auto const& op = ops(key_);
-    if(op.type_.empty()) {
-        ssr = "T {" + op.qn_ + "}";
-    }
-    else {
-        ssr = op.type_ + "{" + op.qn_ + "}";
-    }
+    ssr = op.type_ + "{" + op.qn_ + "}";
 
     if(level <= 0 && nexts_.size() > 0) {
         ssr.append("-> <...>\n");

@@ -440,6 +440,9 @@ void processVar(MatchFinder::MatchResult const &result) {
     auto const *lhsRef = result.Nodes.getNodeAs<clang::DeclRefExpr>("assignee");
     auto const *lhsLit = result.Nodes.getNodeAs<clang::Expr>("literal");
     if(!lhsRef || lhsLit) {
+        auto rhsData = buildOpData(*context, *result.SourceManager, *rhs);
+        //auto const &lhsData = buildOpData(*context, *result.SourceManager, *lhsLit);
+        census.insert(makeCensusSourceNode(rhsData));
         /*
         auto const &rhsData = buildOpData(*context, *result.SourceManager, *lhsLit);
         census.insert(makeCensusNode(rhsData));
@@ -1142,6 +1145,7 @@ static cl::extrahelp CommonHelp(CommonOptionsParser::HelpMessage);
 static cl::extrahelp Morehelp("\nMore help text...\n");
 
 void buildIgnoreList();
+void regularizeCensusTypes();
 void printCollection();
 void printScores();
 
@@ -1210,6 +1214,7 @@ int main(int argc, const char **argv) {
     //return Tool.run(newFrontendActionFactory<clang::SyntaxOnlyAction>().get());
     //return Tool.run(newFrontendActionFactory(&Finder).get());
     auto rc = Tool.run(newFrontendActionFactory(&Finder).get());
+    regularizeCensusTypes();
     elaborateHistories();
     printCollection();
     printScores();
@@ -1314,6 +1319,16 @@ void printScores() {
             //auto const &op = ops(node.first);
             if(isPotentiallySubtype(node.first)) {
                 printOutScore(node.first);
+            }
+        });
+}
+
+void regularizeCensusTypes() {
+    std::for_each(begin(census), end(census),
+        [](auto &node) {
+            auto &op = ops(node);
+            if(op.type_.empty()) {
+                op.type_ = "T";
             }
         });
 }
