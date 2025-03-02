@@ -5,6 +5,7 @@
 #include "History.h"
 #include "utils.h"
 
+#include <algorithm>
 #include <numeric>
 
 class TypeScore {
@@ -22,6 +23,10 @@ public:
 
     std::string outTypes() const {
         return out_.types();
+    }
+
+    void addInTypes(TypeScore const &ts) {
+        inTypes_.insert(std::begin(ts.inTypes_), std::end(ts.inTypes_));
     }
 
     void addInType(std::string type) {
@@ -67,10 +72,21 @@ std::unordered_map<CensusKey, TypeScore> SummarizedScores;
 void scoreEdge(CensusKey const &from, CensusKey const &to) {
     auto const logKey = from + " -> " + to;
     CNS_DEBUG_MSG(logKey, "begin");
-    SummarizedScores.at(from).addOutType(ops(to).type_);
+
+    auto cleanType = [](CensusKey const &op) -> auto {
+        //constexpr auto wordsToRemove = ["const", "const ", "volatile", "volatile "];
+        auto op_ = ops(op);
+        if(op_.arrayType_) {
+            return op_.arrayType_.value();
+        }
+        return op_.type_;
+    };
+
+
+    SummarizedScores.at(from).addOutType(cleanType(to));
     CNS_DEBUG(logKey, "Updated out score for '{}': {}", from, SummarizedScores.at(from).outScore());
 
-    SummarizedScores.at(to).addInType(ops(from).type_);
+    SummarizedScores.at(to).addInType(cleanType(from));
     CNS_DEBUG(logKey, "Updated in score for '{}': {}", to, SummarizedScores.at(to).inScore());
 
     CNS_DEBUG_MSG(logKey, "end");
@@ -89,6 +105,13 @@ void scoreSummary(TypeSummary const &ts) {
     CNS_DEBUG_MSG(logKey, "begin");
     for(auto const &to: ts.nexts()) {
         scoreEdge(ts.key(), to.key());
+
+        auto const &from = ops(ts.key());
+        if(from.type_ == "void *") {
+            SummarizedScores.at(to.key())
+                .addInTypes(SummarizedScores.at(ts.key()));
+        }
+
         scoreSummary(to);
     }
     CNS_DEBUG_MSG(logKey, "end");

@@ -120,6 +120,7 @@ struct OpData {
     std::string linkedRecordCategory_;
     std::string location_;
     std::string qn_;
+    std::optional<std::string> arrayType_;
 
     //std::string castKind_ {};
     mutable std::vector<OpID> use_ {};
@@ -141,6 +142,47 @@ std::string String(OpData const &op) {
 }
 
 //---
+std::optional<std::string> getArrayType(
+        clang::ASTContext &context,
+        QualType qt) {
+
+    constexpr auto logKey = "Array QT";
+    if(!(qt->isArrayType())) {
+        CNS_DEBUG_MSG(logKey, "Not an array type");
+        CNS_DEBUG_MSG(logKey, "end");
+        return {};
+    }
+
+    CNS_DEBUG_MSG(logKey, "Is array type");
+    auto const * at = qt->getAsArrayTypeUnsafe();
+
+    if(!at) {
+        CNS_WARN_MSG(logKey, "Cannot get array type pointer from detected array type");
+        CNS_DEBUG_MSG(logKey, "end");
+        return {};
+    }
+
+    CNS_DEBUG_MSG(logKey, "end");
+    return {Typename(context, at->getElementType())};
+}
+
+std::optional<std::string> getArrayType(
+        clang::ASTContext &context,
+        clang::Expr const &e) {
+    auto const logKey = String(context, e);
+    CNS_DEBUG_MSG(logKey, "begin");
+    CNS_DEBUG_MSG(logKey, "end");
+    return getArrayType(context, e.getType());
+}
+
+std::optional<std::string> getArrayType(
+        clang::ASTContext &context,
+        clang::ValueDecl const &vd) {
+    auto const logKey = String(context, vd);
+    CNS_DEBUG_MSG(logKey, "begin");
+    CNS_DEBUG_MSG(logKey, "end");
+    return getArrayType(context, vd.getType());
+}
 
 template<CastSourceType s_type, typename T>
 OpData buildOpData(
@@ -170,7 +212,8 @@ OpData buildOpData(
         getLinkedRecord(parm),
         linkedTypeCategory(parm),
         parm.getLocation().printToString(sm),
-        qualifiedName(context, parm)
+        qualifiedName(context, parm),
+        getArrayType(context, parm)
     };
 }
 
@@ -195,8 +238,9 @@ OpData buildOpData(
         getLinkedRecord(arg),
         linkedTypeCategory(arg),
         arg.getExprLoc().printToString(sm),
-        qualifiedName(context, arg)
+        qualifiedName(context, arg),
         //String(context, arg)
+        getArrayType(context, arg)
     };
 }
 
@@ -218,7 +262,8 @@ OpData buildOpData(
         getLinkedRecord(var),
         linkedTypeCategory(var),
         var.getLocation().printToString(sm),
-        qualifiedName(context, var)
+        qualifiedName(context, var),
+        getArrayType(context, var)
     };
 }
 
@@ -241,7 +286,8 @@ OpData buildOpData(
         getLinkedRecord(e),
         linkedTypeCategory(e),
         decl.getLocation().printToString(sm),
-        qualifiedName(context, e) //, decl.getDeclName())
+        qualifiedName(context, e), //, decl.getDeclName())
+        getArrayType(context, e)
     };
 }
 
@@ -265,7 +311,8 @@ OpData buildOpData(
         getLinkedRecord(castExpr),
         linkedTypeCategory(castExpr),
         decl.getLocation().printToString(sm),
-        qualifiedName(context, decl, decl.getDeclName())
+        qualifiedName(context, decl, decl.getDeclName()),
+        getArrayType(context, decl)
     };
 }
 
@@ -289,7 +336,8 @@ OpData buildOpData(
         getLinkedRecord(castExpr),
         linkedTypeCategory(castExpr),
         castExpr.getExprLoc().printToString(sm),
-        String(context, s)//qualifiedName(context, s, e.getNameInfo())
+        String(context, s),//qualifiedName(context, s, e.getNameInfo())
+        getArrayType(context, e)
     };
 }
 
@@ -380,7 +428,8 @@ OpData buildOpData(
         getLinkedRecord(castExpr),
         linkedTypeCategory(castExpr),
         castExpr.getExprLoc().printToString(sm),
-        qualifiedName(context, e) //String(context, e)
+        qualifiedName(context, e), //String(context, e)
+        getArrayType(context, e)
     };
 }
 
@@ -424,7 +473,8 @@ OpData buildOpDataArg(
             getLinkedRecord(arg),
             linkedTypeCategory(arg),
             arg.getExprLoc().printToString(sm),
-            qualifiedName(context, *decl, e.getNameInfo())
+            qualifiedName(context, *decl, e.getNameInfo()),
+            getArrayType(context, e)
         };
     }
 
@@ -441,7 +491,8 @@ OpData buildOpDataArg(
             getLinkedRecord(arg),
             linkedTypeCategory(arg),
             arg.getExprLoc().printToString(sm),
-            String(context, e) //qualifiedName(context, *stmt, e.getNameInfo())
+            String(context, e), //qualifiedName(context, *stmt, e.getNameInfo())
+            getArrayType(context, e)
         };
     }
 
@@ -457,7 +508,8 @@ OpData buildOpDataArg(
         getLinkedRecord(arg),
         linkedTypeCategory(arg),
         arg.getExprLoc().printToString(sm),
-        qualifiedName(context, e) //String(context, e)
+        qualifiedName(context, e), //String(context, e)
+        getArrayType(context, e)
     };
 }
 
@@ -480,7 +532,8 @@ OpData buildOpData<CastSourceType::UnaryOp>(
         getLinkedRecord(castExpr),
         linkedTypeCategory(castExpr),
         castExpr.getExprLoc().printToString(sm),
-        qualifiedName(context, op) //String(context, op)
+        qualifiedName(context, op), //String(context, op)
+        getArrayType(context, op)
     };
 }
 

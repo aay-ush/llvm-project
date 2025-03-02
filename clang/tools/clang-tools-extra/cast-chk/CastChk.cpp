@@ -38,7 +38,7 @@
 #include "utils.h"
 #include "Census.h"
 #include "History.h"
-#include "Recognizer.h"
+#include "PatternDetection.h"
 #include "OpData.h"
 
 using namespace clang::tooling;
@@ -477,7 +477,8 @@ inline OpData buildLimitedArgOp(clang::ASTContext &context,
             getLinkedRecord(arg),
             linkedTypeCategory(arg),
             call.getExprLoc().printToString(sm),
-            qualifiedName(context, arg) //qualifiedName(context, call, arg)
+            qualifiedName(context, arg), //qualifiedName(context, call, arg)
+            getArrayType(context, arg)
         };
 }
 
@@ -558,7 +559,8 @@ OpData buildArgOp(clang::ASTContext &context,
                 linkedTypeCategory(*e),
                 call.getExprLoc().printToString(sm),
                 //String(context, *e), //
-                qualifiedName(context, *e) //qualifiedName(context, call, *e)
+                qualifiedName(context, *e), //qualifiedName(context, call, *e)
+                getArrayType(context, *e)
             };
 
     CNS_DEBUG_MSG(logKey, "end");
@@ -608,7 +610,8 @@ void buildOpDatas(clang::ASTContext &context,
                     call.getExprLoc().printToString(sm),
                     (call.getDirectCallee() != nullptr)
                         ? (call.getDirectCallee()->getQualifiedNameAsString() + ".$" + std::to_string(pos))
-                        : ("NullCallee")
+                        : ("NullCallee"),
+                    getArrayType(context, *parm)
                 };
             }
 
@@ -695,7 +698,8 @@ void buildOpDatas(clang::ASTContext &context,
                         getLinkedRecord(*arg),
                         linkedTypeCategory(*arg),
                         call.getExprLoc().printToString(sm),
-                        qns
+                        qns,
+                        getArrayType(context, *arg)
                     };
                 }
                 else {
@@ -710,7 +714,8 @@ void buildOpDatas(clang::ASTContext &context,
                         getLinkedRecord(*arg),
                         linkedTypeCategory(*arg),
                         call.getExprLoc().printToString(sm),
-                        "Resolve Func from callexpr_.$" + std::to_string(pos)
+                        "Resolve Func from callexpr_.$" + std::to_string(pos),
+                        getArrayType(context, *arg)
                     };
                 }
             }
