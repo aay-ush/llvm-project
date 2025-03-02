@@ -109,6 +109,12 @@ using OpID = std::string;
 //    if P(k1, k2) = k2 => K1 is plugged with k2
 //    then H(k1) = H(k2) and {P(k1, k2), H(k1)} is stored locally 
 //
+struct TypeDataExtra {
+    std::optional<std::string> arrayType_;
+    std::optional<std::string> numericType_;
+    std::string uqType_;
+};
+
 struct OpData {
     unsigned hash_ {0};
     std::string expr_;
@@ -120,8 +126,7 @@ struct OpData {
     std::string linkedRecordCategory_;
     std::string location_;
     std::string qn_;
-    std::optional<std::string> arrayType_;
-    std::optional<std::string> numericType_;
+    TypeDataExtra td_;
 
     //std::string castKind_ {};
     mutable std::vector<OpID> use_ {};
@@ -164,25 +169,7 @@ std::optional<std::string> getArrayType(
     }
 
     CNS_DEBUG_MSG(logKey, "end");
-    return {Typename(context, at->getElementType())};
-}
-
-std::optional<std::string> getArrayType(
-        clang::ASTContext &context,
-        clang::Expr const &e) {
-    auto const logKey = String(context, e);
-    CNS_DEBUG_MSG(logKey, "begin");
-    CNS_DEBUG_MSG(logKey, "end");
-    return getArrayType(context, e.getType());
-}
-
-std::optional<std::string> getArrayType(
-        clang::ASTContext &context,
-        clang::ValueDecl const &vd) {
-    auto const logKey = String(context, vd);
-    CNS_DEBUG_MSG(logKey, "begin");
-    CNS_DEBUG_MSG(logKey, "end");
-    return getArrayType(context, vd.getType());
+    return {Typename(context, at->getElementType().getUnqualifiedType())};
 }
 
 std::optional<std::string> getNumericType(
@@ -213,22 +200,37 @@ std::optional<std::string> getNumericType(
     return {};
 }
 
-std::optional<std::string> getNumericType(
+TypeDataExtra makeTypeDataExtra(
+        clang::ASTContext &context,
+        QualType qt) {
+
+    constexpr auto logKey = "QT";
+
+    CNS_DEBUG_MSG(logKey, "begin");
+    CNS_DEBUG_MSG(logKey, "end");
+    return {
+        getArrayType(context, qt),
+        getNumericType(context, qt),
+        Typename(context, qt.getUnqualifiedType())
+    };
+}
+
+TypeDataExtra makeTypeDataExtra(
         clang::ASTContext &context,
         clang::Expr const &e) {
     auto const logKey = String(context, e);
     CNS_DEBUG_MSG(logKey, "begin");
     CNS_DEBUG_MSG(logKey, "end");
-    return getNumericType(context, e.getType());
+    return makeTypeDataExtra(context, e.getType());
 }
 
-std::optional<std::string> getNumericType(
+TypeDataExtra makeTypeDataExtra(
         clang::ASTContext &context,
         clang::ValueDecl const &vd) {
     auto const logKey = String(context, vd);
     CNS_DEBUG_MSG(logKey, "begin");
     CNS_DEBUG_MSG(logKey, "end");
-    return getNumericType(context, vd.getType());
+    return makeTypeDataExtra(context, vd.getType());
 }
 
 template<CastSourceType s_type, typename T>
@@ -260,8 +262,7 @@ OpData buildOpData(
         linkedTypeCategory(parm),
         parm.getLocation().printToString(sm),
         qualifiedName(context, parm),
-        getArrayType(context, parm),
-        getNumericType(context, parm)
+        makeTypeDataExtra(context, parm)
     };
 }
 
@@ -288,8 +289,7 @@ OpData buildOpData(
         arg.getExprLoc().printToString(sm),
         qualifiedName(context, arg),
         //String(context, arg)
-        getArrayType(context, arg),
-        getNumericType(context, arg)
+        makeTypeDataExtra(context, arg)
     };
 }
 
@@ -312,8 +312,7 @@ OpData buildOpData(
         linkedTypeCategory(var),
         var.getLocation().printToString(sm),
         qualifiedName(context, var),
-        getArrayType(context, var),
-        getNumericType(context, var)
+        makeTypeDataExtra(context, var)
     };
 }
 
@@ -337,8 +336,7 @@ OpData buildOpData(
         linkedTypeCategory(e),
         decl.getLocation().printToString(sm),
         qualifiedName(context, e), //, decl.getDeclName())
-        getArrayType(context, e),
-        getNumericType(context, e)
+        makeTypeDataExtra(context, e)
     };
 }
 
@@ -363,8 +361,7 @@ OpData buildOpData(
         linkedTypeCategory(castExpr),
         decl.getLocation().printToString(sm),
         qualifiedName(context, decl, decl.getDeclName()),
-        getArrayType(context, decl),
-        getNumericType(context, decl)
+        makeTypeDataExtra(context, decl)
     };
 }
 
@@ -389,8 +386,7 @@ OpData buildOpData(
         linkedTypeCategory(castExpr),
         castExpr.getExprLoc().printToString(sm),
         String(context, s),//qualifiedName(context, s, e.getNameInfo())
-        getArrayType(context, e),
-        getNumericType(context, e)
+        makeTypeDataExtra(context, e)
     };
 }
 
@@ -482,8 +478,7 @@ OpData buildOpData(
         linkedTypeCategory(castExpr),
         castExpr.getExprLoc().printToString(sm),
         qualifiedName(context, e), //String(context, e)
-        getArrayType(context, e),
-        getNumericType(context, e)
+        makeTypeDataExtra(context, e)
     };
 }
 
@@ -528,8 +523,7 @@ OpData buildOpDataArg(
             linkedTypeCategory(arg),
             arg.getExprLoc().printToString(sm),
             qualifiedName(context, *decl, e.getNameInfo()),
-            getArrayType(context, e),
-            getNumericType(context, e)
+            makeTypeDataExtra(context, e)
         };
     }
 
@@ -547,8 +541,7 @@ OpData buildOpDataArg(
             linkedTypeCategory(arg),
             arg.getExprLoc().printToString(sm),
             String(context, e), //qualifiedName(context, *stmt, e.getNameInfo())
-            getArrayType(context, e),
-            getNumericType(context, e)
+            makeTypeDataExtra(context, e)
         };
     }
 
@@ -565,8 +558,7 @@ OpData buildOpDataArg(
         linkedTypeCategory(arg),
         arg.getExprLoc().printToString(sm),
         qualifiedName(context, e), //String(context, e)
-        getArrayType(context, e),
-        getNumericType(context, e)
+        makeTypeDataExtra(context, e)
     };
 }
 
@@ -590,8 +582,7 @@ OpData buildOpData<CastSourceType::UnaryOp>(
         linkedTypeCategory(castExpr),
         castExpr.getExprLoc().printToString(sm),
         qualifiedName(context, op), //String(context, op)
-        getArrayType(context, op),
-        getNumericType(context, op)
+        makeTypeDataExtra(context, op)
     };
 }
 
