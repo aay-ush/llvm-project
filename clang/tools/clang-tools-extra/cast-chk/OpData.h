@@ -121,6 +121,7 @@ struct OpData {
     std::string location_;
     std::string qn_;
     std::optional<std::string> arrayType_;
+    std::optional<std::string> numericType_;
 
     //std::string castKind_ {};
     mutable std::vector<OpID> use_ {};
@@ -184,6 +185,52 @@ std::optional<std::string> getArrayType(
     return getArrayType(context, vd.getType());
 }
 
+std::optional<std::string> getNumericType(
+        clang::ASTContext &context,
+        QualType qt) {
+
+    constexpr auto logKey = "Numeric QT";
+
+    if(qt->isPointerType() || qt->isArrayType()) {
+        auto const *tp = qt->getPointeeOrArrayElementType();
+        if(!tp) {
+            CNS_WARN_MSG(logKey, "Cannot get pointee type from detected array/ptr type");
+            CNS_DEBUG_MSG(logKey, "end");
+            return {};
+        }
+        if(tp->isIntegerType() || tp->isRealFloatingType()) {
+            CNS_DEBUG_MSG(logKey, "end");
+            return {"Number *"};
+        }
+    }
+
+    if(qt->isIntegerType() || qt->isRealFloatingType()) {
+        CNS_DEBUG_MSG(logKey, "end");
+        return {"Number"};
+    }
+
+    CNS_DEBUG_MSG(logKey, "end");
+    return {};
+}
+
+std::optional<std::string> getNumericType(
+        clang::ASTContext &context,
+        clang::Expr const &e) {
+    auto const logKey = String(context, e);
+    CNS_DEBUG_MSG(logKey, "begin");
+    CNS_DEBUG_MSG(logKey, "end");
+    return getNumericType(context, e.getType());
+}
+
+std::optional<std::string> getNumericType(
+        clang::ASTContext &context,
+        clang::ValueDecl const &vd) {
+    auto const logKey = String(context, vd);
+    CNS_DEBUG_MSG(logKey, "begin");
+    CNS_DEBUG_MSG(logKey, "end");
+    return getNumericType(context, vd.getType());
+}
+
 template<CastSourceType s_type, typename T>
 OpData buildOpData(
         clang::ASTContext &context,
@@ -213,7 +260,8 @@ OpData buildOpData(
         linkedTypeCategory(parm),
         parm.getLocation().printToString(sm),
         qualifiedName(context, parm),
-        getArrayType(context, parm)
+        getArrayType(context, parm),
+        getNumericType(context, parm)
     };
 }
 
@@ -240,7 +288,8 @@ OpData buildOpData(
         arg.getExprLoc().printToString(sm),
         qualifiedName(context, arg),
         //String(context, arg)
-        getArrayType(context, arg)
+        getArrayType(context, arg),
+        getNumericType(context, arg)
     };
 }
 
@@ -263,7 +312,8 @@ OpData buildOpData(
         linkedTypeCategory(var),
         var.getLocation().printToString(sm),
         qualifiedName(context, var),
-        getArrayType(context, var)
+        getArrayType(context, var),
+        getNumericType(context, var)
     };
 }
 
@@ -287,7 +337,8 @@ OpData buildOpData(
         linkedTypeCategory(e),
         decl.getLocation().printToString(sm),
         qualifiedName(context, e), //, decl.getDeclName())
-        getArrayType(context, e)
+        getArrayType(context, e),
+        getNumericType(context, e)
     };
 }
 
@@ -312,7 +363,8 @@ OpData buildOpData(
         linkedTypeCategory(castExpr),
         decl.getLocation().printToString(sm),
         qualifiedName(context, decl, decl.getDeclName()),
-        getArrayType(context, decl)
+        getArrayType(context, decl),
+        getNumericType(context, decl)
     };
 }
 
@@ -337,7 +389,8 @@ OpData buildOpData(
         linkedTypeCategory(castExpr),
         castExpr.getExprLoc().printToString(sm),
         String(context, s),//qualifiedName(context, s, e.getNameInfo())
-        getArrayType(context, e)
+        getArrayType(context, e),
+        getNumericType(context, e)
     };
 }
 
@@ -429,7 +482,8 @@ OpData buildOpData(
         linkedTypeCategory(castExpr),
         castExpr.getExprLoc().printToString(sm),
         qualifiedName(context, e), //String(context, e)
-        getArrayType(context, e)
+        getArrayType(context, e),
+        getNumericType(context, e)
     };
 }
 
@@ -474,7 +528,8 @@ OpData buildOpDataArg(
             linkedTypeCategory(arg),
             arg.getExprLoc().printToString(sm),
             qualifiedName(context, *decl, e.getNameInfo()),
-            getArrayType(context, e)
+            getArrayType(context, e),
+            getNumericType(context, e)
         };
     }
 
@@ -492,7 +547,8 @@ OpData buildOpDataArg(
             linkedTypeCategory(arg),
             arg.getExprLoc().printToString(sm),
             String(context, e), //qualifiedName(context, *stmt, e.getNameInfo())
-            getArrayType(context, e)
+            getArrayType(context, e),
+            getNumericType(context, e)
         };
     }
 
@@ -509,7 +565,8 @@ OpData buildOpDataArg(
         linkedTypeCategory(arg),
         arg.getExprLoc().printToString(sm),
         qualifiedName(context, e), //String(context, e)
-        getArrayType(context, e)
+        getArrayType(context, e),
+        getNumericType(context, e)
     };
 }
 
@@ -533,7 +590,8 @@ OpData buildOpData<CastSourceType::UnaryOp>(
         linkedTypeCategory(castExpr),
         castExpr.getExprLoc().printToString(sm),
         qualifiedName(context, op), //String(context, op)
-        getArrayType(context, op)
+        getArrayType(context, op),
+        getNumericType(context, op)
     };
 }
 

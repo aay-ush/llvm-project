@@ -73,33 +73,17 @@ void scoreEdge(CensusKey const &from, CensusKey const &to) {
     auto const logKey = from + " -> " + to;
     CNS_DEBUG_MSG(logKey, "begin");
 
-    auto macroType = [](std::string const &type) -> std::string {
-        std::string const numerics[] = {"unsigned", "long", "int", "short", "double", "float"};
-        auto isNumeric = false;
-        for(auto const &ntype: numerics) {
-            if(type.find(ntype) != std::string::npos) {
-                isNumeric = true;
-                break;
-            }
-        }
-        auto isPointer = (type.find("*") != std::string::npos);
-        if(isNumeric & isPointer) {
-            return "Number *";
-        }
-        else if(isNumeric) {
-            return "Number";
-        }
-
-        return type;
-    };
-
-    auto cleanType = [&macroType](CensusKey const &op) -> auto {
+    auto cleanType = [](CensusKey const &op) -> auto {
         //constexpr auto wordsToRemove = ["const", "const ", "volatile", "volatile "];
         auto op_ = ops(op);
-        if(op_.arrayType_) {
-            return macroType(op_.arrayType_.value());
+        if(op_.numericType_) {
+            return op_.numericType_.value();
         }
-        return macroType(op_.type_);
+
+        if(op_.arrayType_) {
+            return op_.arrayType_.value();
+        }
+        return op_.type_;
     };
 
 

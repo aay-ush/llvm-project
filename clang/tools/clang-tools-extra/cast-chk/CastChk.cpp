@@ -478,7 +478,8 @@ inline OpData buildLimitedArgOp(clang::ASTContext &context,
             linkedTypeCategory(arg),
             call.getExprLoc().printToString(sm),
             qualifiedName(context, arg), //qualifiedName(context, call, arg)
-            getArrayType(context, arg)
+            getArrayType(context, arg),
+            getNumericType(context, arg)
         };
 }
 
@@ -560,7 +561,8 @@ OpData buildArgOp(clang::ASTContext &context,
                 call.getExprLoc().printToString(sm),
                 //String(context, *e), //
                 qualifiedName(context, *e), //qualifiedName(context, call, *e)
-                getArrayType(context, *e)
+                getArrayType(context, *e),
+                getNumericType(context, *e)
             };
 
     CNS_DEBUG_MSG(logKey, "end");
@@ -611,7 +613,8 @@ void buildOpDatas(clang::ASTContext &context,
                     (call.getDirectCallee() != nullptr)
                         ? (call.getDirectCallee()->getQualifiedNameAsString() + ".$" + std::to_string(pos))
                         : ("NullCallee"),
-                    getArrayType(context, *parm)
+                    getArrayType(context, *parm),
+                    getNumericType(context, *parm)
                 };
             }
 
@@ -699,7 +702,8 @@ void buildOpDatas(clang::ASTContext &context,
                         linkedTypeCategory(*arg),
                         call.getExprLoc().printToString(sm),
                         qns,
-                        getArrayType(context, *arg)
+                        getArrayType(context, *arg),
+                        getNumericType(context, *arg)
                     };
                 }
                 else {
@@ -715,7 +719,8 @@ void buildOpDatas(clang::ASTContext &context,
                         linkedTypeCategory(*arg),
                         call.getExprLoc().printToString(sm),
                         "Resolve Func from callexpr_.$" + std::to_string(pos),
-                        getArrayType(context, *arg)
+                        getArrayType(context, *arg),
+                        getNumericType(context, *arg)
                     };
                 }
             }
