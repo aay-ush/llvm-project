@@ -1202,6 +1202,10 @@ class TypeSummary {
         linkInfo_ = linkInfo;
     }
 
+    DominatorData linkInfo() const {
+        return linkInfo_;
+    }
+
     unsigned size() const {
         return nexts_.size();
     }

@@ -108,6 +108,11 @@ void scoreSummary(TypeSummary const &ts) {
     auto const logKey = ts.key();
     CNS_DEBUG_MSG(logKey, "begin");
     for(auto const &to: ts.nexts()) {
+        if(to.linkInfo().exprType().find("Member") != std::string::npos) {
+            CNS_DEBUG_MSG(logKey, "Skipping member edge");
+            continue;
+        }
+
         scoreEdge(ts.key(), to.key());
 
         auto const &from = ops(ts.key());
