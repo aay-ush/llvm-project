@@ -113,6 +113,7 @@ struct TypeDataExtra {
     std::optional<std::string> arrayType_;
     std::optional<std::string> numericType_;
     std::string uqType_;
+    std::optional<std::string> fptrType_;
 };
 
 struct OpData {
@@ -178,6 +179,7 @@ std::optional<std::string> getNumericType(
 
     constexpr auto logKey = "Numeric QT";
 
+    CNS_DEBUG_MSG(logKey, "begin");
     if(qt->isPointerType() || qt->isArrayType()) {
         auto const *tp = qt->getPointeeOrArrayElementType();
         if(!tp) {
@@ -200,6 +202,25 @@ std::optional<std::string> getNumericType(
     return {};
 }
 
+std::optional<std::string> getFunctionPointeeType(
+        clang::ASTContext &context,
+        QualType qt) {
+
+    constexpr auto logKey = "Fptr QT";
+    CNS_DEBUG_MSG(logKey, "begin");
+    if(qt->isFunctionPointerType()) {
+        CNS_DEBUG_MSG(logKey, "end");
+        return {Typename(context, qt->getPointeeType())};
+    }
+    if(qt->isFunctionType() || qt->isFunctionProtoType()) {
+        CNS_DEBUG_MSG(logKey, "end");
+        return {Typename(context, qt)};
+    }
+
+    CNS_DEBUG_MSG(logKey, "end");
+    return {};
+}
+
 TypeDataExtra makeTypeDataExtra(
         clang::ASTContext &context,
         QualType qt) {
@@ -211,7 +232,8 @@ TypeDataExtra makeTypeDataExtra(
     return {
         getArrayType(context, qt),
         getNumericType(context, qt),
-        Typename(context, qt.getUnqualifiedType())
+        Typename(context, qt.getUnqualifiedType()),
+        getFunctionPointeeType(context, qt)
     };
 }
 

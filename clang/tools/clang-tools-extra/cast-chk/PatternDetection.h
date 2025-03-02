@@ -74,8 +74,6 @@ void scoreEdge(CensusKey const &from, CensusKey const &to) {
     CNS_DEBUG_MSG(logKey, "begin");
 
     auto cleanType = [](CensusKey const &op) -> auto {
-        //constexpr auto wordsToRemove = ["const", "const ", "volatile", "volatile "];
-        // TODO: For fptr, fptr and function proto are equivalent
         auto const &op_ = ops(op);
         auto const &typeInfo = op_.td_;
         if(typeInfo.numericType_) {
@@ -85,6 +83,11 @@ void scoreEdge(CensusKey const &from, CensusKey const &to) {
         if(typeInfo.arrayType_) {
             return typeInfo.arrayType_.value();
         }
+
+        if(typeInfo.fptrType_) {
+            return typeInfo.fptrType_.value();
+        }
+
         return typeInfo.uqType_;
     };
 
