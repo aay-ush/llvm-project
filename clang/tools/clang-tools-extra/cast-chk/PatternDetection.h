@@ -68,6 +68,7 @@ private:
 };
 
 std::unordered_map<CensusKey, TypeScore> SummarizedScores;
+std::unordered_map<CensusKey, TypeScore> SummarizedSubtypingScores;
 
 void scoreEdge(CensusKey const &from, CensusKey const &to) {
     auto const logKey = from + " -> " + to;
@@ -91,7 +92,6 @@ void scoreEdge(CensusKey const &from, CensusKey const &to) {
         return typeInfo.uqType_;
     };
 
-
     SummarizedScores.at(from).addOutType(cleanType(to));
     CNS_DEBUG(logKey, "Updated out score for '{}': {}", from, SummarizedScores.at(from).outScore());
 
@@ -105,7 +105,39 @@ void initScores() {
     std::for_each(begin(TypeSummaries), end(TypeSummaries),
         [](auto const &node) {
             SummarizedScores.emplace(node.first, node.first);
+            SummarizedSubtypingScores.emplace(node.first, node.first);
         });
+}
+
+void scoreSubtypingEdge(CensusKey const &from, CensusKey const &to) {
+    auto const logKey = from + " -> " + to;
+    CNS_DEBUG_MSG(logKey, "begin");
+
+    auto cleanType = [](CensusKey const &op) -> auto {
+        auto const &op_ = ops(op);
+        auto const &typeInfo = op_.td_;
+        if(typeInfo.numericType_) {
+            return typeInfo.numericType_.value();
+        }
+
+        if(typeInfo.arrayType_) {
+            return typeInfo.arrayType_.value();
+        }
+
+        if(typeInfo.fptrType_) {
+            return typeInfo.fptrType_.value();
+        }
+
+        return typeInfo.uqType_;
+    };
+
+    SummarizedSubtypingScores.at(from).addOutType(cleanType(to));
+    CNS_DEBUG(logKey, "Updated out score for '{}': {}", from, SummarizedSubtypingScores.at(from).outScore());
+
+    SummarizedSubtypingScores.at(to).addInType(cleanType(from));
+    CNS_DEBUG(logKey, "Updated in score for '{}': {}", to, SummarizedSubtypingScores.at(to).inScore());
+
+    CNS_DEBUG_MSG(logKey, "end");
 }
 
 // TODO TODO add score propagation
@@ -114,8 +146,10 @@ void scoreSummary(TypeSummary const &ts) {
     CNS_DEBUG_MSG(logKey, "begin");
     for(auto const &to: ts.nexts()) {
         if(to.linkInfo().exprType().find("Member") != std::string::npos) {
-            CNS_DEBUG_MSG(logKey, "Skipping member edge");
-            continue;
+            // Maybe potential upcasts
+            //CNS_DEBUG_MSG(logKey, "Skipping member edge");
+            //continue;
+            scoreSubtypingEdge(ts.key(), to.key());
         }
 
         scoreEdge(ts.key(), to.key());
@@ -136,7 +170,7 @@ bool isPotentiallyGeneric(CensusKey const &op) {
 }
 
 bool isPotentiallySubtype(CensusKey const &op) {
-    return SummarizedScores.at(op).outScore() > 1;
+    return SummarizedSubtypingScores.at(op).outScore() > 1;
 }
 
 #endif // RECOGNIZER_H
