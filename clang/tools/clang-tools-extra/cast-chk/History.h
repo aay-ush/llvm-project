@@ -1612,6 +1612,52 @@ void summarize(std::ostream &os, TypeSummary const &ts, unsigned depth = 0) {
 }
 */
 
+#include <mutex>
+#include <execution>
+
+TypeSummary makeTypeSummary(History const &h) {
+    LOG_FUNCTION_TIME;
+    auto const sumkey = h.opId() + "[" + std::to_string(h.branch().size()) + "]";
+    CNS_DEBUG_MSG(sumkey, "begin");
+    auto ts = TypeSummary(h);
+    CNS_DEBUG(sumkey, "{{{}}} <{}>", ts.id(), h.branch().size());
+    std::for_each(h.bbegin(), h.bend(),
+        [&](auto const&bh) {
+            // make type summary from local history and append to nexts_
+            auto pc = h.getContext();
+            if(bh.context()) {
+                CNS_DEBUG_MSG(sumkey, "Extending parent context with branch");
+                pc.insert(std::begin(bh.context().value()), std::end(bh.context().value()));
+            }
+            /*
+            if(level > 0) {
+                CNS_INFO_MSG("Decrement level by 1");
+                auto nl = std::make_optional(level.value() - 1);
+                level.swap(nl);
+            }
+            */
+
+            CNS_DEBUG(sumkey, "{{{}}} <{}> Creating new branch: {{{}}}", ts.id(), h.branch().size(), bh.id());
+            auto th = makeTypeSummaryLH({bh.history(), bh.linkInfo(), pc});
+            ts.addNextBranch(th);
+            /*
+            auto &og = OverflowGuard::get();
+            if(og.ok()) {
+                auto th = makeTypeSummaryLH({bh.history(), bh.linkInfo(), pc});
+                ts.addNextBranch(th);
+            }
+            else {
+                CNS_WARN(sumkey, "Stopping makeTypeSummaryLH recursion for {{{}}}, skipping {{{}}} because overflow guard limit exceeded.", ts.id(), bh.id());
+            }
+            */
+        });
+
+    //CNS_DEBUG("Adding Summary for {{{}}}: {{{}}}", h_.first, TypeSummaries.at(h_.first).summary({4}));
+    //TypeSummaries.insert({h_.first, ts});
+    //OverflowGuard::reset();
+    CNS_DEBUG_MSG(sumkey, "end");
+    return ts;
+}
 
 // Create copies of typetransforms. Then resolve and update history branches as needed.
 // Eliminate local history with history by using context.
@@ -1622,45 +1668,13 @@ void elaborateHistories() {
     CNS_DEBUG_MSG(logKey, "begin");
     TypeSummaries.clear();
     //summarize(h, level);
-    std::for_each(begin(TypeTransforms), end(TypeTransforms),
+
+    std::mutex m;
+    std::for_each(std::execution::par, begin(TypeTransforms), end(TypeTransforms),
         [&](auto const& h_) {
-            auto const sumkey = h_.first + "[" + std::to_string(h_.second.branch().size()) + "]";
-            auto const &h = h_.second;
-            CNS_DEBUG_MSG(sumkey, "Making summary");
-            auto ts = TypeSummary(h);
-            CNS_DEBUG(sumkey, "{{{}}} <{}>", ts.id(), h.branch().size());
-            std::for_each(h.bbegin(), h.bend(),
-                [&](auto const&bh) {
-                    // make type summary from local history and append to nexts_
-                    auto pc = h.getContext();
-                    if(bh.context()) {
-                        CNS_DEBUG_MSG(sumkey, "Extending parent context with branch");
-                        pc.insert(std::begin(bh.context().value()), std::end(bh.context().value()));
-                    }
-                    /*
-                    if(level > 0) {
-                        CNS_INFO_MSG("Decrement level by 1");
-                        auto nl = std::make_optional(level.value() - 1);
-                        level.swap(nl);
-                    }
-                    */
-
-                    CNS_DEBUG(sumkey, "{{{}}} <{}> Creating new branch: {{{}}}", ts.id(), h.branch().size(), bh.id());
-                    auto th = makeTypeSummaryLH({bh.history(), bh.linkInfo(), pc});
-                    //ts.addNextBranch(th);
-                    auto &og = OverflowGuard::get();
-                    if(og.ok()) {
-                        auto th = makeTypeSummaryLH({bh.history(), bh.linkInfo(), pc});
-                        ts.addNextBranch(th);
-                    }
-                    else {
-                        CNS_WARN(sumkey, "Stopping makeTypeSummaryLH recursion for {{{}}}, skipping {{{}}} because overflow guard limit exceeded.", ts.id(), bh.id());
-                    }
-                });
-
-            //CNS_DEBUG("Adding Summary for {{{}}}: {{{}}}", h_.first, TypeSummaries.at(h_.first).summary({4}));
-            TypeSummaries.insert({h_.first, ts});
-            OverflowGuard::reset();
+            std::lock_guard<std::mutex> guard(m);
+            auto ts = makeTypeSummary(h_.second);
+            TypeSummaries.insert({ts.key(), ts});
         });
 
     CNS_DEBUG_MSG(logKey, "end");
