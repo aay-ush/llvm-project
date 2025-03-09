@@ -1142,6 +1142,11 @@ static cl::opt<bool> optIgnoreCDB(
         cl::desc("Ignore compile db and use input c filenames"),
         cl::init(false), cl::cat(tccCategory));
 
+static cl::opt<bool> optDumpJSON(
+        "json",
+        cl::desc("Dump summary to a json file"),
+        cl::init(false), cl::cat(tccCategory));
+
 // CommonOptionsParser declares HelpMessage with a description of the common cli options
 // related to the compilation db and input files. (Nice to have help)
 static cl::extrahelp CommonHelp(CommonOptionsParser::HelpMessage);
@@ -1152,6 +1157,7 @@ static cl::extrahelp Morehelp("\nMore help text...\n");
 void buildIgnoreList();
 void regularizeCensusTypes();
 void printCollection();
+void printSummaryToJson();
 void printScores();
 
 std::vector<std::string> filterC(CompilationDatabase const& cdb);
@@ -1222,6 +1228,9 @@ int main(int argc, const char **argv) {
     regularizeCensusTypes();
     elaborateHistories();
     printCollection();
+    if(optDumpJSON) {
+        printSummaryToJson();
+    }
     printScores();
     fclose(fOUT);
     return rc;
@@ -1250,6 +1259,96 @@ std::vector<std::string> filterC(CompilationDatabase const& cdb) {
 inline void tprint(std::string const& data) {
     std::fprintf(fOUT, "%s", data.c_str());
     std::printf("%s", data.c_str());
+}
+
+void printOpDataToJson(FILE *fp) {
+    tprint("START OpData JSON Dump\n");
+    fmt::print(fp, "{{\"OpDatas\": \n{{\n");
+    auto printOpJson = [&](auto const &op, bool delim = true) {
+        fmt::print(fp, "{{");
+        fmt::print(fp, "\"id\": \"{}\", ", op.qn_);
+        fmt::print(fp, "\"type\": \"{}\", ", op.type_);
+        fmt::print(fp, "\"category\": \"{}\", ", op.category_);
+        fmt::print(fp, "\"location\": \"{}\"", op.location_);
+        if(delim) {
+            fmt::print(fp, "}},\n");
+        }
+        else {
+            fmt::print(fp, "}}\n");
+        }
+    };
+
+    auto csize = census.size();
+    decltype(census)::size_type pos = 0;
+    for(auto const &node: census) {
+        auto const &op = ops(node);
+        if(pos++ == csize - 1) {
+            printOpJson(op, false);
+        }
+        else {
+            printOpJson(op);
+        }
+    }
+
+    fmt::print(fp, "}}\n}}\n");
+    tprint("END OpData JSON Dump\n");
+}
+
+std::string getSummaryJson(TypeSummary const &ts, unsigned indent = 0) {
+    std::string vertices;
+    vertices.reserve(1024);
+    auto const& nexts = ts.nexts();
+    if(!nexts.empty()) {
+        auto vertexStr = [&](auto const &nextTs, bool delim = true) {
+            vertices.append("\n" + space(indent));
+            vertices.append(getSummaryJson(nextTs, indent + 4));
+            if(delim) {
+                vertices.append(",");
+            }
+            else {
+                vertices.append("\n");
+            }
+        };
+
+        std::for_each(begin(nexts), end(nexts) - 1,
+                [&](auto const &s) {
+                    vertexStr(s, true);
+                });
+        vertexStr(nexts[nexts.size() - 1], false);
+        vertices.append(space(indent));
+    }
+
+    std::string summary = "{\"SummaryID\": \"" + ts.key() + "\", \"Nexts\": ["
+        + std::move(vertices) + "]}";
+
+    return summary;
+}
+
+void printSummaryToJson() {
+    auto fjOut = fopen("census-summary.json", "w");
+    if(fjOut == nullptr) {
+        fmt::print(stderr, "Error opening census-summary.json\n");
+        return;
+    }
+
+    fmt::print(fjOut, "{{");
+    printOpDataToJson(fjOut);
+    tprint("START Summary JSON Dump\n");
+    fmt::print(fjOut, ", {{\"TypeSummaries\":\n{{\n ");
+    decltype(TypeSummaries)::size_type pos = 0;
+    auto tsSize = TypeSummaries.size();
+    for(auto const &[_, ts]: TypeSummaries) {
+        if(pos++ == tsSize - 1) {
+            fmt::print(fjOut, "{}\n", getSummaryJson(ts, 4));
+        }
+        else {
+            fmt::print(fjOut, "{},\n", getSummaryJson(ts, 4));
+        }
+    }
+
+    fmt::print(fjOut, "}}\n}}}}");
+    fclose(fjOut);
+    tprint("END Summary JSON Dump");
 }
 
 void printCollection() {

@@ -1128,7 +1128,7 @@ class TypeSummary {
 
     explicit TypeSummary(History const &h);
 
-    std::vector<TypeSummary> nexts() const {
+    std::vector<TypeSummary> const& nexts() const {
         return nexts_;
     }
 
