@@ -20,6 +20,7 @@
 #include "clang/AST/Expr.h"
 #include "clang/AST/Decl.h"
 #include "clang/AST/Stmt.h"
+#include "clang/AST/RecordLayout.h"
 
 #include "clang/AST/ODRHash.h"
 #include "llvm/ADT/ArrayRef.h"
@@ -109,11 +110,28 @@ using OpID = std::string;
 //    if P(k1, k2) = k2 => K1 is plugged with k2
 //    then H(k1) = H(k2) and {P(k1, k2), H(k1)} is stored locally 
 //
+struct CNSFieldInfo {
+    std::string name_;
+    std::string location_;
+    clang::CharUnits recordSize_;
+    bool hasUnion_ = false;
+};
+
+struct CNSTypeInfo {
+    std::string name_;
+    std::string location_;
+    std::vector<CNSFieldInfo> fields_;
+    clang::CharUnits recordSize_;
+    bool hasUnion_ = false;
+};
+
 struct TypeDataExtra {
     std::optional<std::string> arrayType_;
+    std::optional<std::string> pointeeType_;
     std::optional<std::string> numericType_;
     std::string uqType_;
     std::optional<std::string> fptrType_;
+    CNSTypeInfo typedata_;
 };
 
 struct OpData {
@@ -149,6 +167,8 @@ std::string String(OpData const &op) {
 }
 
 //---
+std::optional<std::string> getNumericType(clang::ASTContext &context, QualType qt);
+
 std::optional<std::string> getArrayType(
         clang::ASTContext &context,
         QualType qt) {
@@ -169,8 +189,41 @@ std::optional<std::string> getArrayType(
         return {};
     }
 
+    /*
+    if(auto nt = getNumericType(context, at->getElementType())) {
+        CNS_DEBUG_MSG(logKey, "Element is numeric type");
+        CNS_DEBUG_MSG(logKey, "end");
+        return nt.value();
+    }
+    */
+
     CNS_DEBUG_MSG(logKey, "end");
     return {Typename(context, at->getElementType().getUnqualifiedType())};
+}
+
+std::optional<std::string> getPointeeType(
+        clang::ASTContext &context,
+        QualType qt) {
+
+    constexpr auto logKey = "Pointee QT";
+    if(!(qt->isPointerType())) {
+        CNS_DEBUG_MSG(logKey, "Not a pointer type");
+        CNS_DEBUG_MSG(logKey, "end");
+        return {};
+    }
+
+    CNS_DEBUG_MSG(logKey, "Is pointer type");
+
+    /*
+    if(auto nt = getNumericType(context, qt->getPointeeType())) {
+        CNS_DEBUG_MSG(logKey, "Pointee is numeric type");
+        CNS_DEBUG_MSG(logKey, "end");
+        return nt.value();
+    }
+    */
+
+    CNS_DEBUG_MSG(logKey, "end");
+    return {Typename(context, qt->getPointeeType().getUnqualifiedType())};
 }
 
 std::optional<std::string> getNumericType(
@@ -221,8 +274,73 @@ std::optional<std::string> getFunctionPointeeType(
     return {};
 }
 
+CNSFieldInfo makeFieldInfo(
+        clang::ASTContext &context,
+        clang::SourceManager const &sm,
+        QualType qt) {
+    constexpr auto logKey = "fieldinfoQT";
+    CNS_DEBUG_MSG(logKey, "begin");
+    auto const *rd = qt->getAsRecordDecl();
+    if(!rd) {
+        CNS_DEBUG_MSG(logKey, "Not a record type");
+        CNS_DEBUG_MSG(logKey, "end");
+        return {
+            Typename(context, qt),
+            {}, {}, {}
+        };
+    }
+
+    auto const& layout = context.getASTRecordLayout(rd);
+
+    CNS_DEBUG_MSG(logKey, "end");
+    return {
+        rd->getNameAsString(),
+        rd->getLocation().printToString(sm),
+        layout.getSize(),
+        rd->isOrContainsUnion()
+    };
+}
+
+CNSTypeInfo makeTypeInfo(
+        clang::ASTContext &context,
+        clang::SourceManager const &sm,
+        QualType qt) {
+    constexpr auto logKey = "typeinfoQT";
+    CNS_DEBUG_MSG(logKey, "begin");
+    auto const *rd = qt->getAsRecordDecl();
+    if(!rd) {
+        CNS_DEBUG_MSG(logKey, "Not a record type");
+        CNS_DEBUG_MSG(logKey, "end");
+        return {
+            Typename(context, qt),
+            {}, {}, {}
+        };
+    }
+
+    std::vector<CNSFieldInfo> fields;
+    std::for_each(rd->field_begin(), rd->field_end(),
+        [&](auto const *fd) {
+            auto const *tsi = fd->getTypeSourceInfo();
+            if(tsi) {
+                fields.push_back(makeFieldInfo(context, sm, tsi->getType()));
+            }
+        });
+
+    auto const& layout = context.getASTRecordLayout(rd);
+
+    CNS_DEBUG_MSG(logKey, "end");
+    return {
+        rd->getNameAsString(),
+        rd->getLocation().printToString(sm),
+        std::move(fields),
+        layout.getSize(),
+        rd->isOrContainsUnion()
+    };
+}
+
 TypeDataExtra makeTypeDataExtra(
         clang::ASTContext &context,
+        clang::SourceManager const &sm,
         QualType qt) {
 
     constexpr auto logKey = "QT";
@@ -231,28 +349,32 @@ TypeDataExtra makeTypeDataExtra(
     CNS_DEBUG_MSG(logKey, "end");
     return {
         getArrayType(context, qt),
+        getPointeeType(context, qt),
         getNumericType(context, qt),
         Typename(context, qt.getUnqualifiedType()),
-        getFunctionPointeeType(context, qt)
+        getFunctionPointeeType(context, qt),
+        makeTypeInfo(context, sm, qt)
     };
 }
 
 TypeDataExtra makeTypeDataExtra(
         clang::ASTContext &context,
+        clang::SourceManager const &sm,
         clang::Expr const &e) {
     auto const logKey = String(context, e);
     CNS_DEBUG_MSG(logKey, "begin");
     CNS_DEBUG_MSG(logKey, "end");
-    return makeTypeDataExtra(context, e.getType());
+    return makeTypeDataExtra(context, sm, e.getType());
 }
 
 TypeDataExtra makeTypeDataExtra(
         clang::ASTContext &context,
+        clang::SourceManager const &sm,
         clang::ValueDecl const &vd) {
     auto const logKey = String(context, vd);
     CNS_DEBUG_MSG(logKey, "begin");
     CNS_DEBUG_MSG(logKey, "end");
-    return makeTypeDataExtra(context, vd.getType());
+    return makeTypeDataExtra(context, sm, vd.getType());
 }
 
 template<CastSourceType s_type, typename T>
@@ -284,7 +406,7 @@ OpData buildOpData(
         linkedTypeCategory(parm),
         parm.getLocation().printToString(sm),
         qualifiedName(context, parm),
-        makeTypeDataExtra(context, parm)
+        makeTypeDataExtra(context, sm, parm)
     };
 }
 
@@ -311,7 +433,7 @@ OpData buildOpData(
         arg.getExprLoc().printToString(sm),
         qualifiedName(context, arg),
         //String(context, arg)
-        makeTypeDataExtra(context, arg)
+        makeTypeDataExtra(context, sm, arg)
     };
 }
 
@@ -334,7 +456,7 @@ OpData buildOpData(
         linkedTypeCategory(var),
         var.getLocation().printToString(sm),
         qualifiedName(context, var),
-        makeTypeDataExtra(context, var)
+        makeTypeDataExtra(context, sm, var)
     };
 }
 
@@ -358,7 +480,7 @@ OpData buildOpData(
         linkedTypeCategory(e),
         decl.getLocation().printToString(sm),
         qualifiedName(context, e), //, decl.getDeclName())
-        makeTypeDataExtra(context, e)
+        makeTypeDataExtra(context, sm, e)
     };
 }
 
@@ -383,7 +505,7 @@ OpData buildOpData(
         linkedTypeCategory(castExpr),
         decl.getLocation().printToString(sm),
         qualifiedName(context, decl, decl.getDeclName()),
-        makeTypeDataExtra(context, decl)
+        makeTypeDataExtra(context, sm, decl)
     };
 }
 
@@ -408,7 +530,7 @@ OpData buildOpData(
         linkedTypeCategory(castExpr),
         castExpr.getExprLoc().printToString(sm),
         String(context, s),//qualifiedName(context, s, e.getNameInfo())
-        makeTypeDataExtra(context, e)
+        makeTypeDataExtra(context, sm, e)
     };
 }
 
@@ -500,7 +622,7 @@ OpData buildOpData(
         linkedTypeCategory(castExpr),
         castExpr.getExprLoc().printToString(sm),
         qualifiedName(context, e), //String(context, e)
-        makeTypeDataExtra(context, e)
+        makeTypeDataExtra(context, sm, e)
     };
 }
 
@@ -545,7 +667,7 @@ OpData buildOpDataArg(
             linkedTypeCategory(arg),
             arg.getExprLoc().printToString(sm),
             qualifiedName(context, *decl, e.getNameInfo()),
-            makeTypeDataExtra(context, e)
+            makeTypeDataExtra(context, sm, e)
         };
     }
 
@@ -563,7 +685,7 @@ OpData buildOpDataArg(
             linkedTypeCategory(arg),
             arg.getExprLoc().printToString(sm),
             String(context, e), //qualifiedName(context, *stmt, e.getNameInfo())
-            makeTypeDataExtra(context, e)
+            makeTypeDataExtra(context, sm, e)
         };
     }
 
@@ -580,7 +702,7 @@ OpData buildOpDataArg(
         linkedTypeCategory(arg),
         arg.getExprLoc().printToString(sm),
         qualifiedName(context, e), //String(context, e)
-        makeTypeDataExtra(context, e)
+        makeTypeDataExtra(context, sm, e)
     };
 }
 
@@ -604,7 +726,7 @@ OpData buildOpData<CastSourceType::UnaryOp>(
         linkedTypeCategory(castExpr),
         castExpr.getExprLoc().printToString(sm),
         qualifiedName(context, op), //String(context, op)
-        makeTypeDataExtra(context, op)
+        makeTypeDataExtra(context, sm, op)
     };
 }
 

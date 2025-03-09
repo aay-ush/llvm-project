@@ -478,7 +478,7 @@ inline OpData buildLimitedArgOp(clang::ASTContext &context,
             linkedTypeCategory(arg),
             call.getExprLoc().printToString(sm),
             qualifiedName(context, arg), //qualifiedName(context, call, arg)
-            makeTypeDataExtra(context, arg)
+            makeTypeDataExtra(context, sm, arg)
         };
 }
 
@@ -560,7 +560,7 @@ OpData buildArgOp(clang::ASTContext &context,
                 call.getExprLoc().printToString(sm),
                 //String(context, *e), //
                 qualifiedName(context, *e), //qualifiedName(context, call, *e)
-                makeTypeDataExtra(context, *e)
+                makeTypeDataExtra(context, sm, *e)
             };
 
     CNS_DEBUG_MSG(logKey, "end");
@@ -611,7 +611,7 @@ void buildOpDatas(clang::ASTContext &context,
                     (call.getDirectCallee() != nullptr)
                         ? (call.getDirectCallee()->getQualifiedNameAsString() + ".$" + std::to_string(pos))
                         : ("NullCallee"),
-                    makeTypeDataExtra(context, *parm)
+                    makeTypeDataExtra(context, sm, *parm)
                 };
             }
 
@@ -699,7 +699,7 @@ void buildOpDatas(clang::ASTContext &context,
                         linkedTypeCategory(*arg),
                         call.getExprLoc().printToString(sm),
                         qns,
-                        makeTypeDataExtra(context, *arg)
+                        makeTypeDataExtra(context, sm, *arg)
                     };
                 }
                 else {
@@ -715,7 +715,7 @@ void buildOpDatas(clang::ASTContext &context,
                         linkedTypeCategory(*arg),
                         call.getExprLoc().printToString(sm),
                         "Resolve Func from callexpr_.$" + std::to_string(pos),
-                        makeTypeDataExtra(context, *arg)
+                        makeTypeDataExtra(context, sm, *arg)
                     };
                 }
             }
@@ -1388,14 +1388,14 @@ void printInScore(CensusKey const &op) {
     auto const &ss = SummarizedScores.at(op);
 
     auto const &types = ss.inTypes();
-    tprint(fmt::format("{}: {}\n", op, types));
+    tprint(fmt::format("{} [{}]: {}\n", op, ops(op).location_, types));
 }
 
 void printOutScore(CensusKey const &op) {
     auto const &ss = SummarizedScores.at(op);
 
     auto const &types = ss.outTypes();
-    tprint(fmt::format("{}: {}\n", op, types));
+    tprint(fmt::format("{} [{}]: {}\n", op, ops(op).location_, types));
 }
 
 void printScores() {

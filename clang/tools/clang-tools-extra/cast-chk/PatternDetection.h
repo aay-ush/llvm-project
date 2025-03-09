@@ -1,5 +1,5 @@
-#ifndef RECOGNIZER_H
-#define RECOGNIZER_H
+#ifndef PATTERNDETECTION_H
+#define PATTERNDETECTION_H
 
 #include "Census.h"
 #include "History.h"
@@ -140,19 +140,26 @@ void scoreSubtypingEdge(CensusKey const &from, CensusKey const &to) {
     CNS_DEBUG_MSG(logKey, "end");
 }
 
-// TODO TODO add score propagation
 void scoreSummary(TypeSummary const &ts) {
     auto const logKey = ts.key();
     CNS_DEBUG_MSG(logKey, "begin");
     for(auto const &to: ts.nexts()) {
-        if(to.linkInfo().exprType().find("Member") != std::string::npos) {
+        // If there is a member access or conditional cast, consider it as subtyping
+        if((to.linkInfo().exprType().find("Member") != std::string::npos)
+            || !String(to.linkInfo().parentCondition()).empty()) {
             // Maybe potential upcasts
             //CNS_DEBUG_MSG(logKey, "Skipping member edge");
-            //continue;
+            auto const &op = ops(to.key());
+            if(op.td_.numericType_) {
+                CNS_DEBUG_MSG(logKey, "Skipping number edge");
+                continue;
+            }
             scoreSubtypingEdge(ts.key(), to.key());
         }
 
-        scoreEdge(ts.key(), to.key());
+        if(to.linkInfo().exprType().find("Member") == std::string::npos) {
+            scoreEdge(ts.key(), to.key());
+        }
 
         auto const &from = ops(ts.key());
         if(from.type_ == "void *") {
@@ -173,4 +180,4 @@ bool isPotentiallySubtype(CensusKey const &op) {
     return SummarizedSubtypingScores.at(op).outScore() > 1;
 }
 
-#endif // RECOGNIZER_H
+#endif // PATTERNDETECTION_H
