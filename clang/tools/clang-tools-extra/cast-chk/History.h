@@ -1202,7 +1202,7 @@ class TypeSummary {
         linkInfo_ = linkInfo;
     }
 
-    DominatorData linkInfo() const {
+    DominatorData const& linkInfo() const {
         return linkInfo_;
     }
 

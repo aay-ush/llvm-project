@@ -1315,11 +1315,16 @@ std::string getSummaryJson(TypeSummary const &ts, unsigned indent = 0) {
                     vertexStr(s, true);
                 });
         vertexStr(nexts[nexts.size() - 1], false);
-        vertices.append(space(indent));
+        vertices.append(space(indent ? indent - 4 : 0));
     }
 
-    std::string summary = "{\"SummaryID\": \"" + ts.key() + "\", \"Nexts\": ["
-        + std::move(vertices) + "]}";
+    auto const &linkInfo = ts.linkInfo();
+    std::string summary = "{\"SummaryID\": \"" + ts.key()
+        + "\", \"CastKind\": \"" + linkInfo.castKind()
+        + "\", \"ExprType\": \"" + linkInfo.exprType()
+        + "\", \"Expr\": \"" + linkInfo.linkExpr()
+        + "\", \"Condition\": \"" + String(linkInfo.parentCondition())
+        + "\", \"Nexts\": [" + std::move(vertices) + "]}";
 
     return summary;
 }
