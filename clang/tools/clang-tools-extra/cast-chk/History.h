@@ -1139,7 +1139,7 @@ class TypeSummary {
     void addNextBranch(TypeSummary const& branch) {
         auto const logKey = id();
         CNS_DEBUG_MSG(logKey, "begin");
-        CNS_DEBUG(logKey, "Adding nexts_ branch: {{{}[{}]}}", branch.key_, branch.label());
+        CNS_DEBUG(logKey, "Adding nexts_ branch: {{{}[{}]}}", branch.key_, branch.linkInfo().linkType());
         nexts_.push_back(branch);
         CNS_DEBUG(logKey, "Updated branch size: {}", nexts_.size());
         CNS_DEBUG_MSG(logKey, "end");
@@ -1161,7 +1161,7 @@ class TypeSummary {
     TypeSummary(const TypeSummary& t): //= default;
         key_(t.key_),
         linkInfo_(t.linkInfo_),
-        linkLabel_(t.linkLabel_),
+        //linkLabel_(t.linkLabel_),
         nexts_(t.nexts_) {
 
         numi_ = num_++;
@@ -1171,7 +1171,7 @@ class TypeSummary {
     TypeSummary(TypeSummary&& t): // = default;
         key_(std::move(t.key_)),
         linkInfo_(std::move(t.linkInfo_)),
-        linkLabel_(std::move(t.linkLabel_)),
+        //linkLabel_(std::move(t.linkLabel_)),
         nexts_(std::move(t.nexts_)) {
 
         numi_ = num_++;
@@ -1184,18 +1184,19 @@ class TypeSummary {
     std::string id() const {
         std::string sid;
         sid.reserve(64);
-        sid = key_ + ";[" + std::to_string(size()) + "];(" + linkLabel_ + ")_" + std::to_string(numi_);
+        sid = key_ + ";[" + std::to_string(size()) + "];" + std::to_string(numi_);
+        //sid = key_ + ";[" + std::to_string(size()) + "];(" + linkLabel_ + ")_" + std::to_string(numi_);
         return sid;
     }
 
-    void setLabel(std::string const& label) {
-        CNS_DEBUG(key_, "Setting label '{}' to TypeSummary", label);
-        linkLabel_ = label;
-    }
+    //void setLabel(std::string const& label) {
+    //    CNS_DEBUG(key_, "Setting label '{}' to TypeSummary", label);
+    //    //linkLabel_ = label;
+    //}
 
-    std::string label() const {
-        return linkLabel_;
-    }
+    //std::string label() const {
+    //    return linkLabel_;
+    //}
 
     void setLinkInfo(DominatorData linkInfo) {
         CNS_DEBUG(key_, "Setting linkInfo '{}' to TypeSummary", String(linkInfo));
@@ -1213,7 +1214,7 @@ class TypeSummary {
     private:
     CensusKey key_;
     DominatorData linkInfo_;
-    std::string linkLabel_; //{"root"};
+    //std::string linkLabel_; //{"root"};
     std::vector<TypeSummary> nexts_;
     static unsigned num_;
     unsigned numi_;
@@ -1281,7 +1282,7 @@ TypeSummary makeResolvedSummary(std::string const& keyOp, std::string const& key
     auto const& op = ops(keyOp);
     CNS_DEBUG(logKey, "{{{}}}: A", keyOp);
     TypeSummary ts (TypeTransforms.at(keyOp));
-    ts.setLabel(linkType);
+    //ts.setLabel(linkType);
     ts.setLinkInfo(linkInfo);
 
     if(keyRops == keyOp) {
@@ -1345,7 +1346,7 @@ TypeSummary makeResolvedSummary(std::string const& keyOp, std::string const& key
     CNS_INFO(logKey, "{{{}}}: Adding branch from resolved keyRops{{{}}}", ts.id(), keyRops);
     CNS_DEBUG(logKey, "{{{}}}: B", ts.id());
     auto tts = TypeSummary(TypeTransforms.at(keyRops));
-    tts.setLabel(linkType);
+    //tts.setLabel(linkType);
     ts.addNextBranch(tts);
 
     CNS_DEBUG(logKey, "{{{}}}: end", ts.id());
@@ -1480,12 +1481,18 @@ public:
         extendStat(std::begin(cst.categoryCounts_), std::end(cst.categoryCounts_), categoryCounts_);
     }
 
-    void record(OpData const& op, DominatorData const& domInfo, std::string const& origin) {
+    void record(OpData const& op, DominatorData const& domInfo) {//, std::string const& origin) {
+        auto const logKey = label_;
+        CNS_DEBUG(logKey, "op: {}", op.qn_);
+
         typeCounts_[op.type_] += 1;
 
-        if(origin == "BitCast") {
+        bool isBitCast = (domInfo.linkType().find("BitCast") != std::string::npos);
+
+        CNS_DEBUG(logKey, "isBitCast: {}", isBitCast);
+        if(isBitCast) {
             castCount_++;
-            voidCount_ += (op.type_ == "void *");
+            voidCount_ += (op.type_.find("void *") != std::string::npos);
 
             locationCounts_[op.location_] += 1;
 
@@ -1497,7 +1504,7 @@ public:
             }
         }
 
-        if(origin == "BitCast" || label_.find(op.qn_) != std::string::npos) {
+        if(isBitCast || label_.find(op.qn_) != std::string::npos) {
             categoryCounts_[op.linkedRecordCategory_] += 1;
             categoryCounts_[op.category_] += 1;
         }
@@ -1523,17 +1530,17 @@ std::string TypeSummary::summarize(CastStat &cst, std::optional<unsigned> level,
     ssr.reserve(1024);
     CNS_DEBUG(logKey, "LEVEL = {}", level.value_or(599)); // TODO Level upper limit
     auto const& op = ops(key_);
-    cst.record(op, linkInfo_, linkLabel_);
+    cst.record(op, linkInfo_);//, linkLabel_);
 
     ssr = op.type_ + "{" + key_ + "}";
-    if(!linkLabel_.empty()) {
-        ssr.append("(" + linkLabel_ + ")");
-    }
+    //if(!linkLabel_.empty()) {
+    //    ssr.append("<" + linkLabel_ + ">");
+    //}
     if(!op.linkedRecord_.empty()) {
         ssr += "{" + op.linkedRecord_ + ": " + op.linkedRecordCategory_ + "}";
     }
 
-    ssr.append(" (" + linkInfo_.linkType() + ")");
+    ssr.append(" <" + linkInfo_.linkType() + ">");
     if(!linkInfo_.parentCondition().condition_.empty()
             && linkInfo_.parentCondition().condition_ != "NoCond") {
         ssr.append(" {" + String(linkInfo_.parentCondition()) + "}");

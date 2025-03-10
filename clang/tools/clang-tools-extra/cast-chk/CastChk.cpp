@@ -526,6 +526,7 @@ OpData buildArgOp(clang::ASTContext &context,
 
     auto const logKey = String(context, call) + "(): " + String(context, arg);
     CNS_DEBUG_MSG(logKey, "begin");
+    /*
     auto const *e = arg.IgnoreImplicit();
     if(!e) {
         CNS_DEBUG_MSG(logKey, "No expr from arg.IgnoreImplicit()");
@@ -533,7 +534,6 @@ OpData buildArgOp(clang::ASTContext &context,
         return buildLimitedArgOp(context, sm, call, arg);
     }
 
-    /*
     auto const *dre = getDREChild(e);
     if(!dre) {
         CNS_WARN(logKey, "Null DRE from expr '{}'", String(context, *e));
@@ -545,23 +545,43 @@ OpData buildArgOp(clang::ASTContext &context,
 
     //processMidCall(context, sm, call, *dre, *e);
     */
+    auto const * vd = getArgDecl(context, arg);
+    OpData to;
 
-    CNS_DEBUG(logKey, "Building arg op to return from '{}'", String(context, *e));
-    OpData to = {
-                cnsHash(context, *e),
-                String(context, *e),
-                Typename(context, *e),
-                TypeCategory(context, *e),
-                //String(context, arg),
-                linkedParmPos(context, call, *e),
-                getContainerFunction(context, *e),
-                getLinkedRecord(*e),
-                linkedTypeCategory(*e),
-                call.getExprLoc().printToString(sm),
-                //String(context, *e), //
-                qualifiedName(context, *e), //qualifiedName(context, call, *e)
-                makeTypeDataExtra(context, sm, *e)
+    if(vd) {
+        CNS_DEBUG(logKey, "Found decl for arg '{}'", String(context, arg));
+        to = {
+                    cnsHash(context, *vd),
+                    String(context, *vd),
+                    Typename(context, *vd),
+                    TypeCategory(context, *vd),
+                    linkedParmPos(context, call, arg),
+                    getContainerFunction(context, *vd),
+                    getLinkedRecord(*vd),
+                    linkedTypeCategory(*vd),
+                    call.getExprLoc().printToString(sm),
+                    qualifiedName(context, *vd, vd->getDeclName()),
+                    makeTypeDataExtra(context, sm, *vd)
             };
+    }
+    else {
+        CNS_DEBUG(logKey, "Decl not found for arg '{}'; building OpData from arg expr", String(context, arg));
+        to = {
+                    cnsHash(context, arg),
+                    String(context, arg),
+                    Typename(context, arg),
+                    TypeCategory(context, arg),
+                    //String(context, arg),
+                    linkedParmPos(context, call, arg),
+                    getContainerFunction(context, arg),
+                    getLinkedRecord(arg),
+                    linkedTypeCategory(arg),
+                    call.getExprLoc().printToString(sm),
+                    //String(context, arg), //
+                    qualifiedName(context, arg), //qualifiedName(context, call, arg)
+                    makeTypeDataExtra(context, sm, arg)
+                };
+    }
 
     CNS_DEBUG_MSG(logKey, "end");
     // 'to' will be the dom for the function param

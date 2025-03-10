@@ -1374,19 +1374,26 @@ std::string  linkedParmPos(
     }
 
     unsigned pos = 0;
+    bool found = false;
     for(auto const * aexpr: call.arguments()) {
-        if(clang::Expr::isSameComparisonOperand(aexpr, &arg)) {
-            pos++;
-        }
-        else {
+        if((found = clang::Expr::isSameComparisonOperand(aexpr, &arg))) {
             break;
         }
+        else {
+            pos++;
+        }
     }
-    CNS_INFO(logKey, "argPos = {}", pos);
-    // if pos > call.arguments() TODO
+    CNS_INFO(logKey, "argPos = {}; found = {}", pos, found);
 
+    if(found) {
+        CNS_INFO_MSG(logKey, "Found matching arg.");
+        CNS_DEBUG_MSG(logKey, "end");
+        return fn->getNameAsString() + ".$" + std::to_string(pos);
+    }
+
+    CNS_INFO_MSG(logKey, "No matching arg.");
     CNS_DEBUG_MSG(logKey, "end");
-    return fn->getNameAsString() + ".$" + std::to_string(pos);
+    return "Not an arg";
 }
 //--
 template <typename T, typename Parameter>
@@ -1605,6 +1612,19 @@ std::string getCastKind(clang::ASTContext &context, clang::Expr const &e) {
     }
 
     return "NotACast";
+}
+
+clang::ValueDecl const* getArgDecl(clang::ASTContext &context, clang::Expr const &arg) {
+    auto const logKey = String(context, arg);
+    CNS_DEBUG_MSG(logKey, "begin");
+    auto const *dre = getDREChild(context, &arg);
+    if(!dre) {
+        CNS_DEBUG_MSG(logKey, "end");
+        return nullptr;
+    }
+
+    CNS_DEBUG_MSG(logKey, "end");
+    return dre->getDecl();
 }
 
 //--
