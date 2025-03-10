@@ -81,8 +81,8 @@ void scoreEdge(CensusKey const &from, CensusKey const &to) {
             return typeInfo.numericType_.value();
         }
 
-        if(typeInfo.arrayType_) {
-            return typeInfo.arrayType_.value();
+        if(typeInfo.pointeeType_) {
+            return typeInfo.pointeeType_.value();
         }
 
         if(typeInfo.fptrType_) {
@@ -120,8 +120,8 @@ void scoreSubtypingEdge(CensusKey const &from, CensusKey const &to) {
             return typeInfo.numericType_.value();
         }
 
-        if(typeInfo.arrayType_) {
-            return typeInfo.arrayType_.value();
+        if(typeInfo.pointeeType_) {
+            return typeInfo.pointeeType_.value();
         }
 
         if(typeInfo.fptrType_) {
@@ -140,13 +140,21 @@ void scoreSubtypingEdge(CensusKey const &from, CensusKey const &to) {
     CNS_DEBUG_MSG(logKey, "end");
 }
 
+bool isConditionalTransform(DominatorData const &linkInfo) {
+    if(!String(linkInfo.parentCondition()).empty()
+            && linkInfo.parentCondition().condition_ != "NoCond") {
+        return true;
+    }
+    return false;
+}
+
 void scoreSummary(TypeSummary const &ts) {
     auto const logKey = ts.key();
     CNS_DEBUG_MSG(logKey, "begin");
     for(auto const &to: ts.nexts()) {
         // If there is a member access or conditional cast, consider it as subtyping
         if((to.linkInfo().exprType().find("Member") != std::string::npos)
-            || !String(to.linkInfo().parentCondition()).empty()) {
+                && isConditionalTransform(to.linkInfo())) {
             // Maybe potential upcasts
             //CNS_DEBUG_MSG(logKey, "Skipping member edge");
             auto const &op = ops(to.key());

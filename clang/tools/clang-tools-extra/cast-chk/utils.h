@@ -367,6 +367,62 @@ clang::MemberExpr const* getMemberExpr(
     return nullptr;
 }
 
+clang::CastExpr const* getCastExpr(clang::ASTContext const &context, clang::Expr const *e);
+
+template<typename T>
+clang::CastExpr const* getCastExpr(clang::ASTContext const &context, T const *e) {
+    constexpr auto logKey = "<T>";
+    if(!e) {
+        CNS_DEBUG_MSG(logKey, "Null expr");
+        return nullptr;
+    }
+    CNS_DEBUG_MSG(logKey, "Working out subexpr");
+    auto const * sub = getSubExpr_(*e);
+    return getCastExpr(context, sub);
+}
+
+clang::CastExpr const* getCastExpr(
+        clang::ASTContext const &context,
+        clang::Expr const *e) {
+
+    constexpr auto logKey = "<e>";
+    CNS_DEBUG_MSG(logKey, "begin");
+
+    auto const * uop = unaryExpr_(e);
+    auto const * mem = memberExpr_(e);
+    auto const * asubs = arraySubscriptExpr_(e);
+    auto const * caste = castExpr_(e);
+    auto const * parene = parenExpr_(e);
+
+    if(mem) {
+        return getCastExpr(context, mem);
+    }
+
+    if(uop) {
+        CNS_DEBUG_MSG(logKey, "Found subexpr unaryOperator");
+        CNS_DEBUG_MSG(logKey, "end");
+        return getCastExpr(context, uop);
+    }
+    if(asubs) {
+        CNS_DEBUG_MSG(logKey, "Found subexpr arraySubscript");
+        CNS_DEBUG_MSG(logKey, "end");
+        return getCastExpr(context, asubs);
+    }
+    if(caste) {
+        CNS_DEBUG_MSG(logKey, "Found subexpr castExpr");
+        CNS_DEBUG_MSG(logKey, "end");
+        return caste;
+    }
+    if(parene) {
+        CNS_DEBUG_MSG(logKey, "Found subexpr parenExpr");
+        CNS_DEBUG_MSG(logKey, "end");
+        return getCastExpr(context, parene);
+    }
+
+    CNS_DEBUG_MSG(logKey, "end");
+    return nullptr;
+}
+
 clang::DeclRefExpr const* getSubExprDRE(
         clang::ASTContext &context,
         clang::Expr const &e) {
@@ -1606,11 +1662,17 @@ std::string qualifiedNameFromFptrCall(clang::ASTContext &context, clang::CallExp
 }
 
 std::string getCastKind(clang::ASTContext &context, clang::Expr const &e) {
-    // Can have nested cast, but then that's to be handled with cast matcher
-    if(auto const * ce = castExpr_(&e); ce) {
+    if(auto const * ce = castExpr_(&e)) {
         return ce->getCastKindName();
     }
 
+    /*
+    if(auto const *subce = getCastExpr(context, &e)) {
+        return subce->getCastKindName();
+    }
+    */
+
+    // Can have nested cast, but then that's to be handled with cast matcher
     return "NotACast";
 }
 

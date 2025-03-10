@@ -1161,7 +1161,6 @@ class TypeSummary {
     TypeSummary(const TypeSummary& t): //= default;
         key_(t.key_),
         linkInfo_(t.linkInfo_),
-        //linkLabel_(t.linkLabel_),
         nexts_(t.nexts_) {
 
         numi_ = num_++;
@@ -1171,7 +1170,6 @@ class TypeSummary {
     TypeSummary(TypeSummary&& t): // = default;
         key_(std::move(t.key_)),
         linkInfo_(std::move(t.linkInfo_)),
-        //linkLabel_(std::move(t.linkLabel_)),
         nexts_(std::move(t.nexts_)) {
 
         numi_ = num_++;
@@ -1185,18 +1183,8 @@ class TypeSummary {
         std::string sid;
         sid.reserve(64);
         sid = key_ + ";[" + std::to_string(size()) + "];" + std::to_string(numi_);
-        //sid = key_ + ";[" + std::to_string(size()) + "];(" + linkLabel_ + ")_" + std::to_string(numi_);
         return sid;
     }
-
-    //void setLabel(std::string const& label) {
-    //    CNS_DEBUG(key_, "Setting label '{}' to TypeSummary", label);
-    //    //linkLabel_ = label;
-    //}
-
-    //std::string label() const {
-    //    return linkLabel_;
-    //}
 
     void setLinkInfo(DominatorData linkInfo) {
         CNS_DEBUG(key_, "Setting linkInfo '{}' to TypeSummary", String(linkInfo));
@@ -1214,7 +1202,6 @@ class TypeSummary {
     private:
     CensusKey key_;
     DominatorData linkInfo_;
-    //std::string linkLabel_; //{"root"};
     std::vector<TypeSummary> nexts_;
     static unsigned num_;
     unsigned numi_;
@@ -1282,7 +1269,6 @@ TypeSummary makeResolvedSummary(std::string const& keyOp, std::string const& key
     auto const& op = ops(keyOp);
     CNS_DEBUG(logKey, "{{{}}}: A", keyOp);
     TypeSummary ts (TypeTransforms.at(keyOp));
-    //ts.setLabel(linkType);
     ts.setLinkInfo(linkInfo);
 
     if(keyRops == keyOp) {
@@ -1317,36 +1303,10 @@ TypeSummary makeResolvedSummary(std::string const& keyOp, std::string const& key
         return ts;
     }
 
-    /*
-    if((keyOp != keyRops)
-            && std::regex_search(keyOp, pattern)
-            && std::regex_search(keyRops, pattern)) {
-
-        // Possibly, Strongly connected components (one param to next, maybe cyclic)
-        CNS_INFO_MSG("SCC possibility detected, stopping recursion.");
-        auto const &hr = TypeTransforms.at(keyRops);
-        std::for_each(hr.bbegin(), hr.bend(),
-            [&](auto const &bh_) {
-                auto const& bh = bh_.first.get();
-                auto bkeyRops = bh.getContextResolvedOpStr(bh_.second);
-                if(bh.opId() != keyOp || bkeyRops != keyOp) {
-                    auto th = makeResolvedSummary(bh.opId(), bkeyRops);
-                    ts.addNextBranch(th);
-                }
-            });
-
-        CNS_DEBUG_MSG("end");
-        return ts;
-    }
-    */
-
-
     CNS_DEBUG(logKey, "{{{}}}: Found keyRops{{{}}} in Census", ts.id(), keyRops);
-    //auto th = TypeSummary(TypeTransforms.at(keyRops)); //, {});
     CNS_INFO(logKey, "{{{}}}: Adding branch from resolved keyRops{{{}}}", ts.id(), keyRops);
     CNS_DEBUG(logKey, "{{{}}}: B", ts.id());
     auto tts = TypeSummary(TypeTransforms.at(keyRops));
-    //tts.setLabel(linkType);
     ts.addNextBranch(tts);
 
     CNS_DEBUG(logKey, "{{{}}}: end", ts.id());
@@ -1481,7 +1441,7 @@ public:
         extendStat(std::begin(cst.categoryCounts_), std::end(cst.categoryCounts_), categoryCounts_);
     }
 
-    void record(OpData const& op, DominatorData const& domInfo) {//, std::string const& origin) {
+    void record(OpData const& op, DominatorData const& domInfo) {
         auto const logKey = label_;
         CNS_DEBUG(logKey, "op: {}", op.qn_);
 
@@ -1530,12 +1490,10 @@ std::string TypeSummary::summarize(CastStat &cst, std::optional<unsigned> level,
     ssr.reserve(1024);
     CNS_DEBUG(logKey, "LEVEL = {}", level.value_or(599)); // TODO Level upper limit
     auto const& op = ops(key_);
-    cst.record(op, linkInfo_);//, linkLabel_);
+    cst.record(op, linkInfo_);
 
     ssr = op.type_ + "{" + key_ + "}";
-    //if(!linkLabel_.empty()) {
-    //    ssr.append("<" + linkLabel_ + ">");
-    //}
+
     if(!op.linkedRecord_.empty()) {
         ssr += "{" + op.linkedRecord_ + ": " + op.linkedRecordCategory_ + "}";
     }

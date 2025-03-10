@@ -126,7 +126,6 @@ struct CNSTypeInfo {
 };
 
 struct TypeDataExtra {
-    std::optional<std::string> arrayType_;
     std::optional<std::string> pointeeType_;
     std::optional<std::string> numericType_;
     std::string uqType_;
@@ -169,26 +168,6 @@ std::string String(OpData const &op) {
 //---
 std::optional<std::string> getNumericType(clang::ASTContext &context, QualType qt);
 
-std::optional<std::string> getArrayType(
-        clang::ASTContext &context,
-        QualType qt) {
-
-    constexpr auto logKey = "Array QT";
-    if(!(qt->isArrayType())) {
-        CNS_DEBUG_MSG(logKey, "Not an array type");
-        CNS_DEBUG_MSG(logKey, "end");
-        return {};
-    }
-
-    CNS_DEBUG_MSG(logKey, "Is array type");
-    auto const * at = qt->getAsArrayTypeUnsafe();
-
-    if(!at) {
-        CNS_WARN_MSG(logKey, "Cannot get array type pointer from detected array type");
-        CNS_DEBUG_MSG(logKey, "end");
-        return {};
-    }
-
     /*
     if(auto nt = getNumericType(context, at->getElementType())) {
         CNS_DEBUG_MSG(logKey, "Element is numeric type");
@@ -197,58 +176,86 @@ std::optional<std::string> getArrayType(
     }
     */
 
+auto getPointedAtType(
+        clang::ASTContext &context,
+        QualType qt,
+        unsigned indirections = 0)
+    -> std::pair<QualType, unsigned> {
+
+    auto const logKey = Typename(context, qt);
+    CNS_DEBUG_MSG(logKey, "begin");
+
+    if(qt->isPointerType()) {
+        CNS_DEBUG_MSG(logKey, "Is pointer type");
+        CNS_DEBUG_MSG(logKey, "end");
+        return getPointedAtType(context, qt->getPointeeType(), indirections + 1);
+    }
+
+    if(qt->isArrayType()) {
+        CNS_DEBUG_MSG(logKey, "Is array type");
+        auto const * aqt = qt->getAsArrayTypeUnsafe();
+
+        if(!aqt) {
+            CNS_WARN_MSG(logKey, "Cannot get array type pointer from detected array type");
+            CNS_DEBUG_MSG(logKey, "end");
+            return {qt, indirections};
+        }
+
+        CNS_DEBUG_MSG(logKey, "end");
+        return getPointedAtType(context, aqt->getElementType(), indirections + 1);
+    }
+
     CNS_DEBUG_MSG(logKey, "end");
-    return {Typename(context, at->getElementType().getUnqualifiedType())};
+    return {qt, indirections};
 }
 
-std::optional<std::string> getPointeeType(
+
+auto TypenamePointedAt(
         clang::ASTContext &context,
-        QualType qt) {
+        QualType qt)
+    -> std::string {
 
-    constexpr auto logKey = "Pointee QT";
-    if(!(qt->isPointerType())) {
-        CNS_DEBUG_MSG(logKey, "Not a pointer type");
-        CNS_DEBUG_MSG(logKey, "end");
-        return {};
+    auto const logKey = Typename(context, qt);
+    CNS_DEBUG_MSG(logKey, "begin");
+
+    auto [pqt, starCount] = getPointedAtType(context, qt);
+    std::string stars(starCount, '*');
+
+    auto type = Typename(context, pqt.getUnqualifiedType());
+    CNS_DEBUG(logKey, "unqualified pointed-at type: {}", type);
+
+    if(stars.empty()) {
+        CNS_DEBUG(logKey, "end: {}", type);
+        return type;
     }
 
-    CNS_DEBUG_MSG(logKey, "Is pointer type");
-
-    /*
-    if(auto nt = getNumericType(context, qt->getPointeeType())) {
-        CNS_DEBUG_MSG(logKey, "Pointee is numeric type");
-        CNS_DEBUG_MSG(logKey, "end");
-        return nt.value();
-    }
-    */
-
-    CNS_DEBUG_MSG(logKey, "end");
-    return {Typename(context, qt->getPointeeType().getUnqualifiedType())};
+    type.append(" " + stars);
+    CNS_DEBUG(logKey, "end: {}", type);
+    return type;
 }
 
 std::optional<std::string> getNumericType(
         clang::ASTContext &context,
         QualType qt) {
 
-    constexpr auto logKey = "Numeric QT";
-
+    auto const logKey = Typename(context, qt);
     CNS_DEBUG_MSG(logKey, "begin");
-    if(qt->isPointerType() || qt->isArrayType()) {
-        auto const *tp = qt->getPointeeOrArrayElementType();
-        if(!tp) {
-            CNS_WARN_MSG(logKey, "Cannot get pointee type from detected array/ptr type");
-            CNS_DEBUG_MSG(logKey, "end");
-            return {};
-        }
-        if(tp->isIntegerType() || tp->isRealFloatingType()) {
-            CNS_DEBUG_MSG(logKey, "end");
-            return {"Number *"};
-        }
-    }
 
-    if(qt->isIntegerType() || qt->isRealFloatingType()) {
-        CNS_DEBUG_MSG(logKey, "end");
-        return {"Number"};
+    auto [ft, starCount] = getPointedAtType(context, qt);
+    CNS_DEBUG(logKey, "pointed-at type: {}", Typename(context, ft));
+    std::string stars(starCount, '*');
+
+    if((ft->isIntegerType() || ft->isRealFloatingType())
+            && (!ft->isAnyCharacterType())) {
+        std::string type = "Number";
+        if(stars.empty()) {
+            CNS_DEBUG(logKey, "end: {}", type);
+            return {type};
+        }
+
+        type.append(" " + stars);
+        CNS_DEBUG(logKey, "end: {}", type);
+        return {type};
     }
 
     CNS_DEBUG_MSG(logKey, "end");
@@ -348,8 +355,7 @@ TypeDataExtra makeTypeDataExtra(
     CNS_DEBUG_MSG(logKey, "begin");
     CNS_DEBUG_MSG(logKey, "end");
     return {
-        getArrayType(context, qt),
-        getPointeeType(context, qt),
+        TypenamePointedAt(context, qt),
         getNumericType(context, qt),
         Typename(context, qt.getUnqualifiedType()),
         getFunctionPointeeType(context, qt),
