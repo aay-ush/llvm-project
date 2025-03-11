@@ -1373,7 +1373,7 @@ void printSummaryToJson() {
 
     fmt::print(fjOut, "}}\n}}}}");
     fclose(fjOut);
-    tprint("END Summary JSON Dump");
+    tprint("END Summary JSON Dump\n");
 }
 
 void printCollection() {
@@ -1404,18 +1404,16 @@ void printCollection() {
     teeStat(tcst);
 }
 
-void printInScore(CensusKey const &op) {
-    auto const &ss = SummarizedScores.at(op);
-
-    auto const &types = ss.inTypes();
+inline void printScore(CensusKey const &op, std::string const &types) {
     tprint(fmt::format("{} [{}]: {}\n", op, ops(op).location_, types));
 }
 
-void printOutScore(CensusKey const &op) {
-    auto const &ss = SummarizedScores.at(op);
+inline void printInScore(CensusKey const &op, Score_t scores) {
+    printScore(op, scores.at(op).inTypes());
+}
 
-    auto const &types = ss.outTypes();
-    tprint(fmt::format("{} [{}]: {}\n", op, ops(op).location_, types));
+inline void printOutScore(CensusKey const &op, Score_t scores) {
+    printScore(op, scores.at(op).outTypes());
 }
 
 void printScores() {
@@ -1425,29 +1423,38 @@ void printScores() {
             scoreSummary(node.second);
         });
 
+    /*
     tprint("Summarized scores:\n");
     std::for_each(begin(SummarizedScores), end(SummarizedScores),
         [](auto const &node) {
             tprint(fmt::format("{}: in({}), out({})\n", node.first, node.second.inScore(), node.second.outScore()));
         });
     tprint("\n");
+    */
 
     tprint("Possible generic uses:\n");
-    std::for_each(begin(SummarizedScores), end(SummarizedScores),
+    std::for_each(begin(SummarizedGenericScores), end(SummarizedGenericScores),
         [](auto const &node) {
-            //auto const &op = ops(node.first);
             if(isPotentiallyGeneric(node.first)) {
-                printInScore(node.first);
+                printInScore(node.first, SummarizedGenericScores);
             }
         });
 
     tprint("\n");
     tprint("Possible subtype uses:\n");
-    std::for_each(begin(SummarizedScores), end(SummarizedScores),
+    std::for_each(begin(SummarizedSubtypingScores), end(SummarizedSubtypingScores),
         [](auto const &node) {
-            //auto const &op = ops(node.first);
             if(isPotentiallySubtype(node.first)) {
-                printOutScore(node.first);
+                printOutScore(node.first, SummarizedSubtypingScores);
+            }
+        });
+
+    tprint("\n");
+    tprint("Possible reinterpret casts:\n");
+    std::for_each(begin(SummarizedReinterpretScores), end(SummarizedReinterpretScores),
+        [](auto const &node) {
+            if(isReinterpret(node.first)) {
+                printOutScore(node.first, SummarizedReinterpretScores);
             }
         });
 }

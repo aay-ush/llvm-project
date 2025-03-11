@@ -126,6 +126,7 @@ struct CNSTypeInfo {
 };
 
 struct TypeDataExtra {
+    bool isPointerType_;
     std::optional<std::string> pointeeType_;
     std::optional<std::string> numericType_;
     std::string uqType_;
@@ -208,7 +209,6 @@ auto getPointedAtType(
     CNS_DEBUG_MSG(logKey, "end");
     return {qt, indirections};
 }
-
 
 auto TypenamePointedAt(
         clang::ASTContext &context,
@@ -355,6 +355,7 @@ TypeDataExtra makeTypeDataExtra(
     CNS_DEBUG_MSG(logKey, "begin");
     CNS_DEBUG_MSG(logKey, "end");
     return {
+        (qt->isPointerType() || qt->isArrayType()),
         TypenamePointedAt(context, qt),
         getNumericType(context, qt),
         Typename(context, qt.getUnqualifiedType()),

@@ -67,80 +67,54 @@ private:
     decltype(Score::types_) & outTypes_ = out_.types_;
 };
 
-std::unordered_map<CensusKey, TypeScore> SummarizedScores;
+std::unordered_map<CensusKey, TypeScore> SummarizedGenericScores;
 std::unordered_map<CensusKey, TypeScore> SummarizedSubtypingScores;
-
-void scoreEdge(CensusKey const &from, CensusKey const &to) {
-    auto const logKey = from + " -> " + to;
-    CNS_DEBUG_MSG(logKey, "begin");
-
-    auto cleanType = [](CensusKey const &op) -> auto {
-        auto const &op_ = ops(op);
-        auto const &typeInfo = op_.td_;
-        if(typeInfo.numericType_) {
-            return typeInfo.numericType_.value();
-        }
-
-        if(typeInfo.pointeeType_) {
-            return typeInfo.pointeeType_.value();
-        }
-
-        if(typeInfo.fptrType_) {
-            return typeInfo.fptrType_.value();
-        }
-
-        return typeInfo.uqType_;
-    };
-
-    SummarizedScores.at(from).addOutType(cleanType(to));
-    CNS_DEBUG(logKey, "Updated out score for '{}': {}", from, SummarizedScores.at(from).outScore());
-
-    SummarizedScores.at(to).addInType(cleanType(from));
-    CNS_DEBUG(logKey, "Updated in score for '{}': {}", to, SummarizedScores.at(to).inScore());
-
-    CNS_DEBUG_MSG(logKey, "end");
-}
+std::unordered_map<CensusKey, TypeScore> SummarizedReinterpretScores;
 
 void initScores() {
     std::for_each(begin(TypeSummaries), end(TypeSummaries),
         [](auto const &node) {
-            SummarizedScores.emplace(node.first, node.first);
+            SummarizedGenericScores.emplace(node.first, node.first);
             SummarizedSubtypingScores.emplace(node.first, node.first);
+            SummarizedReinterpretScores.emplace(node.first, node.first);
         });
 }
 
-void scoreSubtypingEdge(CensusKey const &from, CensusKey const &to) {
+std::string cleanType(CensusKey const &opKey) {
+    auto const &op = ops(opKey);
+    auto const &typeInfo = op.td_;
+
+    if(typeInfo.numericType_) {
+        return typeInfo.numericType_.value();
+    }
+
+    if(typeInfo.pointeeType_) {
+        return typeInfo.pointeeType_.value();
+    }
+
+    if(typeInfo.fptrType_) {
+        return typeInfo.fptrType_.value();
+    }
+
+    return typeInfo.uqType_;
+}
+
+using Score_t = std::unordered_map<CensusKey, TypeScore>;
+
+void recordEdgeScore(CensusKey const &from, CensusKey const &to, Score_t scores) {
     auto const logKey = from + " -> " + to;
     CNS_DEBUG_MSG(logKey, "begin");
 
-    auto cleanType = [](CensusKey const &op) -> auto {
-        auto const &op_ = ops(op);
-        auto const &typeInfo = op_.td_;
-        if(typeInfo.numericType_) {
-            return typeInfo.numericType_.value();
-        }
+    scores.at(from).addOutType(cleanType(to));
+    CNS_DEBUG(logKey, "Updated out score for '{}': {}", from, scores.at(from).outScore());
 
-        if(typeInfo.pointeeType_) {
-            return typeInfo.pointeeType_.value();
-        }
-
-        if(typeInfo.fptrType_) {
-            return typeInfo.fptrType_.value();
-        }
-
-        return typeInfo.uqType_;
-    };
-
-    SummarizedSubtypingScores.at(from).addOutType(cleanType(to));
-    CNS_DEBUG(logKey, "Updated out score for '{}': {}", from, SummarizedSubtypingScores.at(from).outScore());
-
-    SummarizedSubtypingScores.at(to).addInType(cleanType(from));
-    CNS_DEBUG(logKey, "Updated in score for '{}': {}", to, SummarizedSubtypingScores.at(to).inScore());
+    scores.at(to).addInType(cleanType(from));
+    CNS_DEBUG(logKey, "Updated in score for '{}': {}", to, scores.at(to).inScore());
 
     CNS_DEBUG_MSG(logKey, "end");
 }
 
-bool isConditionalTransform(DominatorData const &linkInfo) {
+inline bool isTransformConditional(DominatorData const &linkInfo) {
     if(!String(linkInfo.parentCondition()).empty()
             && linkInfo.parentCondition().condition_ != "NoCond") {
         return true;
@@ -148,44 +122,103 @@ bool isConditionalTransform(DominatorData const &linkInfo) {
     return false;
 }
 
+inline bool isTransformThroughMember(DominatorData const &linkInfo) {
+    if(linkInfo.exprType().find("Member") != std::string::npos) {
+        return true;
+    }
+    return false;
+}
+
+inline bool isSubtypingTransform(DominatorData const &linkInfo) {
+    // If there is a member access with conditional cast, consider it as subtyping
+    return isTransformConditional(linkInfo)
+        && isTransformThroughMember(linkInfo);
+    // Maybe potential upcasts if there is memeber access without conditional
+}
+
+inline bool isNumeric(CensusKey const &op) {
+    return ops(op).td_.numericType_.has_value();
+}
+
+inline void propagateScore(TypeScore const &from, TypeScore &to) {
+    to.addInTypes(from);
+}
+
+inline void propagateGenericScore(CensusKey const &from, CensusKey const &to) {
+    propagateScore(SummarizedGenericScores.at(from), SummarizedGenericScores.at(to));
+}
+
+bool hasReinterpretCast(CensusKey const &from, CensusKey const &to, DominatorData const &linkInfo) {
+    if(isTransformThroughMember(linkInfo)) {
+        return false;
+    }
+
+    auto isRelevantNumber = [](auto const &op) {
+        return isNumeric(op.qn_)
+            && (op.type_.find("int") != 0);
+    };
+
+    auto isFromLong = isRelevantNumber(ops(from));
+    auto isFromPointer = ops(from).td_.isPointerType_;
+
+    auto isToLong = isRelevantNumber(ops(to));
+    auto isToPointer = ops(to).td_.isPointerType_;
+
+    // true if cast is from number to pointer or vice versa only.
+    if(isFromLong && !isFromPointer && isToPointer) {
+        return true;
+    }
+    if(isToLong && !isToPointer && isFromPointer) {
+        return true;    // Probably not a thing
+    }
+    // Maybe filter number -> number * (only number -> ulong/void * or vice versa are of interest)
+
+    return false;
+}
+
 void scoreSummary(TypeSummary const &ts) {
     auto const logKey = ts.key();
     CNS_DEBUG_MSG(logKey, "begin");
+
     for(auto const &to: ts.nexts()) {
-        // If there is a member access or conditional cast, consider it as subtyping
-        if((to.linkInfo().exprType().find("Member") != std::string::npos)
-                && isConditionalTransform(to.linkInfo())) {
-            // Maybe potential upcasts
-            //CNS_DEBUG_MSG(logKey, "Skipping member edge");
-            auto const &op = ops(to.key());
-            if(op.td_.numericType_) {
+        if(isSubtypingTransform(to.linkInfo())) {
+            if(isNumeric(to.key())) {
                 CNS_DEBUG_MSG(logKey, "Skipping number edge");
                 continue;
             }
-            scoreSubtypingEdge(ts.key(), to.key());
+            recordEdgeScore(ts.key(), to.key(), SummarizedSubtypingScores);
         }
 
-        if(to.linkInfo().exprType().find("Member") == std::string::npos) {
-            scoreEdge(ts.key(), to.key());
+        if(!isTransformThroughMember(to.linkInfo())) {
+            recordEdgeScore(ts.key(), to.key(), SummarizedGenericScores);
+
+            // reinterpret
+            if(hasReinterpretCast(ts.key(), to.key(), to.linkInfo())) {
+                recordEdgeScore(ts.key(), to.key(), SummarizedReinterpretScores);
+            }
         }
 
         auto const &from = ops(ts.key());
         if(from.type_ == "void *") {
-            SummarizedScores.at(to.key())
-                .addInTypes(SummarizedScores.at(ts.key()));
+            propagateGenericScore(ts.key(), to.key());
         }
 
         scoreSummary(to);
+
     }
     CNS_DEBUG_MSG(logKey, "end");
 }
 
 bool isPotentiallyGeneric(CensusKey const &op) {
-    return SummarizedScores.at(op).inScore() > 1;
+    return SummarizedGenericScores.at(op).inScore() > 1;
 }
 
 bool isPotentiallySubtype(CensusKey const &op) {
     return SummarizedSubtypingScores.at(op).outScore() > 1;
+}
+
+bool isReinterpret(CensusKey const &op) {
+    return SummarizedReinterpretScores.at(op).outScore() > 0;
 }
 
 #endif // PATTERNDETECTION_H
