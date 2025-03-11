@@ -101,15 +101,22 @@ std::string cleanType(CensusKey const &opKey) {
 
 using Score_t = std::unordered_map<CensusKey, TypeScore>;
 
-void recordEdgeScore(CensusKey const &from, CensusKey const &to, Score_t scores) {
+void recordEdgeScore(CensusKey const &from, CensusKey const &to, Score_t scores, bool useCleanType = true) {
     auto const logKey = from + " -> " + to;
     CNS_DEBUG_MSG(logKey, "begin");
 
-    scores.at(from).addOutType(cleanType(to));
-    CNS_DEBUG(logKey, "Updated out score for '{}': {}", from, scores.at(from).outScore());
+    auto recordType = [&useCleanType](auto const &key) {
+        if(useCleanType) {
+            return cleanType(key);
+        }
+        return ops(key).type_;
+    };
 
-    scores.at(to).addInType(cleanType(from));
-    CNS_DEBUG(logKey, "Updated in score for '{}': {}", to, scores.at(to).inScore());
+    scores.at(from).addOutType(recordType(to));
+    CNS_DEBUG(logKey, "Added type '{}'; Updated out score for '{}': {}", recordType(to), from, scores.at(from).outScore());
+
+    scores.at(to).addInType(recordType(from));
+    CNS_DEBUG(logKey, "Added type '{}'; Updated in score for '{}': {}", recordType(from), to, scores.at(to).inScore());
 
     CNS_DEBUG_MSG(logKey, "end");
 }
@@ -149,7 +156,13 @@ inline void propagateGenericScore(CensusKey const &from, CensusKey const &to) {
 }
 
 bool hasReinterpretCast(CensusKey const &from, CensusKey const &to, DominatorData const &linkInfo) {
+    /*
     if(isTransformThroughMember(linkInfo)) {
+        return false;
+    }
+    */
+
+    if(linkInfo.castKind() != "BitCast") {
         return false;
     }
 
@@ -191,16 +204,16 @@ void scoreSummary(TypeSummary const &ts) {
 
         if(!isTransformThroughMember(to.linkInfo())) {
             recordEdgeScore(ts.key(), to.key(), SummarizedGenericScores);
-
-            // reinterpret
-            if(hasReinterpretCast(ts.key(), to.key(), to.linkInfo())) {
-                recordEdgeScore(ts.key(), to.key(), SummarizedReinterpretScores);
-            }
         }
 
         auto const &from = ops(ts.key());
         if(from.type_ == "void *") {
             propagateGenericScore(ts.key(), to.key());
+        }
+
+        // reinterpret
+        if(hasReinterpretCast(ts.key(), to.key(), to.linkInfo())) {
+            recordEdgeScore(ts.key(), to.key(), SummarizedReinterpretScores, false);
         }
 
         scoreSummary(to);
