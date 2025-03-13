@@ -147,6 +147,10 @@ inline bool isNumeric(CensusKey const &op) {
     return ops(op).td_.numericType_.has_value();
 }
 
+inline bool isCharacter(CensusKey const &op) {
+    return ops(op).td_.charType_.has_value();
+}
+
 inline void propagateScore(TypeScore const &from, TypeScore &to) {
     to.addInTypes(from);
 }
@@ -166,25 +170,24 @@ bool hasReinterpretCast(CensusKey const &from, CensusKey const &to, DominatorDat
         return false;
     }
 
-    auto isRelevantNumber = [](auto const &op) {
-        return isNumeric(op.qn_)
-            && (op.type_.find("int") != 0);
+    auto isRelevantType = [](auto const &op) {
+        return isCharacter(op.qn_)
+            || (isNumeric(op.qn_) && (op.type_.find("int") != 0));
     };
 
-    auto isFromLong = isRelevantNumber(ops(from));
+    auto isFromRType = isRelevantType(ops(from));
     auto isFromPointer = ops(from).td_.isPointerType_;
 
-    auto isToLong = isRelevantNumber(ops(to));
+    auto isToRType = isRelevantType(ops(to));
     auto isToPointer = ops(to).td_.isPointerType_;
 
     // true if cast is from number to pointer or vice versa only.
-    if(isFromLong && !isFromPointer && isToPointer) {
+    if(isFromRType && !isFromPointer && isToPointer) {
         return true;
     }
-    if(isToLong && !isToPointer && isFromPointer) {
+    if(isToRType && !isToPointer && isFromPointer) {
         return true;    // Probably not a thing
     }
-    // Maybe filter number -> number * (only number -> ulong/void * or vice versa are of interest)
 
     return false;
 }

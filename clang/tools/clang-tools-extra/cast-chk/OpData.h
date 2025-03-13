@@ -129,6 +129,7 @@ struct TypeDataExtra {
     bool isPointerType_;
     std::optional<std::string> pointeeType_;
     std::optional<std::string> numericType_;
+    std::optional<std::string> charType_;
     std::string uqType_;
     std::optional<std::string> fptrType_;
     CNSTypeInfo typedata_;
@@ -262,6 +263,33 @@ std::optional<std::string> getNumericType(
     return {};
 }
 
+std::optional<std::string> getCharType(
+        clang::ASTContext &context,
+        QualType qt) {
+
+    auto const logKey = Typename(context, qt);
+    CNS_DEBUG_MSG(logKey, "begin");
+
+    auto [ft, starCount] = getPointedAtType(context, qt);
+    CNS_DEBUG(logKey, "pointed-at type: {}", Typename(context, ft));
+    std::string stars(starCount, '*');
+
+    if(ft->isAnyCharacterType()) {
+        std::string type = "Char";
+        if(stars.empty()) {
+            CNS_DEBUG(logKey, "end: {}", type);
+            return {type};
+        }
+
+        type.append(" " + stars);
+        CNS_DEBUG(logKey, "end: {}", type);
+        return {type};
+    }
+
+    CNS_DEBUG_MSG(logKey, "end");
+    return {};
+}
+
 std::optional<std::string> getFunctionPointeeType(
         clang::ASTContext &context,
         QualType qt) {
@@ -358,6 +386,7 @@ TypeDataExtra makeTypeDataExtra(
         (qt->isPointerType() || qt->isArrayType()),
         TypenamePointedAt(context, qt),
         getNumericType(context, qt),
+        getCharType(context, qt),
         Typename(context, qt.getUnqualifiedType()),
         getFunctionPointeeType(context, qt),
         makeTypeInfo(context, sm, qt)
