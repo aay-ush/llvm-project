@@ -1429,7 +1429,7 @@ std::string json_escape(std::string const &s) {
 
 void printOpDataToJson(FILE *fp) {
     tprint("START OpData JSON Dump\n");
-    fmt::print(fp, "{{\"OpDatas\": \n{{\n");
+    fmt::print(fp, "\"OpDatas\": \n[\n");
 
     auto printOpJson = [&](auto const &op, bool delim = true) {
         fmt::print(fp, "{{");
@@ -1459,7 +1459,7 @@ void printOpDataToJson(FILE *fp) {
         }
     }
 
-    fmt::print(fp, "}}\n}}\n");
+    fmt::print(fp, "]\n");
     tprint("END OpData JSON Dump\n");
 }
 
@@ -1508,7 +1508,7 @@ void printSummaryToJson() {
     fmt::print(fjOut, "{{");
     printOpDataToJson(fjOut);
     tprint("START Summary JSON Dump\n");
-    fmt::print(fjOut, ", {{\"TypeSummaries\":\n{{\n ");
+    fmt::print(fjOut, ", \"TypeSummaries\":\n[\n ");
     decltype(TypeSummaries)::size_type pos = 0;
     auto tsSize = TypeSummaries.size();
     for(auto const &[_, ts]: TypeSummaries) {
@@ -1520,7 +1520,7 @@ void printSummaryToJson() {
         }
     }
 
-    fmt::print(fjOut, "}}\n}}}}");
+    fmt::print(fjOut, "]\n}}");
     fclose(fjOut);
     tprint("END Summary JSON Dump\n");
 }
