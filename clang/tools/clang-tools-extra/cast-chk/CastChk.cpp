@@ -1167,6 +1167,16 @@ static cl::opt<bool> optDumpJSON(
         cl::desc("Dump summary to a json file"),
         cl::init(false), cl::cat(tccCategory));
 
+static cl::opt<bool> optTimeTrace(
+        "time-trace",
+        cl::desc("Enable time traces"),
+        cl::init(false), cl::cat(tccCategory));
+
+static cl::opt<bool> optIntentDiscovery(
+        "hlid",
+        cl::desc("Enable high-level intent or pattern detection for pointers"),
+        cl::init(true), cl::cat(tccCategory));
+
 // CommonOptionsParser declares HelpMessage with a description of the common cli options
 // related to the compilation db and input files. (Nice to have help)
 static cl::extrahelp CommonHelp(CommonOptionsParser::HelpMessage);
@@ -1213,6 +1223,7 @@ int main(int argc, const char **argv) {
         default: // Turn on errors
             SEVERITY_FILTER = 8; break;
     }
+    TIME_TRACE = optTimeTrace;
 
     std::vector<std::string> cfiles;
     if(!optIgnoreCDB) {
@@ -1285,13 +1296,6 @@ inline void tprint(std::string const& data) {
     std::fprintf(fOUT, "%s", data.c_str());
     std::printf("%s", data.c_str());
 }
-
-/*
-inline std::string json_escape(const std::string &text) {
-    const std::regex chars_to_escape("\"\\/\\b\\f\\n\\r\\t\\u");
-    return std::regex_replace(text, chars_to_escape, "\\$0");
-}
-*/
 
 // From nlohman json
 std::size_t getEscapesSize(std::string const &s)

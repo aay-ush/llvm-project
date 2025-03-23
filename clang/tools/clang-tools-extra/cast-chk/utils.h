@@ -146,6 +146,8 @@ void logm(cns::logging::severity severity, char const * func, int line, std::str
 
 #include <chrono>
 
+bool TIME_TRACE = false;
+
 class LogTime {
     public:
         LogTime(std::string const& subject):
@@ -154,9 +156,11 @@ class LogTime {
 
         ~LogTime() {
             auto const duration = std::chrono::steady_clock::now() - start_;
-            fmt::print(fOUT, "[ INFO] :TIME TRACE: {} took {}μs\n",
-                    subject_,
-                    std::chrono::duration_cast<std::chrono::microseconds>(duration).count());
+            if(TIME_TRACE) {
+                fmt::print(fOUT, "[ INFO] :TIME TRACE: {} took {}μs\n",
+                        subject_,
+                        std::chrono::duration_cast<std::chrono::microseconds>(duration).count());
+            }
         }
 
     private:
@@ -164,7 +168,7 @@ class LogTime {
         std::chrono::steady_clock::time_point start_;
 };
 
-//#define LOG_FUNCTION_TIME_ENABLE
+#define LOG_FUNCTION_TIME_ENABLE
 #ifdef LOG_FUNCTION_TIME_ENABLE
 #define LOG_FUNCTION_TIME LogTime const lt___(__FUNCTION__);
 #else
