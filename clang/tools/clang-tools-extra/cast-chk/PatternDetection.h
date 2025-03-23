@@ -193,11 +193,13 @@ bool hasReinterpretCast(CensusKey const &from, CensusKey const &to, DominatorDat
 }
 
 void scoreSummary(TypeSummary const &ts) {
+    LOG_FUNCTION_TIME;
     auto const logKey = ts.key();
     CNS_DEBUG_MSG(logKey, "begin");
 
     for(auto const &to: ts.nexts()) {
-        if(isSubtypingTransform(to.linkInfo())) {
+        auto const& linkInfo = to.linkInfo();
+        if(isSubtypingTransform(linkInfo)) {
             if(isNumeric(to.key())) {
                 CNS_DEBUG_MSG(logKey, "Skipping number edge");
                 continue;
@@ -205,7 +207,7 @@ void scoreSummary(TypeSummary const &ts) {
             recordEdgeScore(ts.key(), to.key(), SummarizedSubtypingScores);
         }
 
-        if(!isTransformThroughMember(to.linkInfo())) {
+        if(!isTransformThroughMember(linkInfo)) {
             recordEdgeScore(ts.key(), to.key(), SummarizedGenericScores);
         }
 
@@ -215,7 +217,7 @@ void scoreSummary(TypeSummary const &ts) {
         }
 
         // reinterpret
-        if(hasReinterpretCast(ts.key(), to.key(), to.linkInfo())) {
+        if(hasReinterpretCast(ts.key(), to.key(), linkInfo)) {
             recordEdgeScore(ts.key(), to.key(), SummarizedReinterpretScores, false);
         }
 

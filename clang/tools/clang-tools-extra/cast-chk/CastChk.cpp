@@ -1565,12 +1565,31 @@ inline void printOutScore(CensusKey const &op, Score_t scores) {
     printScore(op, scores.at(op).outTypes());
 }
 
+void printPatternFinds(std::string label,
+        Score_t scores,
+        bool (*checker)(CensusKey const&),
+        void (*printer)(CensusKey const&, Score_t)) {
+
+    tprint(label + ":\n");
+    std::for_each(std::execution::par, begin(scores), end(scores),
+        [&](auto const &node) {
+            if(checker(node.first)) {
+                printer(node.first, scores);
+            }
+        });
+    tprint("\n");
+}
+
 void printScores() {
+    LOG_FUNCTION_TIME;
     initScores();
-    std::for_each(begin(TypeSummaries), end(TypeSummaries),
+    {
+        LogTime scoreTime("Complete Score Summary");
+    std::for_each(std::execution::par, begin(TypeSummaries), end(TypeSummaries),
         [](auto const &node) {
             scoreSummary(node.second);
         });
+    }
 
     /*
     tprint("Summarized scores:\n");
@@ -1581,6 +1600,14 @@ void printScores() {
     tprint("\n");
     */
 
+    printPatternFinds("Possible generic uses", SummarizedGenericScores,
+            isPotentiallyGeneric, printInScore);
+    printPatternFinds("Possible subtype uses", SummarizedSubtypingScores,
+            isPotentiallySubtype, printOutScore);
+    printPatternFinds("Possible reinterpret casts", SummarizedReinterpretScores,
+            isReinterpret, printOutScore);
+
+    /*
     tprint("Possible generic uses:\n");
     std::for_each(begin(SummarizedGenericScores), end(SummarizedGenericScores),
         [](auto const &node) {
@@ -1606,10 +1633,11 @@ void printScores() {
                 printOutScore(node.first, SummarizedReinterpretScores);
             }
         });
+        */
 }
 
 void regularizeCensusTypes() {
-    std::for_each(begin(census), end(census),
+    std::for_each(std::execution::par, begin(census), end(census),
         [](auto &node) {
             auto &op = ops(node);
             if(op.type_.empty()) {
