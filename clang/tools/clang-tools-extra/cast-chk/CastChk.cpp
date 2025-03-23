@@ -1606,34 +1606,6 @@ void printScores() {
             isPotentiallySubtype, printOutScore);
     printPatternFinds("Possible reinterpret casts", SummarizedReinterpretScores,
             isReinterpret, printOutScore);
-
-    /*
-    tprint("Possible generic uses:\n");
-    std::for_each(begin(SummarizedGenericScores), end(SummarizedGenericScores),
-        [](auto const &node) {
-            if(isPotentiallyGeneric(node.first)) {
-                printInScore(node.first, SummarizedGenericScores);
-            }
-        });
-
-    tprint("\n");
-    tprint("Possible subtype uses:\n");
-    std::for_each(begin(SummarizedSubtypingScores), end(SummarizedSubtypingScores),
-        [](auto const &node) {
-            if(isPotentiallySubtype(node.first)) {
-                printOutScore(node.first, SummarizedSubtypingScores);
-            }
-        });
-
-    tprint("\n");
-    tprint("Possible reinterpret casts:\n");
-    std::for_each(begin(SummarizedReinterpretScores), end(SummarizedReinterpretScores),
-        [](auto const &node) {
-            if(isReinterpret(node.first)) {
-                printOutScore(node.first, SummarizedReinterpretScores);
-            }
-        });
-        */
 }
 
 void regularizeCensusTypes() {
