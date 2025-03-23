@@ -551,36 +551,36 @@ OpData buildArgOp(clang::ASTContext &context,
     if(vd) {
         CNS_DEBUG(logKey, "Found decl for arg '{}'", String(context, arg));
         to = {
-                    cnsHash(context, *vd),
-                    String(context, *vd),
-                    Typename(context, *vd),
-                    TypeCategory(context, *vd),
-                    linkedParmPos(context, call, arg),
-                    getContainerFunction(context, *vd),
-                    getLinkedRecord(*vd),
-                    linkedTypeCategory(*vd),
-                    call.getExprLoc().printToString(sm),
-                    qualifiedName(context, *vd, vd->getDeclName()),
-                    makeTypeDataExtra(context, sm, *vd)
+                cnsHash(context, *vd),
+                String(context, *vd),
+                Typename(context, *vd),
+                TypeCategory(context, *vd),
+                linkedParmPos(context, call, arg),
+                getContainerFunction(context, *vd),
+                getLinkedRecord(*vd),
+                linkedTypeCategory(*vd),
+                call.getExprLoc().printToString(sm),
+                qualifiedName(context, *vd, vd->getDeclName()),
+                makeTypeDataExtra(context, sm, *vd)
             };
     }
     else {
         CNS_DEBUG(logKey, "Decl not found for arg '{}'; building OpData from arg expr", String(context, arg));
         to = {
-                    cnsHash(context, arg),
-                    String(context, arg),
-                    Typename(context, arg),
-                    TypeCategory(context, arg),
-                    //String(context, arg),
-                    linkedParmPos(context, call, arg),
-                    getContainerFunction(context, arg),
-                    getLinkedRecord(arg),
-                    linkedTypeCategory(arg),
-                    call.getExprLoc().printToString(sm),
-                    //String(context, arg), //
-                    qualifiedName(context, arg), //qualifiedName(context, call, arg)
-                    makeTypeDataExtra(context, sm, arg)
-                };
+                cnsHash(context, arg),
+                String(context, arg),
+                Typename(context, arg),
+                TypeCategory(context, arg),
+                //String(context, arg),
+                linkedParmPos(context, call, arg),
+                getContainerFunction(context, arg),
+                getLinkedRecord(arg),
+                linkedTypeCategory(arg),
+                call.getExprLoc().printToString(sm),
+                //String(context, arg), //
+                qualifiedName(context, arg), //qualifiedName(context, call, arg)
+                makeTypeDataExtra(context, sm, arg)
+            };
     }
 
     CNS_DEBUG_MSG(logKey, "end");
@@ -1247,11 +1247,16 @@ int main(int argc, const char **argv) {
     auto rc = Tool.run(newFrontendActionFactory(&Finder).get());
     regularizeCensusTypes();
     elaborateHistories();
-    printCollection();
     if(optDumpJSON) {
         printSummaryToJson();
     }
-    printScores();
+    // Printing collection seems to add default (blank) entries to census which pollutes
+    // the json output. Unclear why it is happening. There is no explicit census insertion in printCollection();
+    printCollection();
+
+    if(optIntentDiscovery) {
+        printScores();
+    }
     fclose(fOUT);
     return rc;
 }
@@ -1281,15 +1286,153 @@ inline void tprint(std::string const& data) {
     std::printf("%s", data.c_str());
 }
 
+/*
+inline std::string json_escape(const std::string &text) {
+    const std::regex chars_to_escape("\"\\/\\b\\f\\n\\r\\t\\u");
+    return std::regex_replace(text, chars_to_escape, "\\$0");
+}
+*/
+
+// From nlohman json
+std::size_t getEscapesSize(std::string const &s)
+{
+    std::size_t result = 0;
+
+    for (const auto& c : s)
+    {
+        switch (c)
+        {
+            case '"':
+            case '\\':
+            case '\b':
+            case '\f':
+            case '\n':
+            case '\r':
+            case '\t':
+            {
+                // from c (1 byte) to \x (2 bytes)
+                result += 1;
+                break;
+            }
+
+            default:
+            {
+                if (c >= 0x00 and c <= 0x1f)
+                {
+                    // from c (1 byte) to \uxxxx (6 bytes)
+                    result += 5;
+                }
+                break;
+            }
+        }
+    }
+
+    return result;
+}
+
+std::string json_escape(std::string const &s) {
+    // create a result string of necessary size
+    const auto nbEscapes = getEscapesSize(s);
+    if(nbEscapes == 0) {
+        return s;
+    }
+
+    std::string result(s.size() + nbEscapes, '\\');
+    std::size_t pos = 0;
+
+    for (const auto& c : s)
+    {
+        switch (c)
+        {
+            // quotation mark (0x22)
+            case '"':
+            {
+                result[pos + 1] = '"';
+                pos += 2;
+                break;
+            }
+
+            // reverse solidus (0x5c)
+            case '\\':
+            {
+                // nothing to change
+                pos += 2;
+                break;
+            }
+
+            // backspace (0x08)
+            case '\b':
+            {
+                result[pos + 1] = 'b';
+                pos += 2;
+                break;
+            }
+
+            // formfeed (0x0c)
+            case '\f':
+            {
+                result[pos + 1] = 'f';
+                pos += 2;
+                break;
+            }
+
+            // newline (0x0a)
+            case '\n':
+            {
+                result[pos + 1] = 'n';
+                pos += 2;
+                break;
+            }
+
+            // carriage return (0x0d)
+            case '\r':
+            {
+                result[pos + 1] = 'r';
+                pos += 2;
+                break;
+            }
+
+            // horizontal tab (0x09)
+            case '\t':
+            {
+                result[pos + 1] = 't';
+                pos += 2;
+                break;
+            }
+
+            default:
+            {
+                if (c >= 0x00 and c <= 0x1f)
+                {
+                    // print character c as \uxxxx
+                    sprintf(&result[pos + 1], "u%04x", int(c));
+                    pos += 6;
+                    // overwrite trailing null character
+                    result[pos] = '\\';
+                }
+                else
+                {
+                    // all other characters are added as-is
+                    result[pos++] = c;
+                }
+                break;
+            }
+        }
+    }
+
+    return result;
+}
+
 void printOpDataToJson(FILE *fp) {
     tprint("START OpData JSON Dump\n");
     fmt::print(fp, "{{\"OpDatas\": \n{{\n");
+
     auto printOpJson = [&](auto const &op, bool delim = true) {
         fmt::print(fp, "{{");
-        fmt::print(fp, "\"id\": \"{}\", ", op.qn_);
-        fmt::print(fp, "\"type\": \"{}\", ", op.type_);
-        fmt::print(fp, "\"category\": \"{}\", ", op.category_);
-        fmt::print(fp, "\"location\": \"{}\"", op.location_);
+        fmt::print(fp, "\"id\": \"{}\", ", json_escape(op.qn_));
+        fmt::print(fp, "\"type\": \"{}\", ", json_escape(op.type_));
+        fmt::print(fp, "\"category\": \"{}\", ", json_escape(op.category_));
+        fmt::print(fp, "\"location\": \"{}\"", json_escape(op.location_));
         if(delim) {
             fmt::print(fp, "}},\n");
         }
@@ -1299,6 +1442,8 @@ void printOpDataToJson(FILE *fp) {
     };
 
     auto csize = census.size();
+    fmt::print(fOUT, "Census size: {}\n", csize);
+
     decltype(census)::size_type pos = 0;
     for(auto const &node: census) {
         auto const &op = ops(node);
@@ -1339,11 +1484,11 @@ std::string getSummaryJson(TypeSummary const &ts, unsigned indent = 0) {
     }
 
     auto const &linkInfo = ts.linkInfo();
-    std::string summary = "{\"SummaryID\": \"" + ts.key()
-        + "\", \"CastKind\": \"" + linkInfo.castKind()
-        + "\", \"ExprType\": \"" + linkInfo.exprType()
-        + "\", \"Expr\": \"" + linkInfo.linkExpr()
-        + "\", \"Condition\": \"" + String(linkInfo.parentCondition())
+    std::string summary = "{\"SummaryID\": \"" + json_escape(ts.key())
+        + "\", \"CastKind\": \"" + json_escape(linkInfo.castKind())
+        + "\", \"ExprType\": \"" + json_escape(linkInfo.exprType())
+        + "\", \"Expr\": \"" + json_escape(linkInfo.linkExpr())
+        + "\", \"Condition\": \"" + json_escape(String(linkInfo.parentCondition()))
         + "\", \"Nexts\": [" + std::move(vertices) + "]}";
 
     return summary;
