@@ -1030,6 +1030,51 @@ StatementMatcher CastMatcher =
 
     ).bind("cast");
 
+auto StatCastMatcher = castExpr(hasCastKind(CK_BitCast)).bind("statCast");
+auto StatPointerMatcher = pointerType().bind("statPointer");
+auto StatVoidPointerMatcher = varDecl(hasType(asString(("void *")))).bind("statVoidPointer");
+
+class StatMatchCallback: public MatchFinder::MatchCallback {
+public:
+    void run(MatchFinder::MatchResult const &result) override {
+        // Cast expression
+        auto const *castExpr = result.Nodes.getNodeAs<clang::CastExpr>("statCast");
+        // Pointer
+        auto const *ptr = result.Nodes.getNodeAs<clang::PointerType>("statPointer");
+        // Void Pointer
+        auto const *voidPtr = result.Nodes.getNodeAs<clang::VarDecl>("statVoidPointer");
+
+        if(voidPtr) {
+            nbVoidPointers_++;
+        }
+        if(ptr) {
+            nbPointers_++;
+        }
+        if(castExpr) {
+            nbCasts_++;
+        }
+
+        castExpr = nullptr;
+        ptr = nullptr;
+        voidPtr = nullptr;
+    }
+
+    // TODO - for each pointer or void pointer
+    // see if the pointer is typed with a pattern in ScoreSummary
+    // see if the void pinter is typed
+    // collect casts of void pointer with the pointer
+    void print() {
+        fmt::print(fOUT, "Total BitCasts: {}\n", nbCasts_);
+        fmt::print(fOUT, "Total Pointers: {}\n", nbPointers_);
+        fmt::print(fOUT, "Total void *: {}\n", nbVoidPointers_);
+    }
+
+
+private:
+    unsigned nbCasts_ = 0;
+    unsigned nbPointers_ = 0;
+    unsigned nbVoidPointers_ = 0;
+};
 
 /*
 StatementMatcher CastMatcher2 =
@@ -1264,6 +1309,14 @@ int main(int argc, const char **argv) {
     // Printing collection seems to add default (blank) entries to census which pollutes
     // the json output. Unclear why it is happening. There is no explicit census insertion in printCollection();
     printCollection();
+
+    StatMatchCallback statistician;
+    MatchFinder statFinder;
+    statFinder.addMatcher(StatCastMatcher, &statistician);
+    statFinder.addMatcher(StatPointerMatcher, &statistician);
+    statFinder.addMatcher(StatVoidPointerMatcher, &statistician);
+    rc = Tool.run(newFrontendActionFactory(&statFinder).get());
+    statistician.print();
 
     if(optIntentDiscovery) {
         printScores();
