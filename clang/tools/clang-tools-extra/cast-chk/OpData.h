@@ -127,6 +127,7 @@ struct CNSTypeInfo {
 
 struct TypeDataExtra {
     bool isPointerType_;
+    bool isVoidPointerType_;
     std::optional<std::string> pointeeType_;
     std::optional<std::string> numericType_;
     std::optional<std::string> charType_;
@@ -384,6 +385,7 @@ TypeDataExtra makeTypeDataExtra(
     CNS_DEBUG_MSG(logKey, "end");
     return {
         (qt->isPointerType() || qt->isArrayType()),
+        qt->isVoidPointerType(),
         TypenamePointedAt(context, qt),
         getNumericType(context, qt),
         getCharType(context, qt),

@@ -212,7 +212,8 @@ void scoreSummary(TypeSummary const &ts) {
         }
 
         auto const &from = ops(ts.key());
-        if(from.type_ == "void *") {
+        //if(!from.td_.fptrType_ && from.td_.uqType_ == "void *") {
+        if(from.td_.isVoidPointerType_) {
             propagateGenericScore(ts.key(), to.key());
         }
 
