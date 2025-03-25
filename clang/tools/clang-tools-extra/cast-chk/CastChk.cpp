@@ -1031,8 +1031,8 @@ StatementMatcher CastMatcher =
     ).bind("cast");
 
 auto StatCastMatcher = castExpr(hasCastKind(CK_BitCast)).bind("statCast");
-auto StatPointerMatcher = pointerType().bind("statPointer");
-auto StatVoidPointerMatcher = varDecl(hasType(asString(("void *")))).bind("statVoidPointer");
+// TODO TODO Doesn't include fptr params
+auto StatPointerMatcher = varDecl(hasType(pointerType())).bind("statPointer");
 
 class StatMatchCallback: public MatchFinder::MatchCallback {
 public:
@@ -1040,23 +1040,29 @@ public:
         // Cast expression
         auto const *castExpr = result.Nodes.getNodeAs<clang::CastExpr>("statCast");
         // Pointer
-        auto const *ptr = result.Nodes.getNodeAs<clang::PointerType>("statPointer");
-        // Void Pointer
-        auto const *voidPtr = result.Nodes.getNodeAs<clang::VarDecl>("statVoidPointer");
+        auto const *ptr = result.Nodes.getNodeAs<clang::VarDecl>("statPointer");
 
-        if(voidPtr) {
-            nbVoidPointers_++;
-        }
+        auto *context = result.Context;
+
         if(ptr) {
-            nbPointers_++;
+            auto const &key = qualifiedName(*context, *ptr);
+            auto idPattern = detectedPattern(key);
+            pointers_.emplace(key, idPattern);
+
+            auto qt = ptr->getType();
+            if(qt->isVoidPointerType()) {
+                voidPointers_.emplace(key, idPattern);
+            }
         }
+
         if(castExpr) {
+            auto const &key = qualifiedName(*context, *castExpr);
+            casts_.emplace(key, detectedPattern(key));
             nbCasts_++;
         }
 
         castExpr = nullptr;
         ptr = nullptr;
-        voidPtr = nullptr;
     }
 
     // TODO - for each pointer or void pointer
@@ -1064,16 +1070,81 @@ public:
     // see if the void pinter is typed
     // collect casts of void pointer with the pointer
     void print() {
-        fmt::print(fOUT, "Total BitCasts: {}\n", nbCasts_);
-        fmt::print(fOUT, "Total Pointers: {}\n", nbPointers_);
-        fmt::print(fOUT, "Total void *: {}\n", nbVoidPointers_);
+        constexpr auto logKey = "StatSource";
+        fmt::print(fOUT, "[{}] Total Stat'd BitCasts: {}\n", logKey, casts_.size());
+        fmt::print(fOUT, "[{}] Census Patterned BitCasts: {}\n", logKey, casts_.size());
+        fmt::print(fOUT, "[{}] Total Pointers: {}\n", logKey, pointers_.size());
+        fmt::print(fOUT, "[{}] Total void *: {}\n", logKey, voidPointers_.size());
+
+        auto countPattern = [](Stat const &collection, auto pattern) {
+            return std::count_if(std::execution::par, begin(collection), end(collection),
+                    [&](auto const &node) {
+                        return node.second == pattern;
+                    });
+        };
+        auto generics = countPattern(voidPointers_, Pattern::generic);
+        auto subtypes = countPattern(voidPointers_, Pattern::subtyping);
+        auto reinterpret = countPattern(voidPointers_, Pattern::reinterpret);
+        auto wild = countPattern(voidPointers_, Pattern::wild);
+        auto unchecked = countPattern(voidPointers_, Pattern::unchecked);
+
+        fmt::print(fOUT, "[{}] Total typed pointers: {}\n", logKey, generics + subtypes + reinterpret);
+        fmt::print(fOUT, "[{}] Wild (untyped) pointers: {}\n", logKey, wild);
+        fmt::print(fOUT, "[{}] Unchecked pointers (not found in Census): {}\n", logKey, unchecked);
+        fmt::print(fOUT, "[{}] Generics: {}\n", logKey, generics);
+        fmt::print(fOUT, "[{}] Subtypes: {}\n", logKey, subtypes);
+        fmt::print(fOUT, "[{}] Reinterpret: {}\n", logKey, reinterpret);
+
+        auto printPattern = [](Stat const &collection, auto const &label, auto pattern) {
+            constexpr auto logKey = ">---";
+            fmt::print(fOUT, "{} {}:\n", logKey, label);
+            std::for_each(begin(collection), end(collection),
+                    [&](auto const &node) {
+                        if(node.second == pattern) {
+                            fmt::print(fOUT, "{}, ", node.first);
+                        }
+                    });
+            fmt::print(fOUT, "END <--\n");
+        };
+
+        printPattern(voidPointers_, "Generics found", Pattern::generic);
+        printPattern(voidPointers_, "Unchecked list", Pattern::unchecked);
+        printPattern(voidPointers_, "Wild list", Pattern::wild);
     }
 
-
 private:
+    enum class Pattern {
+        generic = 0,
+        subtyping,
+        reinterpret,
+        wild,
+        unchecked
+    };
+
+    Pattern detectedPattern(CensusKey const &key) {
+        if(TypeSummaries.find(key) == std::end(TypeSummaries)) {
+            return Pattern::unchecked;
+        }
+
+        if(isPotentiallyGeneric(key)) {
+            return Pattern::generic;
+        }
+        if(isPotentiallySubtype(key)) {
+            return Pattern::subtyping;
+        }
+        if(isReinterpret(key)) {
+            return Pattern::reinterpret;
+        }
+        return Pattern::wild;
+    }
+
+    using Stat = std::unordered_map<CensusKey, Pattern>;
+
     unsigned nbCasts_ = 0;
-    unsigned nbPointers_ = 0;
-    unsigned nbVoidPointers_ = 0;
+    Stat casts_;
+    Stat pointers_;
+    Stat voidPointers_;
+
 };
 
 /*
@@ -1310,17 +1381,18 @@ int main(int argc, const char **argv) {
     // the json output. Unclear why it is happening. There is no explicit census insertion in printCollection();
     printCollection();
 
+    if(optIntentDiscovery) {
+        printScores();
+    }
+
     StatMatchCallback statistician;
     MatchFinder statFinder;
     statFinder.addMatcher(StatCastMatcher, &statistician);
     statFinder.addMatcher(StatPointerMatcher, &statistician);
-    statFinder.addMatcher(StatVoidPointerMatcher, &statistician);
+    //statFinder.addMatcher(StatVoidPointerMatcher, &statistician);
     rc = Tool.run(newFrontendActionFactory(&statFinder).get());
     statistician.print();
 
-    if(optIntentDiscovery) {
-        printScores();
-    }
     fclose(fOUT);
     return rc;
 }
@@ -1606,16 +1678,16 @@ void printCollection() {
     teeStat(tcst);
 }
 
-inline void printScore(CensusKey const &op, std::string const &types) {
-    tprint(fmt::format("{} [{}]: {}\n", op, ops(op).location_, types));
+inline void printScore(CensusKey const &op, unsigned score, std::string const &types) {
+    tprint(fmt::format("{} [{}] <{}>: {}\n", op, ops(op).location_, score, types));
 }
 
 inline void printInScore(CensusKey const &op, Score_t scores) {
-    printScore(op, scores.at(op).inTypes());
+    printScore(op, scores.at(op).inScore(), scores.at(op).inTypes());
 }
 
 inline void printOutScore(CensusKey const &op, Score_t scores) {
-    printScore(op, scores.at(op).outTypes());
+    printScore(op, scores.at(op).outScore(), scores.at(op).outTypes());
 }
 
 void printPatternFinds(std::string label,
@@ -1624,13 +1696,15 @@ void printPatternFinds(std::string label,
         void (*printer)(CensusKey const&, Score_t)) {
 
     tprint(label + ":\n");
-    std::for_each(std::execution::par, begin(scores), end(scores),
+    unsigned count = 0;
+    std::for_each(begin(scores), end(scores),
         [&](auto const &node) {
             if(checker(node.first)) {
                 printer(node.first, scores);
+                count++;
             }
         });
-    tprint("\n");
+    tprint(fmt::format("Total ({}): {}\n", label, count));
 }
 
 void printScores() {
@@ -1638,10 +1712,10 @@ void printScores() {
     initScores();
     {
         LogTime scoreTime("Complete Score Summary");
-    std::for_each(std::execution::par, begin(TypeSummaries), end(TypeSummaries),
-        [](auto const &node) {
-            scoreSummary(node.second);
-        });
+        std::for_each(std::execution::par, begin(TypeSummaries), end(TypeSummaries),
+            [](auto const &node) {
+                scoreSummary(node.second);
+            });
     }
 
     /*
