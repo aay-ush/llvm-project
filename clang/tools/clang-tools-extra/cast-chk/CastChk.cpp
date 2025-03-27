@@ -1047,11 +1047,46 @@ public:
         if(ptr) {
             auto const &key = qualifiedName(*context, *ptr);
             auto idPattern = detectedPattern(key);
-            pointers_.emplace(key, idPattern);
 
             auto qt = ptr->getType();
+
+            // If void*, update voidpointers
             if(qt->isVoidPointerType()) {
                 voidPointers_.emplace(key, idPattern);
+            }
+
+            // If non-function pointers, update pointers
+            if(!qt->isFunctionPointerType()) {
+                pointers_.emplace(key, idPattern);
+            }
+            else {
+                // Get the parameters from fptr
+                auto const pointee= qt->getPointeeType();
+
+                auto const * fpt = pointee->getAs<clang::FunctionProtoType>();
+                if(!fpt) {
+                    CNS_ERROR("statfp", "Cannot get function type for fptr: {}", key);
+                }
+                else {
+                    CNS_ERROR("statfp", "Found function proto type for fptr: {}", key);
+                    unsigned pos = 0;
+                    std::for_each(fpt->param_type_begin(), fpt->param_type_end(),
+                        [&](auto const &parmType) {
+                            auto pkey = key + ".$" + std::to_string(pos);
+                            auto pPattern = detectedPattern(pkey);
+
+                            // If void*, update voidpointers
+                            if(parmType->isVoidPointerType()) {
+                                voidPointers_.emplace(pkey, pPattern);
+                            }
+
+                            // If non-function pointers, update pointers
+                            if(parmType->isPointerType() && !parmType->isFunctionPointerType()) {
+                                pointers_.emplace(pkey, pPattern);
+                            }
+                            pos++;
+                        });
+                }
             }
         }
 
