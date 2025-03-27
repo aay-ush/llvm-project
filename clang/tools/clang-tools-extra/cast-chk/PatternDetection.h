@@ -214,7 +214,10 @@ void scoreSummary(TypeSummary const &ts) {
         auto const &from = ops(ts.key());
         //if(!from.td_.fptrType_ && from.td_.uqType_ == "void *") {
         if(from.td_.isVoidPointerType_) {
-            propagateGenericScore(ts.key(), to.key());
+            // propagate only to void *
+            if(ops(to.key()).td_.isVoidPointerType_) {
+                propagateGenericScore(ts.key(), to.key());
+            }
         }
 
         // reinterpret
@@ -229,7 +232,9 @@ void scoreSummary(TypeSummary const &ts) {
 }
 
 bool isPotentiallyGeneric(CensusKey const &op) {
-    return SummarizedGenericScores.at(op).inScore() > 1;
+    auto const& opd = ops(op);
+    // Not a function pointer and has more than one intype
+    return !opd.td_.fptrType_ && SummarizedGenericScores.at(op).inScore() > 1;
 }
 
 bool isPotentiallySubtype(CensusKey const &op) {
