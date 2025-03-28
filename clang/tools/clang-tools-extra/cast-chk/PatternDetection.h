@@ -67,6 +67,7 @@ private:
     decltype(Score::types_) & outTypes_ = out_.types_;
 };
 
+std::unordered_map<CensusKey, TypeScore> SummarizedCastScores;
 std::unordered_map<CensusKey, TypeScore> SummarizedGenericScores;
 std::unordered_map<CensusKey, TypeScore> SummarizedSubtypingScores;
 std::unordered_map<CensusKey, TypeScore> SummarizedReinterpretScores;
@@ -74,6 +75,7 @@ std::unordered_map<CensusKey, TypeScore> SummarizedReinterpretScores;
 void initScores() {
     std::for_each(begin(TypeSummaries), end(TypeSummaries),
         [](auto const &node) {
+            SummarizedCastScores.emplace(node.first, node.first);
             SummarizedGenericScores.emplace(node.first, node.first);
             SummarizedSubtypingScores.emplace(node.first, node.first);
             SummarizedReinterpretScores.emplace(node.first, node.first);
@@ -199,6 +201,9 @@ void scoreSummary(TypeSummary const &ts) {
 
     for(auto const &to: ts.nexts()) {
         auto const& linkInfo = to.linkInfo();
+        if(linkInfo.castKind() == "BitCast") {
+            recordEdgeScore("CastScore", ts.key(), to.key(), SummarizedCastScores);
+        }
 
         if(isSubtypingTransform(linkInfo)) {
             if(isNumeric(to.key())) {
@@ -238,6 +243,14 @@ bool isPotentiallyGeneric(CensusKey const &op) {
     return !opd.td_.fptrType_ && SummarizedGenericScores.at(op).inScore() > 1;
 }
 
+bool isSingleUseVoid(CensusKey const &op) {
+    auto isVoidPtr = ops(op).td_.isVoidPointerType_;
+    auto genericScore = SummarizedGenericScores.at(op);
+    return isVoidPtr
+        && genericScore.inScore() == 1
+        && genericScore.inScore() == genericScore.outScore();
+}
+
 bool isPotentiallySubtype(CensusKey const &op) {
     return SummarizedSubtypingScores.at(op).outScore() > 1;
 }
@@ -246,4 +259,8 @@ bool isReinterpret(CensusKey const &op) {
     return SummarizedReinterpretScores.at(op).outScore() > 0;
 }
 
+bool isNotUsedInCasts(CensusKey const &op) {
+    return SummarizedCastScores.at(op).inScore() == 0
+        && SummarizedCastScores.at(op).outScore() == 0;
+}
 #endif // PATTERNDETECTION_H

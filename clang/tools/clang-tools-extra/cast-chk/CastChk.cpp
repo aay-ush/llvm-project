@@ -1120,6 +1120,7 @@ public:
                     });
         };
         auto generics = countPattern(voidPointers_, Pattern::generic);
+        auto singles = countPattern(voidPointers_, Pattern::singleVoid);
         auto subtypes = countPattern(voidPointers_, Pattern::subtyping);
         auto reinterpret = countPattern(voidPointers_, Pattern::reinterpret);
         auto wild = countPattern(voidPointers_, Pattern::wild);
@@ -1131,6 +1132,7 @@ public:
         fmt::print(fOUT, "[{}] Wild (untyped) pointers from fptrs: {}\n", logKey, fptrWild);
         fmt::print(fOUT, "[{}] Ignored pointers (not found in Census): {}\n", logKey, ignored);
         fmt::print(fOUT, "[{}] Generics: {}\n", logKey, generics);
+        fmt::print(fOUT, "[{}] Single void: {}\n", logKey, singles);
         fmt::print(fOUT, "[{}] Subtypes: {}\n", logKey, subtypes);
         fmt::print(fOUT, "[{}] Reinterpret: {}\n", logKey, reinterpret);
 
@@ -1151,7 +1153,9 @@ public:
             std::for_each(begin(collection), end(collection),
                     [&](auto const &node) {
                         if(node.second == pattern) {
-                            fmt::print(fOUT, "{}: Generic({}/{}), Subtype({}/{}), Reinterpret({}/{})\n", node.first,
+                            fmt::print(fOUT, "{}: Casts({}/{}), Generic({}/{}), Subtype({}/{}), Reinterpret({}/{})\n", node.first,
+                                    SummarizedCastScores.at(node.first).inTypes(),
+                                    SummarizedCastScores.at(node.first).outTypes(),
                                     SummarizedGenericScores.at(node.first).inTypes(),
                                     SummarizedGenericScores.at(node.first).outTypes(),
                                     SummarizedSubtypingScores.at(node.first).inTypes(),
@@ -1164,8 +1168,10 @@ public:
         };
 
         filterPrint(voidPointers_, "Generics found", Pattern::generic);
+        filterPrint(voidPointers_, "Single use void found", Pattern::singleVoid);
         filterPrint(voidPointers_, "Unchecked list", Pattern::unchecked);
         //filterPrint(voidPointers_, "Wild list", Pattern::wild);
+        filterPrintWithScore(voidPointers_, "Not used in any cast", Pattern::noCast);
         filterPrintWithScore(voidPointers_, "Wild list", Pattern::wild);
         filterPrintWithScore(voidPointersFptr_, "Wild list from fptrs", Pattern::wild);
     }
@@ -1175,6 +1181,8 @@ private:
         generic = 0,
         subtyping,
         reinterpret,
+        singleVoid,
+        noCast,
         wild,
         unchecked
     };
@@ -1187,11 +1195,17 @@ private:
         if(isPotentiallyGeneric(key)) {
             return Pattern::generic;
         }
+        if(isSingleUseVoid(key)) {
+            return Pattern::singleVoid;
+        }
         if(isPotentiallySubtype(key)) {
             return Pattern::subtyping;
         }
         if(isReinterpret(key)) {
             return Pattern::reinterpret;
+        }
+        if(isNotUsedInCasts(key)) {
+            return Pattern::noCast;
         }
         return Pattern::wild;
     }
