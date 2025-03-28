@@ -1389,98 +1389,91 @@ public:
     CastStat(std::string label): label_(label) {}
 
     void print(std::FILE *fp) const {
-        fmt::print(fp, "[Cast Statistics] {} :\n", label_);
-
-        fmt::print(fp, "Total BitCasts: {}\n", castCount_);
-        fmt::print(fp, "Total void * casts : {}\n", voidCount_);
-
-        auto printMap_ = [&](auto const& stat) {
+        auto printMap = [&](auto const &msg, Stat const &stat) {
+            fmt::print(fp, "\n{}: ", msg);
             for(auto const &[key, value]: stat) {
                 fmt::print(fp, "{{'{}': {}}}, ", key, value);
             }
             fmt::print(fp, "\n");
         };
 
-        auto printMap = [&](auto const& msg, auto const& stat) {
-            fmt::print(fp, "\n{}: ", msg);
-            printMap_(stat);
-        };
-
+        fmt::print(fp, "[Cast Statistics] {} :\n", label_);
+        fmt::print(fp, "Total BitCasts: {}\n", castCounts_.size());
+        fmt::print(fp, "Total BitCasts from void *: {}\n", voidCastCounts_.size());
         printMap("Types involved {Type: Count}", typeCounts_);
         printMap("Type Categories involved {Category: Count}", categoryCounts_);
         printMap("Functions involved {Func: Count}", funcCounts_);
         printMap("Locations involved {Location: Count}", locationCounts_);
-
         fmt::print(fp, "\n[end Cast Statistics] {}\n", label_);
-        /*
-        fmt::print(fp, "\nTypes involved {{Type: Count}}: ");
-        printMap(typeCounts_);
-        fmt::print(fp, "\nType Categories involved {{Category: Count}}: ");
-        printMap(categoryCounts_);
-        fmt::print(fp, "\nFunctions involved {{Func: Count}}:");
-        printMap(funcCounts_);
-        fmt::print(fp, "\nLocations involved {{Location: Count}}:");
-        printMap(locationCounts_);
-        fmt::print(fp, "\n[end Cast Statistics] {}\n", label_);
-        */
     }
 
-    void extend(CastStat const& cst) {
-        castCount_ += cst.castCount_;
-        voidCount_ += cst.voidCount_;
-
-        auto extendStat = [&](auto const& start, auto const& stop, auto & dest) {
-            std::for_each(start, stop, [&](auto const& kv) {
-                     dest[kv.first] += kv.second;
+    void extend(CastStat const &cst) {
+        auto extendStat = [&](Stat &stat, Stat const &from) {
+            std::for_each(std::begin(from), std::end(from),
+                [&](auto const &kv) {
+                    stat[kv.first] += kv.second;
                 });
         };
 
-        extendStat(std::begin(cst.typeCounts_), std::end(cst.typeCounts_), typeCounts_);
-        extendStat(std::begin(cst.funcCounts_), std::end(cst.funcCounts_), funcCounts_);
-        extendStat(std::begin(cst.locationCounts_), std::end(cst.locationCounts_), locationCounts_);
-        extendStat(std::begin(cst.categoryCounts_), std::end(cst.categoryCounts_), categoryCounts_);
+        extendStat(voidCastCounts_, cst.voidCastCounts_);
+        extendStat(castCounts_, cst.castCounts_);
+        extendStat(typeCounts_, cst.typeCounts_);
+        extendStat(categoryCounts_, cst.categoryCounts_);
+        extendStat(funcCounts_, cst.funcCounts_);
+        extendStat(locationCounts_, cst.locationCounts_);
     }
 
-    void record(OpData const& op, DominatorData const& domInfo) {
+    void record(OpData const &op, DominatorData const &domInfo) {
         auto const logKey = label_;
         CNS_DEBUG(logKey, "op: {}", op.qn_);
 
-        typeCounts_[op.type_] += 1;
+        auto stepUp = [&](auto &stat, auto const &key) {
+            //if(stat.find(key) == std::end(stat)) {
+            //    stat[key] = 1;
+            //}
+            //else {
+                stat[key] += 1;
+            //}
+        };
 
-        bool isBitCast = (domInfo.linkType().find("BitCast") != std::string::npos);
+        stepUp(typeCounts_, op.type_);
 
-        CNS_DEBUG(logKey, "isBitCast: {}", isBitCast);
+        bool isBitCast = (domInfo.castKind() == "BitCast");
+
         if(isBitCast) {
-            castCount_++;
-            voidCount_ += (op.type_.find("void *") != std::string::npos);
+            auto const &from = domInfo.op();
+            auto castId = from.qn_ + "->" + op.qn_;
 
-            locationCounts_[op.location_] += 1;
+            stepUp(castCounts_, castId);
+            stepUp(locationCounts_, op.location_);
 
-            if(op.container_.empty()) {
-                funcCounts_["UnknownFn"] += 1;
+            if(from.td_.isVoidPointerType_) {
+                stepUp(voidCastCounts_, castId);
             }
-            else {
-                funcCounts_[op.container_] += 1;
-            }
+
+            auto const &function = (op.container_.empty() ? "UnknownFn" : op.container_);
+            stepUp(funcCounts_, function);
         }
 
+        // include op category if op is not root of type summary
         if(isBitCast || label_.find(op.qn_) != std::string::npos) {
-            categoryCounts_[op.linkedRecordCategory_] += 1;
-            categoryCounts_[op.category_] += 1;
+            stepUp(categoryCounts_, op.linkedRecordCategory_);
+            stepUp(categoryCounts_, op.category_);
         }
     }
 
     // functions to view funcCounts/typeCount
 
 private:
-    unsigned castCount_ = 0;
-    unsigned voidCount_ = 0;
+    using Stat = std::unordered_map<std::string, unsigned>;
+
     std::string label_;
-    //CensusKey key_; // Required to lookup metadata?
-    std::unordered_map<std::string, unsigned> funcCounts_;
-    std::unordered_map<std::string, unsigned> typeCounts_;
-    std::unordered_map<std::string, unsigned> locationCounts_;
-    std::unordered_map<std::string, unsigned> categoryCounts_;
+    Stat castCounts_;
+    Stat voidCastCounts_;
+    Stat typeCounts_;
+    Stat categoryCounts_;
+    Stat funcCounts_;
+    Stat locationCounts_;
 };
 
 std::string TypeSummary::summarize(CastStat &cst, std::optional<unsigned> level, int indent) const {

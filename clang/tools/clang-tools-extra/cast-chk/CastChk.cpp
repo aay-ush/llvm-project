@@ -1059,6 +1059,7 @@ public:
             if(!qt->isFunctionPointerType()) {
                 pointers_.emplace(key, idPattern);
             }
+            /*
             else {
                 // Get the parameters from fptr
                 auto const pointee= qt->getPointeeType();
@@ -1088,6 +1089,7 @@ public:
                         });
                 }
             }
+            */
         }
 
         if(castExpr) {
