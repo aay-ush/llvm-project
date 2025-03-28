@@ -101,8 +101,8 @@ std::string cleanType(CensusKey const &opKey) {
 
 using Score_t = std::unordered_map<CensusKey, TypeScore>;
 
-void recordEdgeScore(CensusKey const &from, CensusKey const &to, Score_t scores, bool useCleanType = true) {
-    auto const logKey = from + " -> " + to;
+void recordEdgeScore(std::string const& label, CensusKey const &from, CensusKey const &to, Score_t scores, bool useCleanType = true) {
+    auto const logKey = "label | " + from + " -> " + to;
     CNS_DEBUG_MSG(logKey, "begin");
 
     auto recordType = [&useCleanType](auto const &key) {
@@ -199,16 +199,17 @@ void scoreSummary(TypeSummary const &ts) {
 
     for(auto const &to: ts.nexts()) {
         auto const& linkInfo = to.linkInfo();
+
         if(isSubtypingTransform(linkInfo)) {
             if(isNumeric(to.key())) {
                 CNS_DEBUG_MSG(logKey, "Skipping number edge");
                 continue;
             }
-            recordEdgeScore(ts.key(), to.key(), SummarizedSubtypingScores);
+            recordEdgeScore("Subtyping score", ts.key(), to.key(), SummarizedSubtypingScores);
         }
 
         if(!isTransformThroughMember(linkInfo)) {
-            recordEdgeScore(ts.key(), to.key(), SummarizedGenericScores);
+            recordEdgeScore("Generic score", ts.key(), to.key(), SummarizedGenericScores);
         }
 
         auto const &from = ops(ts.key());
@@ -222,7 +223,7 @@ void scoreSummary(TypeSummary const &ts) {
 
         // reinterpret
         if(hasReinterpretCast(ts.key(), to.key(), linkInfo)) {
-            recordEdgeScore(ts.key(), to.key(), SummarizedReinterpretScores, false);
+            recordEdgeScore("Reinterpret score", ts.key(), to.key(), SummarizedReinterpretScores, false);
         }
 
         scoreSummary(to);

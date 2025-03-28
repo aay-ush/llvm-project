@@ -1059,7 +1059,6 @@ public:
             if(!qt->isFunctionPointerType()) {
                 pointers_.emplace(key, idPattern);
             }
-            /*
             else {
                 // Get the parameters from fptr
                 auto const pointee= qt->getPointeeType();
@@ -1076,8 +1075,9 @@ public:
                             auto pkey = key + ".$" + std::to_string(pos);
                             auto pPattern = detectedPattern(pkey);
 
-                            // If void*, update voidpointers
+                            // If void*, update voidpointers+Fptr
                             if(parmType->isVoidPointerType()) {
+                                voidPointersFptr_.emplace(pkey, pPattern);
                                 voidPointers_.emplace(pkey, pPattern);
                             }
 
@@ -1089,7 +1089,6 @@ public:
                         });
                 }
             }
-            */
         }
 
         if(castExpr) {
@@ -1112,6 +1111,7 @@ public:
         fmt::print(fOUT, "[{}] Census Patterned BitCasts: {}\n", logKey, casts_.size());
         fmt::print(fOUT, "[{}] Total Pointers: {}\n", logKey, pointers_.size());
         fmt::print(fOUT, "[{}] Total void *: {}\n", logKey, voidPointers_.size());
+        fmt::print(fOUT, "[{}] Total void * from fptrs: {}\n", logKey, voidPointersFptr_.size());
 
         auto countPattern = [](Stat const &collection, auto pattern) {
             return std::count_if(std::execution::par, begin(collection), end(collection),
@@ -1123,17 +1123,19 @@ public:
         auto subtypes = countPattern(voidPointers_, Pattern::subtyping);
         auto reinterpret = countPattern(voidPointers_, Pattern::reinterpret);
         auto wild = countPattern(voidPointers_, Pattern::wild);
-        auto unchecked = countPattern(voidPointers_, Pattern::unchecked);
+        auto ignored = countPattern(voidPointers_, Pattern::unchecked);
+        auto fptrWild = countPattern(voidPointersFptr_, Pattern::wild);
 
         fmt::print(fOUT, "[{}] Total typed pointers: {}\n", logKey, generics + subtypes + reinterpret);
         fmt::print(fOUT, "[{}] Wild (untyped) pointers: {}\n", logKey, wild);
-        fmt::print(fOUT, "[{}] Unchecked pointers (not found in Census): {}\n", logKey, unchecked);
+        fmt::print(fOUT, "[{}] Wild (untyped) pointers from fptrs: {}\n", logKey, fptrWild);
+        fmt::print(fOUT, "[{}] Ignored pointers (not found in Census): {}\n", logKey, ignored);
         fmt::print(fOUT, "[{}] Generics: {}\n", logKey, generics);
         fmt::print(fOUT, "[{}] Subtypes: {}\n", logKey, subtypes);
         fmt::print(fOUT, "[{}] Reinterpret: {}\n", logKey, reinterpret);
 
-        auto printPattern = [](Stat const &collection, auto const &label, auto pattern) {
-            constexpr auto logKey = ">---";
+        auto filterPrint = [](Stat const &collection, auto const &label, auto pattern) {
+            constexpr auto logKey = "--->";
             fmt::print(fOUT, "{} {}:\n", logKey, label);
             std::for_each(begin(collection), end(collection),
                     [&](auto const &node) {
@@ -1144,9 +1146,28 @@ public:
             fmt::print(fOUT, "END <--\n");
         };
 
-        printPattern(voidPointers_, "Generics found", Pattern::generic);
-        printPattern(voidPointers_, "Unchecked list", Pattern::unchecked);
-        printPattern(voidPointers_, "Wild list", Pattern::wild);
+        auto filterPrintWithScore = [](Stat const &collection, auto const &label, auto pattern) {
+            fmt::print(fOUT, "---< {}:\n", label);
+            std::for_each(begin(collection), end(collection),
+                    [&](auto const &node) {
+                        if(node.second == pattern) {
+                            fmt::print(fOUT, "{}: Generic({}/{}), Subtype({}/{}), Reinterpret({}/{})\n", node.first,
+                                    SummarizedGenericScores.at(node.first).inTypes(),
+                                    SummarizedGenericScores.at(node.first).outTypes(),
+                                    SummarizedSubtypingScores.at(node.first).inTypes(),
+                                    SummarizedSubtypingScores.at(node.first).outTypes(),
+                                    SummarizedReinterpretScores.at(node.first).inTypes(),
+                                    SummarizedReinterpretScores.at(node.first).outTypes());
+                        }
+                    });
+            fmt::print(fOUT, ">---END\n");
+        };
+
+        filterPrint(voidPointers_, "Generics found", Pattern::generic);
+        filterPrint(voidPointers_, "Unchecked list", Pattern::unchecked);
+        //filterPrint(voidPointers_, "Wild list", Pattern::wild);
+        filterPrintWithScore(voidPointers_, "Wild list", Pattern::wild);
+        filterPrintWithScore(voidPointersFptr_, "Wild list from fptrs", Pattern::wild);
     }
 
 private:
@@ -1181,6 +1202,7 @@ private:
     Stat casts_;
     Stat pointers_;
     Stat voidPointers_;
+    Stat voidPointersFptr_;
 
 };
 
