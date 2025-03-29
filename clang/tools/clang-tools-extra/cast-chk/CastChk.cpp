@@ -1094,7 +1094,6 @@ public:
         if(castExpr) {
             auto const &key = qualifiedName(*context, *castExpr);
             casts_.emplace(key, detectedPattern(key));
-            nbCasts_++;
         }
 
         castExpr = nullptr;
@@ -1107,11 +1106,19 @@ public:
     // collect casts of void pointer with the pointer
     void print() {
         constexpr auto logKey = "StatSource";
-        fmt::print(fOUT, "[{}] Total Stat'd BitCasts: {}\n", logKey, casts_.size());
+        /*
+        fmt::print(fOUT, "[{}] Total Stat'd BitCasts: {}\n", logKey, nbCasts_);
         fmt::print(fOUT, "[{}] Census Patterned BitCasts: {}\n", logKey, casts_.size());
         fmt::print(fOUT, "[{}] Total Pointers: {}\n", logKey, pointers_.size());
         fmt::print(fOUT, "[{}] Total void *: {}\n", logKey, voidPointers_.size());
         fmt::print(fOUT, "[{}] Total void * from fptrs: {}\n", logKey, voidPointersFptr_.size());
+        */
+
+        fmt::print(fOUT, "[{}] BitCasts\t| Pointers\t| void *s\t| void* fptrs\n", logKey);
+        fmt::print(fOUT, "[{}] {}\n", logKey, std::string(60, '-'));
+        fmt::print(fOUT, "[{}] {:<8}\t| {:<8}\t| {:<8}\t| {:<8}\n", logKey,
+                casts_.size(), pointers_.size(), voidPointers_.size(), voidPointersFptr_.size());
+        fmt::print(fOUT, "[{}]\n", logKey);
 
         auto countPattern = [](Stat const &collection, auto pattern) {
             return std::count_if(std::execution::par, begin(collection), end(collection),
@@ -1122,14 +1129,33 @@ public:
         auto generics = countPattern(voidPointers_, Pattern::generic);
         auto singles = countPattern(voidPointers_, Pattern::singleVoid);
         auto subtypes = countPattern(voidPointers_, Pattern::subtyping);
-        auto reinterpret = countPattern(voidPointers_, Pattern::reinterpret);
+        auto reinterprets = countPattern(voidPointers_, Pattern::reinterpret);
         auto noSources = countPattern(voidPointers_, Pattern::noSource);
         auto sinks = countPattern(voidPointers_, Pattern::sink);
-        auto wild = countPattern(voidPointers_, Pattern::wild);
-        auto uncast = countPattern(voidPointers_, Pattern::noCast);
+        auto wilds = countPattern(voidPointers_, Pattern::wild);
+        auto uncasts = countPattern(voidPointers_, Pattern::noCast);
         auto ignored = countPattern(voidPointers_, Pattern::unchecked);
-        auto fptrWild = countPattern(voidPointersFptr_, Pattern::wild);
+        auto fptrWilds = countPattern(voidPointersFptr_, Pattern::wild);
 
+        fmt::print(fOUT, "[{}] Wild\t\t| Sinks\t\t| NoSource\t| Total Wild\n", logKey);
+        fmt::print(fOUT, "[{}] {}\n", logKey, std::string(60, '-'));
+        fmt::print(fOUT, "[{}] {:<8}\t| {:<8}\t| {:<8}\t| {:<8}\n", logKey,
+                wilds, sinks, noSources, wilds + sinks + noSources);
+        fmt::print(fOUT, "[{}]\n", logKey);
+
+        fmt::print(fOUT, "[{}] NoCasts\t| Ignored\t| Total Ignored\n", logKey);
+        fmt::print(fOUT, "[{}] {}\n", logKey, std::string(60, '-'));
+        fmt::print(fOUT, "[{}] {:<8}\t| {:<8}\t| {:<8}\n", logKey,
+                uncasts, ignored, uncasts + ignored);
+        fmt::print(fOUT, "[{}]\n", logKey);
+
+        fmt::print(fOUT, "[{}] SingleVoid\t| Generic\t| Subtyping\t| Reinterpret\t| Total Typed\n", logKey);
+        fmt::print(fOUT, "[{}] {}\n", logKey, std::string(64, '-'));
+        fmt::print(fOUT, "[{}] {:<8}\t| {:<8}\t| {:<8}\t| {:<12}\t| {:<8}\n", logKey,
+                singles, generics, subtypes, reinterprets, singles + generics + subtypes + reinterprets);
+        fmt::print(fOUT, "[{}]\n", logKey);
+
+        /*
         fmt::print(fOUT, "[{}] Total typed pointers: {}\n", logKey, generics + subtypes + reinterpret);
         fmt::print(fOUT, "[{}] Wild (untyped) pointers: {}\n", logKey, wild);
         fmt::print(fOUT, "[{}] Wild (untyped) pointers from fptrs: {}\n", logKey, fptrWild);
@@ -1141,6 +1167,7 @@ public:
         fmt::print(fOUT, "[{}] noSource: {}\n", logKey, noSources);
         fmt::print(fOUT, "[{}] sinks: {}\n", logKey, sinks);
         fmt::print(fOUT, "[{}] noCast: {}\n", logKey, uncast);
+        */
 
         auto filterPrint = [](Stat const &collection, auto const &label, auto pattern) {
             constexpr auto logKey = "--->";
@@ -1151,6 +1178,7 @@ public:
                             fmt::print(fOUT, "{}, ", node.first);
                         }
                     });
+            fmt::print(fOUT, "{} {}:\n", logKey, label);
             fmt::print(fOUT, "END <--\n");
         };
 
@@ -1159,7 +1187,9 @@ public:
             std::for_each(begin(collection), end(collection),
                     [&](auto const &node) {
                         if(node.second == pattern) {
-                            fmt::print(fOUT, "{}: Casts({}/{}), Generic({}/{}), Subtype({}/{}), Reinterpret({}/{})\n", node.first,
+                            fmt::print(fOUT, "{} [{}]: Casts({}/{}), Generic({}/{}), Subtype({}/{}), Reinterpret({}/{})\n",
+                                    node.first,
+                                    ops(node.first).location_,
                                     SummarizedCastScores.at(node.first).inTypes(),
                                     SummarizedCastScores.at(node.first).outTypes(),
                                     SummarizedGenericScores.at(node.first).inTypes(),
@@ -1170,18 +1200,19 @@ public:
                                     SummarizedReinterpretScores.at(node.first).outTypes());
                         }
                     });
+            fmt::print(fOUT, "{}:\n", label);
             fmt::print(fOUT, ">---END\n");
         };
 
-        filterPrint(voidPointers_, "Generics found", Pattern::generic);
-        filterPrint(voidPointers_, "Ignored list", Pattern::unchecked);
+        filterPrint(voidPointers_, "Generics found " + std::to_string(generics), Pattern::generic);
+        filterPrint(voidPointers_, "Ignored list " + std::to_string(ignored), Pattern::unchecked);
         //filterPrint(voidPointers_, "Wild list", Pattern::wild);
-        filterPrintWithScore(voidPointers_, "Single use void found", Pattern::singleVoid);
-        filterPrintWithScore(voidPointers_, "Sink (no out casts) void*", Pattern::sink);
-        filterPrintWithScore(voidPointers_, "Unused (no in cast) void*", Pattern::noSource);
-        filterPrintWithScore(voidPointers_, "Not used in any cast", Pattern::noCast);
-        filterPrintWithScore(voidPointers_, "Wild list", Pattern::wild);
-        filterPrintWithScore(voidPointersFptr_, "Wild list from fptrs", Pattern::wild);
+        filterPrintWithScore(voidPointers_, "Single use void found " + std::to_string(singles), Pattern::singleVoid);
+        filterPrintWithScore(voidPointers_, "[WILD] Sink (no out casts) void* " + std::to_string(sinks), Pattern::sink);
+        filterPrintWithScore(voidPointers_, "[WILD] Unused (no in cast) void* " + std::to_string(noSources), Pattern::noSource);
+        filterPrintWithScore(voidPointers_, "[IGNORED] Not used in any cast " + std::to_string(uncasts), Pattern::noCast);
+        filterPrintWithScore(voidPointers_, "[WILD] Wild list " + std::to_string(wilds), Pattern::wild);
+        //filterPrintWithScore(voidPointersFptr_, "[WILD] Wild list from fptrs", Pattern::wild);
     }
 
 private:
@@ -1201,7 +1232,6 @@ private:
         if(TypeSummaries.find(key) == std::end(TypeSummaries)) {
             return Pattern::unchecked;
         }
-
         if(isPotentiallyGeneric(key)) {
             return Pattern::generic;
         }
@@ -1228,7 +1258,6 @@ private:
 
     using Stat = std::unordered_map<CensusKey, Pattern>;
 
-    unsigned nbCasts_ = 0;
     Stat casts_;
     Stat pointers_;
     Stat voidPointers_;
@@ -1822,6 +1851,22 @@ void printScores() {
             isPotentiallySubtype, printOutScore);
     printPatternFinds("Possible reinterpret casts", SummarizedReinterpretScores,
             isReinterpret, printOutScore);
+
+    auto countPatterns = [&](Score_t scores, bool (*checker)(CensusKey const&)) {
+        return std::count_if(begin(scores), end(scores),
+                [&checker](auto const &node) { return checker(node.first); });
+    };
+    auto generics = countPatterns(SummarizedGenericScores, isPotentiallyGeneric);
+    auto subtypes = countPatterns(SummarizedSubtypingScores, isPotentiallySubtype);
+    auto reinterpret = countPatterns(SummarizedReinterpretScores, isReinterpret);
+
+    constexpr auto logKey = "StatCensus";
+    fmt::print(fOUT, "[{}]\n", logKey);
+    fmt::print(fOUT, "[{}] Generic\t| Subtyping\t| Reinterpret\n", logKey);
+    fmt::print(fOUT, "[{}] {}\n", logKey, std::string(36, '-'));
+    fmt::print(fOUT, "[{}] {:<8}\t| {:<8}\t| {:<8}\n", logKey,
+            generics, subtypes, reinterpret);
+    fmt::print(fOUT, "[{}]\n", logKey);
 }
 
 void regularizeCensusTypes() {
