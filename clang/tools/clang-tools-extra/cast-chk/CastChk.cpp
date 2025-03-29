@@ -1123,7 +1123,10 @@ public:
         auto singles = countPattern(voidPointers_, Pattern::singleVoid);
         auto subtypes = countPattern(voidPointers_, Pattern::subtyping);
         auto reinterpret = countPattern(voidPointers_, Pattern::reinterpret);
+        auto noSources = countPattern(voidPointers_, Pattern::noSource);
+        auto sinks = countPattern(voidPointers_, Pattern::sink);
         auto wild = countPattern(voidPointers_, Pattern::wild);
+        auto uncast = countPattern(voidPointers_, Pattern::noCast);
         auto ignored = countPattern(voidPointers_, Pattern::unchecked);
         auto fptrWild = countPattern(voidPointersFptr_, Pattern::wild);
 
@@ -1135,6 +1138,9 @@ public:
         fmt::print(fOUT, "[{}] Single void: {}\n", logKey, singles);
         fmt::print(fOUT, "[{}] Subtypes: {}\n", logKey, subtypes);
         fmt::print(fOUT, "[{}] Reinterpret: {}\n", logKey, reinterpret);
+        fmt::print(fOUT, "[{}] noSource: {}\n", logKey, noSources);
+        fmt::print(fOUT, "[{}] sinks: {}\n", logKey, sinks);
+        fmt::print(fOUT, "[{}] noCast: {}\n", logKey, uncast);
 
         auto filterPrint = [](Stat const &collection, auto const &label, auto pattern) {
             constexpr auto logKey = "--->";
@@ -1168,9 +1174,11 @@ public:
         };
 
         filterPrint(voidPointers_, "Generics found", Pattern::generic);
-        filterPrint(voidPointers_, "Single use void found", Pattern::singleVoid);
-        filterPrint(voidPointers_, "Unchecked list", Pattern::unchecked);
+        filterPrint(voidPointers_, "Ignored list", Pattern::unchecked);
         //filterPrint(voidPointers_, "Wild list", Pattern::wild);
+        filterPrintWithScore(voidPointers_, "Single use void found", Pattern::singleVoid);
+        filterPrintWithScore(voidPointers_, "Sink (no out casts) void*", Pattern::sink);
+        filterPrintWithScore(voidPointers_, "Unused (no in cast) void*", Pattern::noSource);
         filterPrintWithScore(voidPointers_, "Not used in any cast", Pattern::noCast);
         filterPrintWithScore(voidPointers_, "Wild list", Pattern::wild);
         filterPrintWithScore(voidPointersFptr_, "Wild list from fptrs", Pattern::wild);
@@ -1182,6 +1190,8 @@ private:
         subtyping,
         reinterpret,
         singleVoid,
+        sink,
+        noSource,
         noCast,
         wild,
         unchecked
@@ -1203,6 +1213,12 @@ private:
         }
         if(isReinterpret(key)) {
             return Pattern::reinterpret;
+        }
+        if(isSink(key)) {
+            return Pattern::sink;
+        }
+        if(isMissingSource(key)) {
+            return Pattern::noSource;
         }
         if(isNotUsedInCasts(key)) {
             return Pattern::noCast;

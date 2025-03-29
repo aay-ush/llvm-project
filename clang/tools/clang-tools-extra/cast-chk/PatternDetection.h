@@ -260,6 +260,16 @@ bool isReinterpret(CensusKey const &op) {
     return SummarizedReinterpretScores.at(op).outScore() > 0;
 }
 
+bool isSink(CensusKey const &op) {
+    return SummarizedCastScores.at(op).inScore() > 0
+        && SummarizedCastScores.at(op).outScore() == 0;
+}
+
+bool isMissingSource(CensusKey const &op) {
+    return SummarizedCastScores.at(op).inScore() == 0
+        && SummarizedCastScores.at(op).outScore() > 0;
+}
+
 bool isNotUsedInCasts(CensusKey const &op) {
     return SummarizedCastScores.at(op).inScore() == 0
         && SummarizedCastScores.at(op).outScore() == 0;
