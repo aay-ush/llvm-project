@@ -1106,13 +1106,6 @@ public:
     // collect casts of void pointer with the pointer
     void print() {
         constexpr auto logKey = "StatSource";
-        /*
-        fmt::print(fOUT, "[{}] Total Stat'd BitCasts: {}\n", logKey, nbCasts_);
-        fmt::print(fOUT, "[{}] Census Patterned BitCasts: {}\n", logKey, casts_.size());
-        fmt::print(fOUT, "[{}] Total Pointers: {}\n", logKey, pointers_.size());
-        fmt::print(fOUT, "[{}] Total void *: {}\n", logKey, voidPointers_.size());
-        fmt::print(fOUT, "[{}] Total void * from fptrs: {}\n", logKey, voidPointersFptr_.size());
-        */
 
         fmt::print(fOUT, "[{}] BitCasts\t| Pointers\t| void *s\t| void* fptrs\n", logKey);
         fmt::print(fOUT, "[{}] {}\n", logKey, std::string(60, '-'));
@@ -1135,7 +1128,7 @@ public:
         auto wilds = countPattern(voidPointers_, Pattern::wild);
         auto uncasts = countPattern(voidPointers_, Pattern::noCast);
         auto ignored = countPattern(voidPointers_, Pattern::unchecked);
-        auto fptrWilds = countPattern(voidPointersFptr_, Pattern::wild);
+        //auto fptrWilds = countPattern(voidPointersFptr_, Pattern::wild);
 
         fmt::print(fOUT, "[{}] Wild\t\t| Sinks\t\t| NoSource\t| Total Wild\n", logKey);
         fmt::print(fOUT, "[{}] {}\n", logKey, std::string(60, '-'));
@@ -1155,19 +1148,6 @@ public:
                 singles, generics, subtypes, reinterprets, singles + generics + subtypes + reinterprets);
         fmt::print(fOUT, "[{}]\n", logKey);
 
-        /*
-        fmt::print(fOUT, "[{}] Total typed pointers: {}\n", logKey, generics + subtypes + reinterpret);
-        fmt::print(fOUT, "[{}] Wild (untyped) pointers: {}\n", logKey, wild);
-        fmt::print(fOUT, "[{}] Wild (untyped) pointers from fptrs: {}\n", logKey, fptrWild);
-        fmt::print(fOUT, "[{}] Ignored pointers (not found in Census): {}\n", logKey, ignored);
-        fmt::print(fOUT, "[{}] Generics: {}\n", logKey, generics);
-        fmt::print(fOUT, "[{}] Single void: {}\n", logKey, singles);
-        fmt::print(fOUT, "[{}] Subtypes: {}\n", logKey, subtypes);
-        fmt::print(fOUT, "[{}] Reinterpret: {}\n", logKey, reinterpret);
-        fmt::print(fOUT, "[{}] noSource: {}\n", logKey, noSources);
-        fmt::print(fOUT, "[{}] sinks: {}\n", logKey, sinks);
-        fmt::print(fOUT, "[{}] noCast: {}\n", logKey, uncast);
-        */
 
         auto filterPrint = [](Stat const &collection, auto const &label, auto pattern) {
             constexpr auto logKey = "--->";

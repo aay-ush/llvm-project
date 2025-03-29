@@ -114,11 +114,17 @@ void recordEdgeScore(std::string const& label, CensusKey const &from, CensusKey 
         return ops(key).type_;
     };
 
-    scores.at(from).addOutType(recordType(to));
-    CNS_DEBUG(logKey, "Added type '{}'; Updated out score for '{}': {}", recordType(to), from, scores.at(from).outScore());
+    auto toty = recordType(to);
+    if(!toty.empty()) {
+        scores.at(from).addOutType(toty);
+        CNS_DEBUG(logKey, "Added type '{}'; Updated out score for '{}': {}", toty, from, scores.at(from).outScore());
+    }
 
-    scores.at(to).addInType(recordType(from));
-    CNS_DEBUG(logKey, "Added type '{}'; Updated in score for '{}': {}", recordType(from), to, scores.at(to).inScore());
+    auto foty = recordType(from);
+    if(!foty.empty()) {
+        scores.at(to).addInType(foty);
+        CNS_DEBUG(logKey, "Added type '{}'; Updated in score for '{}': {}", foty, to, scores.at(to).inScore());
+    }
 
     CNS_DEBUG_MSG(logKey, "end");
 }
@@ -218,7 +224,6 @@ void scoreSummary(TypeSummary const &ts) {
         }
 
         auto const &from = ops(ts.key());
-        //if(!from.td_.fptrType_ && from.td_.uqType_ == "void *") {
         if(from.td_.isVoidPointerType_) {
             // propagate only to void *
             if(ops(to.key()).td_.isVoidPointerType_) {
@@ -248,8 +253,8 @@ bool isSingleUseVoid(CensusKey const &op) {
     auto genericScore = SummarizedGenericScores.at(op);
     return isVoidPtr
         && genericScore.inScore() == 1
+        && genericScore.inTypes() != "void *"
         && genericScore.inTypes() == genericScore.outTypes();
-        //&& genericScore.inScore() == genericScore.outScore();
 }
 
 bool isPotentiallySubtype(CensusKey const &op) {
