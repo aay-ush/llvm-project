@@ -248,7 +248,8 @@ bool isSingleUseVoid(CensusKey const &op) {
     auto genericScore = SummarizedGenericScores.at(op);
     return isVoidPtr
         && genericScore.inScore() == 1
-        && genericScore.inScore() == genericScore.outScore();
+        && genericScore.inTypes() == genericScore.outTypes();
+        //&& genericScore.inScore() == genericScore.outScore();
 }
 
 bool isPotentiallySubtype(CensusKey const &op) {

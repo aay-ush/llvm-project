@@ -1668,6 +1668,12 @@ std::string qualifiedNameFromFptrCall(clang::ASTContext &context, clang::CallExp
 
 std::string getCastKind(clang::ASTContext &context, clang::Expr const &e) {
     if(auto const * ce = castExpr_(&e)) {
+        if(std::string("BitCast").compare(ce->getCastKindName())) {
+            auto const *sce = getCastExpr(context, getSubExpr_(*ce));
+            if(sce) {
+                ce = sce;
+            }
+        }
         return ce->getCastKindName();
     }
 
