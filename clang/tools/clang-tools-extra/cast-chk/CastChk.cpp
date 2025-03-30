@@ -1107,6 +1107,12 @@ public:
     void print() {
         constexpr auto logKey = "StatSource";
 
+        auto fcsv = fopen("census-stats.csv", "w");
+        if(fcsv == nullptr) {
+            fmt::print(stderr, "Error opening census-stats.csv\n");
+            return;
+        }
+
         fmt::print(fOUT, "[{}] BitCasts\t| Pointers\t| void *s\t| void* fptrs\n", logKey);
         fmt::print(fOUT, "[{}] {}\n", logKey, std::string(60, '-'));
         fmt::print(fOUT, "[{}] {:<8}\t| {:<8}\t| {:<8}\t| {:<8}\n", logKey,
@@ -1162,8 +1168,10 @@ public:
             fmt::print(fOUT, "END <--\n");
         };
 
-        auto filterPrintWithScore = [](Stat const &collection, auto const &label, auto pattern) {
+        auto filterPrintWithScore = [&fcsv](Stat const &collection, auto const &label, auto pattern) {
             fmt::print(fOUT, "---< {}:\n", label);
+            fmt::print(fcsv, "{} start,,,,,,,,,,\n", label);
+            fmt::print(fcsv, "Pattern,CensusKey,Location,Casts-In,Casts-Out,Generic-In,Generic-Out,Subtype-In,Subtype-Out,Reinterpret-In,Reinterpret-Out\n");
             std::for_each(begin(collection), end(collection),
                     [&](auto const &node) {
                         if(node.second == pattern) {
@@ -1178,8 +1186,20 @@ public:
                                     SummarizedSubtypingScores.at(node.first).outTypes(),
                                     SummarizedReinterpretScores.at(node.first).inTypes(),
                                     SummarizedReinterpretScores.at(node.first).outTypes());
+
+                            fmt::print(fcsv, "{},{},{},{},{},{},{},{},{},{},{}\n",
+                                    pattern, node.first, ops(node.first).location_,
+                                    SummarizedCastScores.at(node.first).inTypes(),
+                                    SummarizedCastScores.at(node.first).outTypes(),
+                                    SummarizedGenericScores.at(node.first).inTypes(),
+                                    SummarizedGenericScores.at(node.first).outTypes(),
+                                    SummarizedSubtypingScores.at(node.first).inTypes(),
+                                    SummarizedSubtypingScores.at(node.first).outTypes(),
+                                    SummarizedReinterpretScores.at(node.first).inTypes(),
+                                    SummarizedReinterpretScores.at(node.first).outTypes());
                         }
                     });
+            fmt::print(fcsv, "{} end,,,,,,,,,,\n", label);
             fmt::print(fOUT, "{}:\n", label);
             fmt::print(fOUT, ">---END\n");
         };
@@ -1193,9 +1213,10 @@ public:
         filterPrintWithScore(voidPointers_, "[IGNORED] Not used in any cast " + std::to_string(uncasts), Pattern::noCast);
         filterPrintWithScore(voidPointers_, "[WILD] Wild list " + std::to_string(wilds), Pattern::wild);
         //filterPrintWithScore(voidPointersFptr_, "[WILD] Wild list from fptrs", Pattern::wild);
+        fclose(fcsv);
     }
 
-private:
+public:
     enum class Pattern {
         generic = 0,
         subtyping,
@@ -1208,6 +1229,7 @@ private:
         unchecked
     };
 
+private:
     Pattern detectedPattern(CensusKey const &key) {
         if(TypeSummaries.find(key) == std::end(TypeSummaries)) {
             return Pattern::unchecked;
@@ -1244,6 +1266,35 @@ private:
     Stat voidPointersFptr_;
 
 };
+
+template<>
+struct fmt::formatter<StatMatchCallback::Pattern>: formatter<string_view> {
+    format_context::iterator format(StatMatchCallback::Pattern s, format_context& ctx) const {
+        string_view ret = "Wild";
+        switch(s) {
+            case StatMatchCallback::Pattern::generic:
+                ret = "Generic"; break;
+            case StatMatchCallback::Pattern::subtyping:
+                ret = "Subtype"; break;
+            case StatMatchCallback::Pattern::reinterpret:
+                ret = "Reinterpret"; break;
+            case StatMatchCallback::Pattern::singleVoid:
+                ret = "Single-use void"; break;
+            case StatMatchCallback::Pattern::sink:
+                ret = "Sink (no out)"; break;
+            case StatMatchCallback::Pattern::noSource:
+                ret = "Orphan (no in)"; break;
+            case StatMatchCallback::Pattern::noCast:
+                ret = "No casts"; break;
+            case StatMatchCallback::Pattern::wild:
+                ret = "Wild"; break;
+            case StatMatchCallback::Pattern::unchecked:
+                ret = "Ignored"; break;
+        }
+        return formatter<string_view>::format(ret, ctx);
+    }
+};
+
 
 /*
 StatementMatcher CastMatcher2 =
