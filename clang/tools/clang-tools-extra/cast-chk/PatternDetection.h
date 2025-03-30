@@ -71,6 +71,7 @@ std::unordered_map<CensusKey, TypeScore> SummarizedCastScores;
 std::unordered_map<CensusKey, TypeScore> SummarizedGenericScores;
 std::unordered_map<CensusKey, TypeScore> SummarizedSubtypingScores;
 std::unordered_map<CensusKey, TypeScore> SummarizedReinterpretScores;
+std::unordered_map<CensusKey, TypeScore> SummarizedFunctionPointerScores;
 
 void initScores() {
     std::for_each(begin(TypeSummaries), end(TypeSummaries),
@@ -79,6 +80,7 @@ void initScores() {
             SummarizedGenericScores.emplace(node.first, node.first);
             SummarizedSubtypingScores.emplace(node.first, node.first);
             SummarizedReinterpretScores.emplace(node.first, node.first);
+            SummarizedFunctionPointerScores.emplace(node.first, node.first);
         });
 }
 
@@ -236,6 +238,11 @@ void scoreSummary(TypeSummary const &ts) {
             recordEdgeScore("Reinterpret score", ts.key(), to.key(), SummarizedReinterpretScores, false);
         }
 
+        // function pointers
+        if(from.td_.fptrType_) {
+            recordEdgeScore("FunctionPointer score", ts.key(), to.key(), SummarizedFunctionPointerScores, false);
+        }
+
         scoreSummary(to);
 
     }
@@ -263,6 +270,12 @@ bool isPotentiallySubtype(CensusKey const &op) {
 
 bool isReinterpret(CensusKey const &op) {
     return SummarizedReinterpretScores.at(op).outScore() > 0;
+}
+
+bool isFunctionPointer(CensusKey const &op) {
+    auto const &score = SummarizedFunctionPointerScores.at(op);
+    return score.inScore() > 0
+        && (score.outScore() == 0 || score.inTypes() == score.outTypes());
 }
 
 bool isSink(CensusKey const &op) {

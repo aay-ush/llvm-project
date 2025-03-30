@@ -1134,6 +1134,8 @@ public:
         auto wilds = countPattern(voidPointers_, Pattern::wild);
         auto uncasts = countPattern(voidPointers_, Pattern::noCast);
         auto ignored = countPattern(voidPointers_, Pattern::unchecked);
+        auto fptrs = countPattern(voidPointers_, Pattern::fptr);
+        auto totaltyped = singles + generics + subtypes + reinterprets + fptrs;
         //auto fptrWilds = countPattern(voidPointersFptr_, Pattern::wild);
 
         fmt::print(fOUT, "[{}] Wild\t\t| Sinks\t\t| NoSource\t| Total Wild\n", logKey);
@@ -1148,10 +1150,10 @@ public:
                 uncasts, ignored, uncasts + ignored);
         fmt::print(fOUT, "[{}]\n", logKey);
 
-        fmt::print(fOUT, "[{}] SingleVoid\t| Generic\t| Subtyping\t| Reinterpret\t| Total Typed\n", logKey);
-        fmt::print(fOUT, "[{}] {}\n", logKey, std::string(64, '-'));
-        fmt::print(fOUT, "[{}] {:<8}\t| {:<8}\t| {:<8}\t| {:<12}\t| {:<8}\n", logKey,
-                singles, generics, subtypes, reinterprets, singles + generics + subtypes + reinterprets);
+        fmt::print(fOUT, "[{}] SingleVoid\t| Generic\t| Subtyping\t| Reinterpret\t| FunctionPointers\t| Total Typed\n", logKey);
+        fmt::print(fOUT, "[{}] {}\n", logKey, std::string(84, '-'));
+        fmt::print(fOUT, "[{}] {:<8}\t| {:<8}\t| {:<8}\t| {:<12}\t| {:<17}\t| {:<8}\n", logKey,
+                singles, generics, subtypes, reinterprets, fptrs, totaltyped);
         fmt::print(fOUT, "[{}]\n", logKey);
 
 
@@ -1205,6 +1207,7 @@ public:
         };
 
         filterPrint(voidPointers_, "Generics found " + std::to_string(generics), Pattern::generic);
+        filterPrint(voidPointers_, "Fptrs found " + std::to_string(fptrs), Pattern::fptr);
         filterPrint(voidPointers_, "Ignored list " + std::to_string(ignored), Pattern::unchecked);
         //filterPrint(voidPointers_, "Wild list", Pattern::wild);
         filterPrintWithScore(voidPointers_, "Single use void found " + std::to_string(singles), Pattern::singleVoid);
@@ -1221,6 +1224,7 @@ public:
         generic = 0,
         subtyping,
         reinterpret,
+        fptr,
         singleVoid,
         sink,
         noSource,
@@ -1236,6 +1240,9 @@ private:
         }
         if(isPotentiallyGeneric(key)) {
             return Pattern::generic;
+        }
+        if(isFunctionPointer(key)) {
+            return Pattern::fptr;
         }
         if(isSingleUseVoid(key)) {
             return Pattern::singleVoid;
@@ -1278,6 +1285,8 @@ struct fmt::formatter<StatMatchCallback::Pattern>: formatter<string_view> {
                 ret = "Subtype"; break;
             case StatMatchCallback::Pattern::reinterpret:
                 ret = "Reinterpret"; break;
+            case StatMatchCallback::Pattern::fptr:
+                ret = "Function pointer"; break;
             case StatMatchCallback::Pattern::singleVoid:
                 ret = "Single-use void"; break;
             case StatMatchCallback::Pattern::sink:
