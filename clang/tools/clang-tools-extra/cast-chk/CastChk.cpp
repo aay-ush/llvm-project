@@ -1187,7 +1187,7 @@ public:
                                     SummarizedReinterpretScores.at(node.first).inTypes(),
                                     SummarizedReinterpretScores.at(node.first).outTypes());
 
-                            fmt::print(fcsv, "{},{},{},{},{},{},{},{},{},{},{}\n",
+                            fmt::print(fcsv, "\"{}\",\"{}\",\"{}\",\"{}\",\"{}\",\"{}\",\"{}\",\"{}\",\"{}\",\"{}\",\"{}\"\n",
                                     pattern, node.first, ops(node.first).location_,
                                     SummarizedCastScores.at(node.first).inTypes(),
                                     SummarizedCastScores.at(node.first).outTypes(),
