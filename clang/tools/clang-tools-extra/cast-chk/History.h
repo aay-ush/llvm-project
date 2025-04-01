@@ -1386,6 +1386,8 @@ std::unordered_map<CensusKey, TypeSummary> TypeSummaries;
 
 class CastStat {
 public:
+    using Stat = std::unordered_map<std::string, unsigned>;
+
     CastStat(std::string label): label_(label) {}
 
     void print(std::FILE *fp) const {
@@ -1463,10 +1465,26 @@ public:
     }
 
     // functions to view funcCounts/typeCount
+    Stat const& casts() const {
+        return castCounts_;
+    }
+    Stat const& voidCasts() const {
+        return voidCastCounts_;
+    }
+    Stat const& types() const {
+        return typeCounts_;
+    }
+    Stat const& categories() const {
+        return categoryCounts_;
+    }
+    Stat const& functions() const {
+        return funcCounts_;
+    }
+    Stat const& locations() const {
+        return locationCounts_;
+    }
 
 private:
-    using Stat = std::unordered_map<std::string, unsigned>;
-
     std::string label_;
     Stat castCounts_;
     Stat voidCastCounts_;

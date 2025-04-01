@@ -1137,6 +1137,7 @@ public:
         auto fptrs = countPattern(voidPointers_, Pattern::fptr);
         auto totaltyped = singles + generics + subtypes + reinterprets + fptrs;
         //auto fptrWilds = countPattern(voidPointersFptr_, Pattern::wild);
+        auto allUncasts = countPattern(pointers_, Pattern::noCast);
 
         fmt::print(fOUT, "[{}] Wild\t\t| Sinks\t\t| NoSource\t| Total Wild\n", logKey);
         fmt::print(fOUT, "[{}] {}\n", logKey, std::string(60, '-'));
@@ -1156,6 +1157,8 @@ public:
                 singles, generics, subtypes, reinterprets, fptrs, totaltyped);
         fmt::print(fOUT, "[{}]\n", logKey);
 
+        fmt::print(fOUT, "[{}] Total pointers (all) without any cast: {}", logKey, allUncasts);
+        fmt::print(fOUT, "[{}]\n", logKey);
 
         auto filterPrint = [](Stat const &collection, auto const &label, auto pattern) {
             constexpr auto logKey = "--->";
@@ -1217,6 +1220,36 @@ public:
         filterPrintWithScore(voidPointers_, "[WILD] Wild list " + std::to_string(wilds), Pattern::wild);
         //filterPrintWithScore(voidPointersFptr_, "[WILD] Wild list from fptrs", Pattern::wild);
         fclose(fcsv);
+    }
+
+    void printCombinedReport(CastStat const &tcst) {
+        constexpr auto logKey = "StatCensus";
+
+        // From Summary traversal
+        auto countPatterns = [&](Score_t scores, bool (*checker)(CensusKey const&)) {
+            return std::count_if(begin(scores), end(scores),
+                    [&checker](auto const &node) { return checker(node.first); });
+        };
+
+        auto generics = countPatterns(SummarizedGenericScores, isPotentiallyGeneric);
+        auto subtypes = countPatterns(SummarizedSubtypingScores, isPotentiallySubtype);
+        auto reinterpret = countPatterns(SummarizedReinterpretScores, isReinterpret);
+        auto singles = countPatterns(SummarizedGenericScores, isSingleUseVoid);
+        auto fptrs = countPatterns(SummarizedFunctionPointerScores, isFunctionPointer);
+        fmt::print(fOUT, "[StatPrint] Stats from summary traversal:\n");
+        fmt::print(fOUT, "[{}] BitCasts\t| CastsFromVoid\n", logKey);
+        fmt::print(fOUT, "[{}] {}\n", logKey, std::string(60, '-'));
+        fmt::print(fOUT, "[{}] {:<8}\t| {:<8}\n", logKey,
+                tcst.casts().size(), tcst.voidCasts().size());
+        fmt::print(fOUT, "[{}] SingleUseVoid\t| Generic\t| Subtype\t| Reinterpret\t| Function Ptr\n", logKey);
+        fmt::print(fOUT, "[{}] {}\n", logKey, std::string(70, '-'));
+        fmt::print(fOUT, "[{}] {:<12}\t| {:<8}\t| {:<8}\t| {:<12}\t| {:<17}\n",
+                logKey, singles, generics, subtypes, reinterpret, fptrs);
+
+        fmt::print(fOUT, "[StatPrint]\n");
+        // Source stats
+        fmt::print(fOUT, "[StatPrint] Stats from source matcher:\n");
+        print();
     }
 
 public:
@@ -1460,7 +1493,7 @@ static cl::extrahelp Morehelp("\nMore help text...\n");
 
 void buildIgnoreList();
 void regularizeCensusTypes();
-void printCollection();
+void statCollection(CastStat &tcst);
 void printSummaryToJson();
 void printScores();
 
@@ -1537,7 +1570,8 @@ int main(int argc, const char **argv) {
     }
     // Printing collection seems to add default (blank) entries to census which pollutes
     // the json output. Unclear why it is happening. There is no explicit census insertion in printCollection();
-    printCollection();
+    CastStat tcst("Total Cast Statistics");
+    statCollection(tcst);
 
     if(optIntentDiscovery) {
         printScores();
@@ -1549,7 +1583,7 @@ int main(int argc, const char **argv) {
     statFinder.addMatcher(StatPointerMatcher, &statistician);
     //statFinder.addMatcher(StatVoidPointerMatcher, &statistician);
     rc = Tool.run(newFrontendActionFactory(&statFinder).get());
-    statistician.print();
+    statistician.printCombinedReport(tcst);
 
     fclose(fOUT);
     return rc;
@@ -1808,7 +1842,7 @@ void printSummaryToJson() {
     tprint("END Summary JSON Dump\n");
 }
 
-void printCollection() {
+void statCollection(CastStat &tcst) {
     LOG_FUNCTION_TIME;
 
     auto teeStat = [](auto const &stat) {
@@ -1816,7 +1850,6 @@ void printCollection() {
         stat.print(stdout);
     };
 
-    CastStat tcst("Total Cast Statistics");
     tprint("History collection:\n");
     std::for_each(begin(TypeSummaries), end(TypeSummaries),
         [&](auto const &s) {
@@ -1892,6 +1925,7 @@ void printScores() {
     printPatternFinds("Possible reinterpret casts", SummarizedReinterpretScores,
             isReinterpret, printOutScore);
 
+    /*
     auto countPatterns = [&](Score_t scores, bool (*checker)(CensusKey const&)) {
         return std::count_if(begin(scores), end(scores),
                 [&checker](auto const &node) { return checker(node.first); });
@@ -1907,6 +1941,7 @@ void printScores() {
     fmt::print(fOUT, "[{}] {:<8}\t| {:<8}\t| {:<8}\n", logKey,
             generics, subtypes, reinterpret);
     fmt::print(fOUT, "[{}]\n", logKey);
+    */
 }
 
 void regularizeCensusTypes() {
