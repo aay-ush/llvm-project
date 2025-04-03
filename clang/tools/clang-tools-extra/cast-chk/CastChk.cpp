@@ -1104,13 +1104,13 @@ public:
     // see if the pointer is typed with a pattern in ScoreSummary
     // see if the void pinter is typed
     // collect casts of void pointer with the pointer
-    void print() {
+    std::string print() {
         constexpr auto logKey = "StatSource";
 
         auto fcsv = fopen("census-stats.csv", "w");
         if(fcsv == nullptr) {
             fmt::print(stderr, "Error opening census-stats.csv\n");
-            return;
+            return "";
         }
 
         fmt::print(fOUT, "[{}] BitCasts\t| Pointers\t| void *s\t| void* fptrs\n", logKey);
@@ -1129,7 +1129,7 @@ public:
         auto singles = countPattern(voidPointers_, Pattern::singleVoid);
         auto subtypes = countPattern(voidPointers_, Pattern::subtyping);
         auto reinterprets = countPattern(voidPointers_, Pattern::reinterpret);
-        auto noSources = countPattern(voidPointers_, Pattern::noSource);
+        auto unused = countPattern(voidPointers_, Pattern::noSource);
         auto sinks = countPattern(voidPointers_, Pattern::sink);
         auto wilds = countPattern(voidPointers_, Pattern::wild);
         auto uncasts = countPattern(voidPointers_, Pattern::noCast);
@@ -1139,10 +1139,10 @@ public:
         //auto fptrWilds = countPattern(voidPointersFptr_, Pattern::wild);
         auto allUncasts = countPattern(pointers_, Pattern::noCast);
 
-        fmt::print(fOUT, "[{}] Wild\t\t| Sinks\t\t| NoSource\t| Total Wild\n", logKey);
+        fmt::print(fOUT, "[{}] Wild\t\t| Sinks\t\t| Unused\t| Total Wild\n", logKey);
         fmt::print(fOUT, "[{}] {}\n", logKey, std::string(60, '-'));
         fmt::print(fOUT, "[{}] {:<8}\t| {:<8}\t| {:<8}\t| {:<8}\n", logKey,
-                wilds, sinks, noSources, wilds + sinks + noSources);
+                wilds, sinks, unused, wilds + sinks + unused);
         fmt::print(fOUT, "[{}]\n", logKey);
 
         fmt::print(fOUT, "[{}] NoCasts\t| Ignored\t| Total Ignored\n", logKey);
@@ -1157,7 +1157,7 @@ public:
                 singles, generics, subtypes, reinterprets, fptrs, totaltyped);
         fmt::print(fOUT, "[{}]\n", logKey);
 
-        fmt::print(fOUT, "[{}] Total pointers (all) without any cast: {}", logKey, allUncasts);
+        fmt::print(fOUT, "[{}] Total pointers (all) without any cast: {}\n", logKey, allUncasts);
         fmt::print(fOUT, "[{}]\n", logKey);
 
         auto filterPrint = [](Stat const &collection, auto const &label, auto pattern) {
@@ -1215,11 +1215,16 @@ public:
         //filterPrint(voidPointers_, "Wild list", Pattern::wild);
         filterPrintWithScore(voidPointers_, "Single use void found " + std::to_string(singles), Pattern::singleVoid);
         filterPrintWithScore(voidPointers_, "[WILD] Sink (no out casts) void* " + std::to_string(sinks), Pattern::sink);
-        filterPrintWithScore(voidPointers_, "[WILD] Unused (no in cast) void* " + std::to_string(noSources), Pattern::noSource);
+        filterPrintWithScore(voidPointers_, "[WILD] Unused (no in cast) void* " + std::to_string(unused), Pattern::noSource);
         filterPrintWithScore(voidPointers_, "[IGNORED] Not used in any cast " + std::to_string(uncasts), Pattern::noCast);
         filterPrintWithScore(voidPointers_, "[WILD] Wild list " + std::to_string(wilds), Pattern::wild);
         //filterPrintWithScore(voidPointersFptr_, "[WILD] Wild list from fptrs", Pattern::wild);
         fclose(fcsv);
+
+        return fmt::format("{},{},{},{},{},{},{},{},{},{},{}",
+                wilds, sinks, unused, uncasts, ignored,
+                singles, generics, subtypes, reinterprets, fptrs,
+                allUncasts);
     }
 
     void printCombinedReport(CastStat const &tcst) {
@@ -1231,25 +1236,39 @@ public:
                     [&checker](auto const &node) { return checker(node.first); });
         };
 
-        auto generics = countPatterns(SummarizedGenericScores, isPotentiallyGeneric);
-        auto subtypes = countPatterns(SummarizedSubtypingScores, isPotentiallySubtype);
-        auto reinterpret = countPatterns(SummarizedReinterpretScores, isReinterpret);
-        auto singles = countPatterns(SummarizedGenericScores, isSingleUseVoid);
-        auto fptrs = countPatterns(SummarizedFunctionPointerScores, isFunctionPointer);
+        auto tsGenerics = countPatterns(SummarizedGenericScores, isPotentiallyGeneric);
+        auto tsSubtypes = countPatterns(SummarizedSubtypingScores, isPotentiallySubtype);
+        auto tsReinterpret = countPatterns(SummarizedReinterpretScores, isReinterpret);
+        auto tsSingles = countPatterns(SummarizedGenericScores, isSingleUseVoid);
+        auto tsFptrs = countPatterns(SummarizedFunctionPointerScores, isFunctionPointer);
+        auto tsCasts = tcst.casts().size();
+        auto tsVoidCasts = tcst.voidCasts().size();
         fmt::print(fOUT, "[StatPrint] Stats from summary traversal:\n");
         fmt::print(fOUT, "[{}] BitCasts\t| CastsFromVoid\n", logKey);
         fmt::print(fOUT, "[{}] {}\n", logKey, std::string(60, '-'));
-        fmt::print(fOUT, "[{}] {:<8}\t| {:<8}\n", logKey,
-                tcst.casts().size(), tcst.voidCasts().size());
+        fmt::print(fOUT, "[{}] {:<8}\t| {:<8}\n", logKey, tsCasts, tsVoidCasts);
         fmt::print(fOUT, "[{}] SingleUseVoid\t| Generic\t| Subtype\t| Reinterpret\t| Function Ptr\n", logKey);
         fmt::print(fOUT, "[{}] {}\n", logKey, std::string(70, '-'));
         fmt::print(fOUT, "[{}] {:<12}\t| {:<8}\t| {:<8}\t| {:<12}\t| {:<17}\n",
-                logKey, singles, generics, subtypes, reinterpret, fptrs);
+                logKey, tsSingles, tsGenerics, tsSubtypes, tsReinterpret, tsFptrs);
 
         fmt::print(fOUT, "[StatPrint]\n");
         // Source stats
         fmt::print(fOUT, "[StatPrint] Stats from source matcher:\n");
-        print();
+        fmt::print(fOUT, "[StatPrint]\n");
+
+        std::string statCSV = print();
+
+        std::string completeCSV;
+        completeCSV = fmt::format("{},{},{},{},{},{},{},{},{},{},{},",
+            tsCasts, tsVoidCasts, tsSingles, tsGenerics, tsSubtypes, tsReinterpret, tsFptrs,
+            casts_.size(), pointers_.size(), voidPointers_.size(), voidPointersFptr_.size());
+        completeCSV.append(statCSV);
+
+        fmt::print(fOUT, "[StatPrint] Complete CSV stat:\n");
+        fmt::print(fOUT, "[StatCompleteCSV] TS-Bitcasts,TS-FromVoid,TS-Singles,TS-Generic,TS-Subtype,TS-Reinterpret,TS-Fptr,Bitcasts,Pointers,void pointers,void pointers fptr param,wild,sinks,unused,nocasts,ignored,singles,generic,subtyping,reinterpret,fptr,total no casts\n");
+        fmt::print(fOUT, "[StatCompleteCSV] {}\n", completeCSV);
+        fmt::print(fOUT, "[StatPrint]\n");
     }
 
 public:
@@ -1325,7 +1344,7 @@ struct fmt::formatter<StatMatchCallback::Pattern>: formatter<string_view> {
             case StatMatchCallback::Pattern::sink:
                 ret = "Sink (no out)"; break;
             case StatMatchCallback::Pattern::noSource:
-                ret = "Orphan (no in)"; break;
+                ret = "Unused (no in)"; break;
             case StatMatchCallback::Pattern::noCast:
                 ret = "No casts"; break;
             case StatMatchCallback::Pattern::wild:
