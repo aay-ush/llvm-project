@@ -105,7 +105,7 @@ std::string cleanType(CensusKey const &opKey) {
 
 using Score_t = std::unordered_map<CensusKey, TypeScore>;
 
-void recordEdgeScore(std::string const& label, CensusKey const &from, CensusKey const &to, Score_t scores, bool useCleanType = true) {
+void recordEdgeScore(std::string const& label, CensusKey const &from, CensusKey const &to, Score_t &scores, bool useCleanType = true) {
     auto const logKey = "label | " + from + " -> " + to;
     CNS_DEBUG_MSG(logKey, "begin");
 
@@ -116,13 +116,13 @@ void recordEdgeScore(std::string const& label, CensusKey const &from, CensusKey 
         return ops(key).type_;
     };
 
-    auto toty = recordType(to);
+    auto const toty = recordType(to);
     if(!toty.empty()) {
         scores.at(from).addOutType(toty);
         CNS_DEBUG(logKey, "Added type '{}'; Updated out score for '{}': {}", toty, from, scores.at(from).outScore());
     }
 
-    auto foty = recordType(from);
+    auto const foty = recordType(from);
     if(!foty.empty()) {
         scores.at(to).addInType(foty);
         CNS_DEBUG(logKey, "Added type '{}'; Updated in score for '{}': {}", foty, to, scores.at(to).inScore());
