@@ -210,7 +210,7 @@ void scoreSummary(TypeSummary const &ts) {
     for(auto const &to: ts.nexts()) {
         auto const& linkInfo = to.linkInfo();
         if(linkInfo.castKind() == "BitCast") {
-            recordEdgeScore("CastScore", ts.key(), to.key(), SummarizedCastScores);
+            recordEdgeScore("CastScore", ts.key(), to.key(), SummarizedCastScores, false);
         }
 
         if(isSubtypingTransform(linkInfo)) {

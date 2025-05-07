@@ -1227,6 +1227,19 @@ public:
                 allUncasts);
     }
 
+    void csvGenerics(FILE *fcsv) {
+        fmt::print(fcsv, "Pattern,CensusKey,Location,In-Types,Out-types,\n");
+        std::for_each(begin(voidPointers_), end(voidPointers_),
+            [&](auto const &node) {
+                if(node.second == Pattern::generic) {
+                    fmt::print(fcsv, "\"{}\",\"{}\",\"{}\",\"{}\",\"{}\"\n",
+                            "Generic", node.first, ops(node.first).location_,
+                            SummarizedCastScores.at(node.first).inTypes(),
+                            SummarizedCastScores.at(node.first).outTypes());
+                    }
+                });
+    }
+
     void printCombinedReport(CastStat const &tcst) {
         constexpr auto logKey = "StatCensus";
 
@@ -1603,6 +1616,15 @@ int main(int argc, const char **argv) {
     //statFinder.addMatcher(StatVoidPointerMatcher, &statistician);
     rc = Tool.run(newFrontendActionFactory(&statFinder).get());
     statistician.printCombinedReport(tcst);
+
+    // Generic pointer export (Bristol)
+    auto fgcsv = fopen("generic-ptrs.csv", "w");
+    if(fgcsv == nullptr) {
+        fmt::print(stderr, "Error opening generic-ptrs.csv\n");
+        return 1;
+    }
+    statistician.csvGenerics(fgcsv);
+    fclose(fgcsv);
 
     fclose(fOUT);
     return rc;
