@@ -72,7 +72,8 @@ std::unordered_map<CensusKey, TypeScore> SummarizedGenericScores;
 std::unordered_map<CensusKey, TypeScore> SummarizedSubtypingScores;
 std::unordered_map<CensusKey, TypeScore> SummarizedReinterpretScores;
 std::unordered_map<CensusKey, TypeScore> SummarizedFunctionPointerScores;
-std::unordered_map<CensusKey, TypeScore> SummarizedVoidScores;
+std::unordered_map<CensusKey, TypeScore> SummarizedVoidProvenance;
+std::unordered_map<CensusKey, TypeScore> SummarizedCastProvenance;
 
 void initScores() {
     std::for_each(begin(TypeSummaries), end(TypeSummaries),
@@ -82,7 +83,8 @@ void initScores() {
             SummarizedSubtypingScores.emplace(node.first, node.first);
             SummarizedReinterpretScores.emplace(node.first, node.first);
             SummarizedFunctionPointerScores.emplace(node.first, node.first);
-            SummarizedVoidScores.emplace(node.first, node.first);
+            SummarizedVoidProvenance.emplace(node.first, node.first);
+            SummarizedCastProvenance.emplace(node.first, node.first);
         });
 }
 
@@ -207,16 +209,27 @@ bool hasReinterpretCast(CensusKey const &from, CensusKey const &to, DominatorDat
 void recordEdgeDom(CensusKey const &from, CensusKey const &to, DominatorData const &linkInfo) {
     auto fop = ops(from);
     auto top = ops(to);
-    if(SummarizedVoidScores.at(from).inScore() > 0) {// from a void descendant
-        SummarizedVoidScores.at(to).addInType(from);
+    if(SummarizedVoidProvenance.at(from).inScore() > 0) {// from a void descendant
+        SummarizedVoidProvenance.at(to).addInType(from);
     }
 
     if(fop.td_.isVoidPointerType_) {
-        SummarizedVoidScores.at(to).addInType(from); // Add dom qn
+        SummarizedVoidProvenance.at(to).addInType(from); // Add dom qn
     }
 
     if(top.td_.isVoidPointerType_) {
-        SummarizedVoidScores.at(from).addOutType(to); // Add dom'd qn
+        SummarizedVoidProvenance.at(from).addOutType(to); // Add dom'd qn
+    }
+
+    // Cast ancestry
+    auto const &fromCasts = SummarizedCastProvenance.at(from);
+    if(fromCasts.inScore() > 0) { // from a cast descendant
+        SummarizedCastProvenance.at(to).addInTypes(fromCasts);
+        SummarizedCastProvenance.at(from).addOutType(to);
+    }
+    if(linkInfo.castKind() == "BitCast") { // from a bit cast
+        SummarizedCastProvenance.at(to).addInType(linkInfo.linkExpr());
+        SummarizedCastProvenance.at(from).addOutType(to);
     }
 }
 
@@ -315,7 +328,11 @@ bool isNotUsedInCasts(CensusKey const &op) {
 }
 
 bool isVoidDescendant(CensusKey const &op) {
-    return SummarizedVoidScores.at(op).inScore() > 0;
+    return SummarizedVoidProvenance.at(op).inScore() > 0;
+}
+
+bool isCastDescendant(CensusKey const &op) {
+    return SummarizedCastProvenance.at(op).inScore() > 0;
 }
 
 #endif // PATTERNDETECTION_H
