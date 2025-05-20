@@ -74,6 +74,7 @@ std::unordered_map<CensusKey, TypeScore> SummarizedReinterpretScores;
 std::unordered_map<CensusKey, TypeScore> SummarizedFunctionPointerScores;
 std::unordered_map<CensusKey, TypeScore> SummarizedVoidProvenance;
 std::unordered_map<CensusKey, TypeScore> SummarizedCastProvenance;
+std::unordered_map<CensusKey, TypeScore> SummarizedCVProvenance;
 
 void initScores() {
     std::for_each(begin(TypeSummaries), end(TypeSummaries),
@@ -85,6 +86,7 @@ void initScores() {
             SummarizedFunctionPointerScores.emplace(node.first, node.first);
             SummarizedVoidProvenance.emplace(node.first, node.first);
             SummarizedCastProvenance.emplace(node.first, node.first);
+            SummarizedCVProvenance.emplace(node.first, node.first);
         });
 }
 
@@ -209,12 +211,15 @@ bool hasReinterpretCast(CensusKey const &from, CensusKey const &to, DominatorDat
 void recordEdgeDom(CensusKey const &from, CensusKey const &to, DominatorData const &linkInfo) {
     auto fop = ops(from);
     auto top = ops(to);
-    if(SummarizedVoidProvenance.at(from).inScore() > 0) {// from a void descendant
-        SummarizedVoidProvenance.at(to).addInType(from);
+
+    // Void ancestry
+    auto const &fromVoid = SummarizedVoidProvenance.at(from);
+    if(fromVoid.inScore() > 0) {// from a void descendant
+        SummarizedVoidProvenance.at(to).addInTypes(fromVoid);
     }
 
     if(fop.td_.isVoidPointerType_) {
-        SummarizedVoidProvenance.at(to).addInType(from); // Add dom qn
+        SummarizedVoidProvenance.at(to).addInType(from); // Add void dom qn
     }
 
     if(top.td_.isVoidPointerType_) {
@@ -230,6 +235,12 @@ void recordEdgeDom(CensusKey const &from, CensusKey const &to, DominatorData con
     if(linkInfo.castKind() == "BitCast") { // from a bit cast
         SummarizedCastProvenance.at(to).addInType(linkInfo.linkExpr());
         SummarizedCastProvenance.at(from).addOutType(to);
+    }
+
+    if(SummarizedVoidProvenance.at(to).inScore() > 0
+            || SummarizedCastProvenance.at(to).inScore() > 0) {
+        SummarizedCVProvenance.at(to).addInType(from);
+        SummarizedCVProvenance.at(from).addOutType(to);
     }
 }
 
@@ -333,6 +344,10 @@ bool isVoidDescendant(CensusKey const &op) {
 
 bool isCastDescendant(CensusKey const &op) {
     return SummarizedCastProvenance.at(op).inScore() > 0;
+}
+
+bool isCVDescendant(CensusKey const &op) {
+    return SummarizedCVProvenance.at(op).inScore() > 0;
 }
 
 #endif // PATTERNDETECTION_H

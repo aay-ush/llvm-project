@@ -1113,27 +1113,27 @@ public:
             return "";
         }
 
-        Stat fromVoidP, fromCastP;
-        std::copy_if(begin(pointers_), end(pointers_), inserter(fromVoidP, end(fromVoidP)),
-                [](auto const &n) {
-                    if(TypeSummaries.find(n.first) == std::end(TypeSummaries)) {
-                        return false;
-                    }
-                    return isVoidDescendant(n.first);
-                });
+        Stat fromVoidP, fromCastP, fromCVP;
+        using filter_t = std::function<bool(CensusKey const &)>;
+        auto filterCollection = [](Stat const &collection, Stat &target, filter_t filter) {
+            std::copy_if(begin(collection), end(collection), inserter(target, end(target)),
+                    [&filter](auto const &kv) {
+                        if(TypeSummaries.find(kv.first) == std::end(TypeSummaries)) {
+                            return false;
+                        }
+                        return filter(kv.first);
+                    });
+        };
 
-        std::copy_if(begin(pointers_), end(pointers_), inserter(fromCastP, end(fromCastP)),
-                [](auto const &n) {
-                    if(TypeSummaries.find(n.first) == std::end(TypeSummaries)) {
-                        return false;
-                    }
-                    return isCastDescendant(n.first);
-                });
+        filterCollection(pointers_, fromVoidP, isVoidDescendant);
+        filterCollection(pointers_, fromCastP, isCastDescendant);
+        filterCollection(pointers_, fromCVP, isCVDescendant);
 
-        fmt::print(fOUT, "[{}] BitCasts\t| Pointers\t| void *s\t| void* fptrs\t| from void*\t| from cast\n", logKey);
-        fmt::print(fOUT, "[{}] {}\n", logKey, std::string(78, '-'));
-        fmt::print(fOUT, "[{}] {:<8}\t| {:<8}\t| {:<8}\t| {:<8}\t| {:<8}\t| {:<8}\n", logKey,
-                casts_.size(), pointers_.size(), voidPointers_.size(), voidPointersFptr_.size(), fromVoidP.size(), fromCastP.size());
+        fmt::print(fOUT, "[{}] BitCasts\t| Pointers\t| void *s\t| void* fptrs\t| from void*\t| from cast\t| from CV\n", logKey);
+        fmt::print(fOUT, "[{}] {}\n", logKey, std::string(86, '-'));
+        fmt::print(fOUT, "[{}] {:<8}\t| {:<8}\t| {:<8}\t| {:<8}\t| {:<8}\t| {:<8}\t| {:<8}\n", logKey,
+                casts_.size(), pointers_.size(), voidPointers_.size(), voidPointersFptr_.size(),
+                fromVoidP.size(), fromCastP.size(), fromCVP.size());
         fmt::print(fOUT, "[{}]\n", logKey);
 
         auto countPattern = [](Stat const &collection, auto pattern) {
@@ -1255,10 +1255,10 @@ public:
 
         fclose(fcsv);
 
-        return fmt::format("{},{},{},{},{},{},{},{},{},{},{},{},{}",
+        return fmt::format("{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
                 wilds, sinks, unused, uncasts, ignored,
                 singles, generics, subtypes, reinterprets, fptrs,
-                allUncasts, fromVoidP.size(), fromCastP.size());
+                allUncasts, fromVoidP.size(), fromCastP.size(), fromCVP.size());
     }
 
     void csvGenerics(FILE *fcsv) {
