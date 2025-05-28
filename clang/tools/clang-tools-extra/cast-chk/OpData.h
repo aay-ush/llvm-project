@@ -128,7 +128,8 @@ struct CNSTypeInfo {
 struct TypeDataExtra {
     bool isPointerType_;
     bool isVoidPointerType_;
-    std::optional<std::string> pointeeType_;
+    std::optional<std::string> pointeeType_;    // Points to (contains stars)
+    std::optional<std::string> elementType_;
     std::optional<std::string> numericType_;
     std::optional<std::string> charType_;
     std::string uqType_;
@@ -387,6 +388,7 @@ TypeDataExtra makeTypeDataExtra(
         (qt->isPointerType() || qt->isArrayType()),
         qt->isVoidPointerType(),
         TypenamePointedAt(context, qt),
+        Typename(context, getPointedAtType(context, qt).first.getUnqualifiedType()),
         getNumericType(context, qt),
         getCharType(context, qt),
         Typename(context, qt.getUnqualifiedType()),
@@ -476,6 +478,7 @@ OpData buildOpData(
 }
 
 // Build operand from VarDecl
+// used by dre from buildOpDataBinOpLHS
 OpData buildOpData(
         clang::ASTContext &context,
         clang::SourceManager const &sm,
@@ -503,15 +506,16 @@ OpData buildOpData(
         clang::ASTContext &context,
         clang::SourceManager const &sm,
         clang::DeclRefExpr const &e,
+        clang::Expr const &init,
         clang::ValueDecl const &decl) {
 
     CNS_DEBUG(String(context, decl), "<ValueDecl> type: {}", Typename(context, decl));
 
-    return {
+    return  {
         cnsHash(context, decl),
         String(context, decl),
-        Typename(context, decl),
-        TypeCategory(context, decl),
+        Typename(context, init),
+        TypeCategory(context, init),
         getLinkedParm(context, e, decl.getDeclName()),
         getContainerFunction(context, e),
         getLinkedRecord(e),
@@ -752,19 +756,22 @@ OpData buildOpData<CastSourceType::UnaryOp>(
         clang::UnaryOperator const &op) {
 
     CNS_DEBUG(String(context, op), "type: {}", Typename(context, op));
+    // Cannot fail since unary op must have a subexpr
+    auto const * sube_ = getSubExpr_(op);
+    auto const & sube = *sube_;
 
     return {
-        cnsHash(context, op),
-        String(context, op),
-        Typename(context, op),
-        TypeCategory(context, op),
+        cnsHash(context, sube),
+        String(context, sube),
+        Typename(context, sube),
+        TypeCategory(context, sube),
         "(TODO param_check)",
-        getContainerFunction(context, castExpr),
-        getLinkedRecord(castExpr),
-        linkedTypeCategory(castExpr),
+        getContainerFunction(context, sube),
+        getLinkedRecord(sube),
+        linkedTypeCategory(sube),
         castExpr.getExprLoc().printToString(sm),
-        qualifiedName(context, op), //String(context, op)
-        makeTypeDataExtra(context, sm, op)
+        qualifiedName(context, sube), //String(context, op)
+        makeTypeDataExtra(context, sm, sube)
     };
 }
 

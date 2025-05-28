@@ -9,7 +9,25 @@
 #include <numeric>
 
 class TypeScore {
+private:
+    struct Score {
+        std::unordered_set<std::string> types_;
+        std::string types() const {
+            if(types_.empty()) {
+                return "";
+            }
+
+            return std::accumulate(next(begin(types_)), end(types_), *begin(types_),
+                [](std::string a, std::string b) {
+                    CNS_DEBUG("accumulating", "Accumulated: {}; adding: {}", a, b);
+                    return std::move(a) + ", " + b;
+                });
+        }
+    };
+
 public:
+    using Typeset = decltype(Score::types_);
+
     unsigned inScore() const {
         return inTypes_.size();
     }
@@ -25,8 +43,20 @@ public:
         return out_.types();
     }
 
+    Typeset inTypeset() const {
+        return inTypes_;
+    }
+
+    Typeset outTypeset() const {
+        return outTypes_;
+    }
+
     void addInTypes(TypeScore const &ts) {
         inTypes_.insert(std::begin(ts.inTypes_), std::end(ts.inTypes_));
+    }
+
+    void addOutTypes(TypeScore const &ts) {
+        outTypes_.insert(std::begin(ts.outTypes_), std::end(ts.outTypes_));
     }
 
     void addInType(std::string type) {
@@ -44,27 +74,12 @@ public:
     TypeScore(CensusKey const& id): id_(id) {}
 
 private:
-    struct Score {
-        std::unordered_set<std::string> types_;
-        std::string types() const {
-            if(types_.empty()) {
-                return "";
-            }
-
-            return std::accumulate(next(begin(types_)), end(types_), *begin(types_),
-                [](std::string a, std::string b) {
-                    CNS_DEBUG("accumulating", "Accumulated: {}; adding: {}", a, b);
-                    return std::move(a) + ", " + b;
-                });
-        }
-    };
-
     CensusKey id_;
     Score in_;
     Score out_;
 
-    decltype(Score::types_) & inTypes_ = in_.types_;
-    decltype(Score::types_) & outTypes_ = out_.types_;
+    Typeset & inTypes_ = in_.types_;
+    Typeset & outTypes_ = out_.types_;
 };
 
 std::unordered_map<CensusKey, TypeScore> SummarizedCastScores;
@@ -93,6 +108,10 @@ void initScores() {
 std::string cleanType(CensusKey const &opKey) {
     auto const &op = ops(opKey);
     auto const &typeInfo = op.td_;
+
+    if(typeInfo.elementType_) {
+        return typeInfo.elementType_.value();
+    }
 
     if(typeInfo.numericType_) {
         return typeInfo.numericType_.value();
@@ -244,6 +263,65 @@ void recordEdgeDom(CensusKey const &from, CensusKey const &to, DominatorData con
     }
 }
 
+#include <stack>
+
+TypeScore recordLeafScore(TypeSummary const &ts) {
+    std::stack<std::reference_wrapper<const TypeSummary>> stack;
+    for(auto const &n: ts.nexts()) {
+        stack.emplace(std::cref(n));
+    }
+    TypeScore score(ts.key());
+
+    auto extracount = 0;
+    while(!stack.empty()) {
+        auto &cs_ = stack.top();
+        stack.pop();
+        auto const &cs = cs_.get();
+        fmt::print(fOUT, "[recordLeafScore] [{}] stack top: {}\n", ts.key(), cs.key());
+
+        score.addOutType(cleanType(cs.key())); //ops(cs.key()).type_);      // TODO Check if cleantype is better
+        for(auto const &n: cs.nexts()) {
+            fmt::print(fOUT, "[recordLeafScore] [{}] Adding to stack: {}\n", ts.key(), n.key());
+            stack.emplace(std::cref(n));
+        }
+
+        if(score.outScore() <= 1
+                && ops(cs.key()).td_.isVoidPointerType_) {
+            fmt::print(fOUT, "[recordLeafScore] [{}] Still probably void; out types so far: {}\n", cs.key(), score.outTypes());
+            auto key = cs.key();
+            if(TypeSummaries.find(key) != std::end(TypeSummaries)) {
+                for(auto const &n: TypeSummaries.at(key).nexts()) {
+                    fmt::print(fOUT, "[recordLeafScore] [{}] <> Adding to stack: {}\n", cs.key(), n.key());
+                    stack.emplace(std::cref(n));
+                }
+            }
+            else {
+                fmt::print(fOUT, "[recordLeafScore] [{}] <> No summary found in TS\n", cs.key());
+            }
+        }
+
+        if(stack.empty()) {
+            if(extracount < 10) {
+                fmt::print(fOUT, "[recordLeafScore] [{}] Empty stack, out types so far: {}\n", cs.key(), score.outTypes());
+                auto key = cs.key();
+                if(TypeSummaries.find(key) != std::end(TypeSummaries)) {
+                    fmt::print(fOUT, "[recordLeafScore] [{}] Getting summary from TS\n", cs.key());
+                    for(auto const &n: TypeSummaries.at(key).nexts()) {
+                        fmt::print(fOUT, "[recordLeafScore] [{}] >> Adding to stack: {}\n", cs.key(), n.key());
+                        stack.emplace(std::cref(n));
+                    }
+                }
+                else {
+                    fmt::print(fOUT, "[recordLeafScore] [{}] No summary found in TS\n", cs.key());
+                }
+                extracount++;
+            }
+        }
+    }
+
+    return score;
+}
+
 void scoreSummary(TypeSummary const &ts) {
     LOG_FUNCTION_TIME;
     auto const logKey = ts.key();
@@ -278,6 +356,14 @@ void scoreSummary(TypeSummary const &ts) {
             }
         }
 
+        if(ops(to.key()).td_.isVoidPointerType_) {
+            fmt::print(fOUT, "[scoreSummary] [{}] TO is voidptr, checking till leaves; current out types: [{}]\n", to.key(), SummarizedGenericScores.at(to.key()).outTypes());
+            auto leafScores = recordLeafScore(to);
+            fmt::print(fOUT, "[scoreSummary] [{}] Adding out types: {}\n", to.key(), leafScores.outTypes());
+            SummarizedGenericScores.at(to.key()).addOutTypes(leafScores);
+            fmt::print(fOUT, "[scoreSummary] [{}] Updated out types: {}\n", to.key(), SummarizedGenericScores.at(to.key()).outTypes());
+        }
+
         // reinterpret
         if(hasReinterpretCast(ts.key(), to.key(), linkInfo)) {
             recordEdgeScore("Reinterpret score", ts.key(), to.key(), SummarizedReinterpretScores, false);
@@ -296,16 +382,58 @@ void scoreSummary(TypeSummary const &ts) {
 
 bool isPotentiallyGeneric(CensusKey const &op) {
     auto const& opd = ops(op);
-    // Not a function pointer and has more than one intype
-    return !opd.td_.fptrType_ && SummarizedGenericScores.at(op).inScore() > 1;
+    auto isVoidPointer = opd.td_.isVoidPointerType_;
+    auto isFunctionPointer = opd.td_.fptrType_;
+    auto score = SummarizedGenericScores.at(op);
+
+    if(isFunctionPointer) {
+        // Function pointers or pointers that are only void* cannot be established as generic.
+        return false;
+    }
+
+    // Expected generics:
+    //      qsort.$0, qsort.$4.$0, qsort.$4.$1, qsort.vt, qsort.vl, qsort.vr
+    // Not generic:
+    //      cmpstr.$0,$1, cmpnum.$0,$1
+
+    // Eliminate void* difference
+    score.addInType("void");
+    score.addInType("void *");
+    score.addOutType("void");
+    score.addOutType("void *");
+
+    if(score.inScore() <= 2) {
+        // Genericity propagation ensures that aliased void pointer has more than one intype
+        return false;
+    }
+    /*
+    TypeScore::Typeset ins, outs;
+    auto voidFilter = [](auto const &type) {
+        return type != "void *"
+            && type != "void";
+    };
+
+    std::copy_if(begin(score.inTypeset()), end(score.inTypeset()), inserter(ins), voidFilter);
+    std::copy_if(begin(score.outTypeset()), end(score.outTypeset()), outserter(outs), voidFilter);
+    */
+
+    //return !opd.td_.fptrType_ && score.inScore() > 1
+    return score.inTypeset() == score.outTypeset();
 }
 
 bool isSingleUseVoid(CensusKey const &op) {
     auto isVoidPtr = ops(op).td_.isVoidPointerType_;
+
     auto genericScore = SummarizedGenericScores.at(op);
+    // Eliminate void* difference
+    genericScore.addInType("void");
+    genericScore.addInType("void *");
+    genericScore.addOutType("void");
+    genericScore.addOutType("void *");
+
     return isVoidPtr
-        && genericScore.inScore() == 1
-        && genericScore.inTypes() != "void *"
+        && genericScore.inScore() == 3
+        //&& genericScore.inTypes() != "void *"
         && genericScore.inTypes() == genericScore.outTypes();
 }
 

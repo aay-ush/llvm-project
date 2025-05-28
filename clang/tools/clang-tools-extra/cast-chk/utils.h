@@ -213,17 +213,18 @@ std::optional<unsigned> getParameterMatch(clang::FunctionDecl const &fn, clang::
 
 //---//
 namespace {
-    inline clang::Expr const* getSubExpr_(clang::MemberExpr const& e){
+    inline clang::Expr const* getSubExpr_(clang::MemberExpr const &e){
         return e.getBase(); // Also checkout getMemberDecl
     }
-    inline clang::Expr const* getSubExpr_(clang::ArraySubscriptExpr const&e) {
+    inline clang::Expr const* getSubExpr_(clang::ArraySubscriptExpr const &e) {
         return e.getBase();
     }
-    inline clang::Expr const* getSubExpr_(clang::UnaryExprOrTypeTraitExpr const&e) {
+    inline clang::Expr const* getSubExpr_(clang::UnaryExprOrTypeTraitExpr const &e) {
         return e.getArgumentExpr();
     }
+
     template<typename T>
-    clang::Expr const* getSubExpr_(T const& expr) {
+    clang::Expr const* getSubExpr_(T const &expr) {
         return expr.getSubExpr();
     }
 
@@ -265,6 +266,22 @@ namespace {
     }
     inline clang::VAArgExpr const* vaArgExpr_(clang::Expr const *e) {
         return dyn_cast<clang::VAArgExpr>(e);
+    }
+
+    inline clang::Expr const* getSubExpr_(clang::Expr const *e) {
+        if(auto const *ue = unaryExpr_(e)) {
+            CNS_DEBUG_MSG("getse", "UNARY");
+            return getSubExpr_(*ue);
+        }
+        if(auto const *ce = castExpr_(e)) {
+            return getSubExpr_(*ce);
+        }
+        if(auto const *pe = parenExpr_(e)) {
+            return getSubExpr_(*pe);
+        }
+        else {
+            return nullptr;//getSubExpr_(*e);
+        }
     }
 
     clang::DeclRefExpr const* getDREChild(clang::ASTContext &context, clang::Expr const *e);

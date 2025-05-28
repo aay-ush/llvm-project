@@ -400,15 +400,55 @@ void updateCensus(
         clang::ASTContext &context,
         clang::SourceManager const &sm,
         clang::DeclRefExpr const &src,
+        clang::Expr const &init,
         clang::VarDecl const &dest) {
 
     auto const logKey = String(context, src) + "->" + String(context, dest);
     CNS_DEBUG_MSG(logKey, "<declrefexpr, varDecl> begin");
     auto const *lhsDecl = src.getDecl();
     assert(lhsDecl);
-    CNS_INFO_MSG(logKey, "<declrefexpr, varDecl> building lhs data.");
-    auto lhs = buildOpData(context, sm, src, *lhsDecl);
-    CNS_INFO_MSG(logKey, "<declrefexpr, varDecl> building rhs data.");
+    CNS_INFO_MSG(logKey, "<declrefexpr, varDecl> building lhs data");
+    /*
+    auto const *lhsi = dest.getInit();
+    //auto lhs = buildOpData(context, sm, src, *lhsDecl);
+    if(!lhsi) {
+        CNS_DEBUG_MSG(logKey, "<declrefexpr, varDecl> Cannot build lhs data; no init expr");
+        return;
+    }
+    else {
+        CNS_DEBUG(logKey, "<declrefexpr, varDecl> Found init expr: {}", String(context, *lhsi));
+    }
+    //auto const *lhsce = getCastExpr(context, lhsi);
+    // First cast is LtoR
+    auto const *lhsce = castExpr_(lhsi);
+    if(!lhsce) {
+        CNS_DEBUG_MSG(logKey, "<declrefexpr, varDecl> Cannot build lhs data; no cast expr");
+        return;
+    }
+    else {
+        CNS_DEBUG(logKey, "<declrefexpr, varDecl> Found cast expr: {}", String(context, *lhsce));
+    }
+    //auto const *lhssub = getSubExpr_(lhsi);
+    auto const * lhsu = unaryExpr_(lhsce->getSubExpr());
+    if(!lhsu) {
+        CNS_DEBUG_MSG(logKey, "<declrefexpr, varDecl> Cannot build lhs data; no init uexp");
+        return;
+    }
+    else {
+        CNS_DEBUG(logKey, "<declrefexpr, varDecl> Unary expr: {}", String(context, *lhsu));
+    }
+    */
+    auto const *fin = getSubExpr_(&init);
+    if(!fin) {
+        CNS_DEBUG_MSG(logKey, "<declrefexpr, varDecl> No subexpr");
+        fin = &init;
+    }
+    else {
+        CNS_DEBUG(logKey, "<declrefexpr, varDecl> Sub expr: {}", String(context, *fin));
+    }
+
+    auto lhs = buildOpData(context, sm, src, *fin, *lhsDecl);
+    CNS_INFO_MSG(logKey, "<declrefexpr, varDecl> building rhs data");
     auto rhs = buildOpData(context, sm, dest);
 
     DominatorData dom = makeDominatorData(context, lhs, dest);
@@ -453,12 +493,18 @@ void processVar(MatchFinder::MatchResult const &result) {
              << "          : inside " << rhsData.container_ << "()\n"
              << "\n";
         */
-        CNS_INFO_MSG(logKey, "Skipping VarDecl init with a literal.");
+        CNS_INFO_MSG(logKey, "Skipping VarDecl init with a literal");
         return;
+    }
+    auto const *rhsinit = result.Nodes.getNodeAs<clang::Expr>("declex");
+    if(!rhsinit) {
+        auto rhsData = buildOpData(*context, *result.SourceManager, *rhs);
+        census.insert(makeCensusSourceNode(rhsData));
+        CNS_INFO_MSG(logKey, "Skipping VarDecl with missing initializer.");
     }
 
     assert(lhsRef);
-    updateCensus(*context, *result.SourceManager, *lhsRef, *rhs);
+    updateCensus(*context, *result.SourceManager, *lhsRef, *rhsinit, *rhs);
     CNS_DEBUG_MSG(logKey, "end");
 }
 
@@ -992,7 +1038,8 @@ DeclarationMatcher AssignMatcher =
         varDecl(
             anyOf(
                 hasDescendant(declRefExpr().bind("assignee")),
-                hasDescendant(expr().bind("literal")))
+                hasDescendant(expr().bind("literal"))),
+                has(ignoringParenImpCasts(expr().bind("declex")))
             ).bind("varDecl");
         //);
 
@@ -1981,6 +2028,8 @@ void printScores() {
     initScores();
     {
         LogTime scoreTime("Complete Score Summary");
+        // execution::par since each score works with a typeset and multiple additions
+        // of same type do not affect the score.
         std::for_each(std::execution::par, begin(TypeSummaries), end(TypeSummaries),
             [](auto const &node) {
                 scoreSummary(node.second);
