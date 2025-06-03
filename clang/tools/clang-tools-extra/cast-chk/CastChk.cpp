@@ -408,36 +408,7 @@ void updateCensus(
     auto const *lhsDecl = src.getDecl();
     assert(lhsDecl);
     CNS_INFO_MSG(logKey, "<declrefexpr, varDecl> building lhs data");
-    /*
-    auto const *lhsi = dest.getInit();
-    //auto lhs = buildOpData(context, sm, src, *lhsDecl);
-    if(!lhsi) {
-        CNS_DEBUG_MSG(logKey, "<declrefexpr, varDecl> Cannot build lhs data; no init expr");
-        return;
-    }
-    else {
-        CNS_DEBUG(logKey, "<declrefexpr, varDecl> Found init expr: {}", String(context, *lhsi));
-    }
-    //auto const *lhsce = getCastExpr(context, lhsi);
-    // First cast is LtoR
-    auto const *lhsce = castExpr_(lhsi);
-    if(!lhsce) {
-        CNS_DEBUG_MSG(logKey, "<declrefexpr, varDecl> Cannot build lhs data; no cast expr");
-        return;
-    }
-    else {
-        CNS_DEBUG(logKey, "<declrefexpr, varDecl> Found cast expr: {}", String(context, *lhsce));
-    }
-    //auto const *lhssub = getSubExpr_(lhsi);
-    auto const * lhsu = unaryExpr_(lhsce->getSubExpr());
-    if(!lhsu) {
-        CNS_DEBUG_MSG(logKey, "<declrefexpr, varDecl> Cannot build lhs data; no init uexp");
-        return;
-    }
-    else {
-        CNS_DEBUG(logKey, "<declrefexpr, varDecl> Unary expr: {}", String(context, *lhsu));
-    }
-    */
+
     auto const *fin = getSubExpr_(&init);
     if(!fin) {
         CNS_DEBUG_MSG(logKey, "<declrefexpr, varDecl> No subexpr");
@@ -1273,7 +1244,7 @@ public:
             fmt::print(fOUT, ">---END\n");
         };
 
-        filterPrint(voidPointers_, "Generics found " + std::to_string(generics), Pattern::generic);
+        filterPrintWithScore(voidPointers_, "Generics found " + std::to_string(generics), Pattern::generic);
         filterPrint(voidPointers_, "Fptrs found " + std::to_string(fptrs), Pattern::fptr);
         filterPrint(voidPointers_, "Ignored list " + std::to_string(ignored), Pattern::unchecked);
         //filterPrint(voidPointers_, "Wild list", Pattern::wild);
@@ -1423,6 +1394,277 @@ private:
 
 };
 
+// TODO function with parameters
+// matches both function and prototypes
+// useless to match functions that have no pointer parameters
+// TODO Filter for parameters of fptr and pointer type
+auto StatFunctionMatcher = functionDecl(
+        hasAnyParameter(hasType(pointerType())))
+            .bind("statFunction");
+
+struct ParameterScores {
+    unsigned generic_ = 0;
+    unsigned subtype_ = 0;
+    unsigned regular_ = 0;
+    unsigned unknown_ = 0;
+    unsigned ignored_ = 0;
+};
+
+struct FunctionData {
+    std::string name_;
+    std::string location_;
+    std::vector<OpData> params_;
+    ParameterScores paramScores_;
+
+    auto key() const { return location_ + name_; }
+};
+
+bool operator==(FunctionData const &a, FunctionData const &b) {
+    return a.key() == b.key();
+}
+bool operator!=(FunctionData const &a, FunctionData const &b) {
+    return !(a == b);
+}
+
+//---
+using FunctionScore = std::unordered_map<std::string, FunctionData>;
+FunctionScore FunctionSummaries;
+
+
+/*
+template<>
+struct std::hash<FunctionData>
+{
+    std::size_t operator()(FunctionData const &fd) const noexcept {
+        return std::hash<std::string>{}(fd.location_+fd.name_);
+    }
+};
+*/
+
+bool isGenericFunction(ParameterScores const&);
+bool isSubtypeFunction(ParameterScores const&);
+bool isIgnoredFunction(FunctionData const&);
+
+void scoreParameters(FunctionData &function) {
+    auto &ps = function.paramScores_;
+
+    // check each parameter for generic-type pointer
+    for(auto const &p: function.params_) {
+        if(TypeSummaries.find(p.qn_) == std::end(TypeSummaries)) {
+        // If param is not in census
+            ps.ignored_++;
+            continue;
+        }
+
+        bool fptr = false, voidptr = false;
+        if(p.td_.isVoidPointerType_) {
+            voidptr = true;
+        }
+
+        if(p.td_.fptrType_) {
+        // for fptr type parameter: check parameters of fptr
+            fptr = true;
+            CNS_DEBUG(p.qn_, "{} is fptr type", p.qn_);
+
+            auto key = p.location_ + p.qn_;
+            if(auto it = FunctionSummaries.find(key); it != std::end(FunctionSummaries)) {
+                CNS_DEBUG(p.qn_, "Found existing FunctionSummary for {}", p.qn_);
+                auto fps = FunctionSummaries[key].paramScores_;
+                if(isGenericFunction(fps)) {
+                    ps.generic_++;
+                }
+                else if(isSubtypeFunction(fps)) {
+                    ps.subtype_++;
+                }
+                else if(isIgnoredFunction(FunctionSummaries[key])) {
+                    ps.ignored_++;
+                }
+                else if(fps.regular_ > fps.unknown_) {
+                    ps.regular_++;
+                }
+                else {
+                    ps.unknown_++;
+                }
+            }
+            else {
+                // TODO: fptr function data not built
+                CNS_DEBUG(p.qn_, "No FunctionSummary for {}", p.qn_);
+                ps.ignored_++;
+            }
+        }
+
+        if(isPotentiallyGeneric(p.qn_)) {
+            ps.generic_++;
+        }
+        else if(isPotentiallySubtype(p.qn_)) {
+            ps.subtype_++;
+        }
+        else if(!fptr && !voidptr){
+            ps.regular_++;
+        }
+        else {
+            ps.unknown_++;
+        }
+    }
+}
+
+FunctionData makeFunctionDataFptr(OpData const &fpop) {
+    auto name = fpop.qn_;
+    auto location = fpop.location_;
+
+    std::vector<OpData> params;
+    unsigned pos = 0;
+    auto fpk = name + ".$" + std::to_string(pos);
+    while(census.find(fpk) != std::end(census)) {
+        params.push_back(ops(fpk));
+        pos++;
+        fpk = name + ".$" + std::to_string(pos);
+    }
+    return {name, location, params, {}};
+}
+
+FunctionData makeFunctionData(
+    clang::ASTContext const &context,
+    clang::FunctionDecl const &function) {
+    auto const logkey = String(context, function);
+
+    CNS_DEBUG_MSG(logkey, "begin");
+    auto name = String(context, function);
+    auto const &sm = context.getSourceManager();
+    auto location = function.getLocation().printToString(sm);
+
+    FunctionData fd {name, location, {}, {}};
+    unsigned pos = 0;
+    for(auto const &_: function.parameters()) {
+        auto key = name + ".$" + std::to_string(pos++);
+        auto const it = census.find(key);
+        if(it == std::end(census)) {
+            CNS_DEBUG(logkey, "{} not found in census", key);
+        }
+        else {
+            CNS_DEBUG(logkey, "{} found in census", key);
+            fd.params_.push_back(ops(key));
+
+            if(TypeSummaries.find(key) != std::end(TypeSummaries)) {
+                CNS_DEBUG(logkey, "Found summary for {}", key);
+                if(ops(key).td_.fptrType_) {
+                    CNS_DEBUG(logkey, "Found fptr parameter: {}", key);
+                    auto fdp = makeFunctionDataFptr(ops(key));
+                    scoreParameters(fdp);
+                    FunctionSummaries.insert({fdp.key(), fdp});
+                }
+            }
+            else {
+                CNS_DEBUG(logkey, "No summary for {}", key);
+            }
+        }
+    }
+    scoreParameters(fd);
+
+    CNS_DEBUG_MSG(logkey, "end");
+    return fd;
+}
+
+//---
+bool isGenericFunction(ParameterScores const &ps) {
+    return ps.generic_ > 0;
+    /*
+    return ps.generic_ > ps.unknown_
+        && ps.generic_ > ps.regular_;
+    */
+}
+bool isSubtypeFunction(ParameterScores const &ps) {
+    return ps.subtype_ > 0;
+}
+
+bool isIgnoredFunction(FunctionData const &fd) {
+    return fd.params_.size() == fd.paramScores_.ignored_;
+}
+//---
+
+
+class StatFunctionMatchCallback: public MatchFinder::MatchCallback {
+public:
+    void run(MatchFinder::MatchResult const &result) override {
+        auto const *fd = result.Nodes.getNodeAs<clang::FunctionDecl>("statFunction");
+        auto *context = result.Context;
+        // From function decl check parameters for void* and function ptr
+
+        if(!fd) {
+            return;
+        }
+
+        auto function = makeFunctionData(*context, *fd);
+        FunctionSummaries.insert({function.key(), function});
+    }
+
+    void print() {
+        constexpr auto logKey = "StatFuncs";
+
+        auto fcsv = fopen("census-func-stats.csv", "w");
+        if(fcsv == nullptr) {
+            fmt::print(stderr, "Error opening census-func-stats.csv\n");
+            return;
+        }
+
+        std::for_each(begin(FunctionSummaries), end(FunctionSummaries),
+                [&](auto const &fs) {
+                    if(isGenericFunction(fs.second.paramScores_)) {
+                        genericFunctions_.insert({fs.first, FunctionIntent::generic});
+                    }
+                    else if(isSubtypeFunction(fs.second.paramScores_)) {
+                        subtypeFunctions_.insert({fs.first, FunctionIntent::subtype});
+                    }
+                    else if(isIgnoredFunction(fs.second)) {
+                        ignoredFunctions_.insert({fs.first, FunctionIntent::ignored});
+                    }
+                    else {
+                        unknownFunctions_.insert({fs.first, FunctionIntent::unknown});
+                    }
+                });
+
+        fmt::print(fOUT, "[{}] Generic()\t| Subtype()\t| Ignored()\t| Unknown()\n", logKey);
+        fmt::print(fOUT, "[{}] {:<8}\t| {:<8}\t|  {:<8}\t| {:<8}\n", logKey,
+                genericFunctions_.size(), subtypeFunctions_.size(),
+                ignoredFunctions_.size(), unknownFunctions_.size());
+
+        fmt::print(fcsv, "Location,Function,Intent,Generics,Subtype,Regular,Ignored,Unknown\n");
+        auto csvOut = [&fcsv](auto const &funcs) {
+            std::for_each(begin(funcs), end(funcs),
+                    [&](auto const &fi) {
+                        auto const &function = FunctionSummaries.at(fi.first);
+                        auto const &ps = function.paramScores_;
+                        fmt::print(fcsv, "{},{},{},{},{},{},{},{}\n",
+                                function.location_, function.name_,
+                                fi.second,
+                                ps.generic_, ps.subtype_, ps.regular_, ps.ignored_, ps.unknown_);
+                    });
+        };
+
+        csvOut(genericFunctions_);
+        csvOut(subtypeFunctions_);
+        csvOut(ignoredFunctions_);
+        csvOut(unknownFunctions_);
+
+        fclose(fcsv);
+    }
+
+public:
+    enum class FunctionIntent {
+        generic,
+        subtype,
+        ignored,
+        unknown
+    };
+
+private:
+    using Stat = std::unordered_map<std::string, FunctionIntent>;
+    Stat genericFunctions_;
+    Stat subtypeFunctions_;
+    Stat ignoredFunctions_;
+    Stat unknownFunctions_;
+};
+
 template<>
 struct fmt::formatter<StatMatchCallback::Pattern>: formatter<string_view> {
     format_context::iterator format(StatMatchCallback::Pattern s, format_context& ctx) const {
@@ -1454,20 +1696,23 @@ struct fmt::formatter<StatMatchCallback::Pattern>: formatter<string_view> {
 };
 
 
-/*
-StatementMatcher CastMatcher2 =
-    castExpr(
-        allOf(
-            hasCastKind(CK_LValueToRValue),
-            anyOf( // technically just any of expr or decl is needed.
-                hasAncestor(declStmt().bind("var")),
-                hasAncestor(binaryOperator().bind("binop")),
-                hasAncestor(callExpr().bind("call")),
-                hasAncestor(expr().bind("gexpr"))),
-                hasDescendant(declRefExpr().bind("castee")))
-        ).bind("cast");
-*/
-// TODO: Add missing cast dumps. For example in other cast types.(?).
+template<>
+struct fmt::formatter<StatFunctionMatchCallback::FunctionIntent>: formatter<string_view> {
+    format_context::iterator format(StatFunctionMatchCallback::FunctionIntent s, format_context& ctx) const {
+        string_view ret = "Unknown";
+        switch(s) {
+            case StatFunctionMatchCallback::FunctionIntent::generic:
+                ret = "Generic"; break;
+            case StatFunctionMatchCallback::FunctionIntent::subtype:
+                ret = "Subtype"; break;
+            case StatFunctionMatchCallback::FunctionIntent::ignored:
+                ret = "Ignored"; break;
+            case StatFunctionMatchCallback::FunctionIntent::unknown:
+                ret = "Unknown"; break;
+        }
+        return formatter<string_view>::format(ret, ctx);
+    }
+};
 
 //---
 unsigned SUMMARY_DEPTH = 0;
@@ -1693,13 +1938,17 @@ int main(int argc, const char **argv) {
         printScores();
     }
 
-    StatMatchCallback statistician;
-    MatchFinder statFinder;
-    statFinder.addMatcher(StatCastMatcher, &statistician);
-    statFinder.addMatcher(StatPointerMatcher, &statistician);
-    //statFinder.addMatcher(StatVoidPointerMatcher, &statistician);
-    rc = Tool.run(newFrontendActionFactory(&statFinder).get());
-    statistician.printCombinedReport(tcst);
+    StatMatchCallback statPtrs;
+    StatFunctionMatchCallback statFuncs;
+    MatchFinder statistician;
+    statistician.addMatcher(StatCastMatcher, &statPtrs);
+    statistician.addMatcher(StatPointerMatcher, &statPtrs);
+    statistician.addMatcher(StatFunctionMatcher, &statFuncs);
+
+    rc = Tool.run(newFrontendActionFactory(&statistician).get());
+    statPtrs.printCombinedReport(tcst);
+    statFuncs.print();
+
 
     // Generic pointer export (Bristol)
     auto fgcsv = fopen("generic-ptrs.csv", "w");
@@ -1707,7 +1956,7 @@ int main(int argc, const char **argv) {
         fmt::print(stderr, "Error opening generic-ptrs.csv\n");
         return 1;
     }
-    statistician.csvGenerics(fgcsv);
+    statPtrs.csvGenerics(fgcsv);
     fclose(fgcsv);
 
     fclose(fOUT);

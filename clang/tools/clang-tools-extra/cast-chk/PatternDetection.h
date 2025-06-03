@@ -386,7 +386,7 @@ bool isPotentiallyGeneric(CensusKey const &op) {
     auto isFunctionPointer = opd.td_.fptrType_;
     auto score = SummarizedGenericScores.at(op);
 
-    if(isFunctionPointer) {
+    if(isFunctionPointer || !isVoidPointer) {
         // Function pointers or pointers that are only void* cannot be established as generic.
         return false;
     }
@@ -402,7 +402,7 @@ bool isPotentiallyGeneric(CensusKey const &op) {
     score.addOutType("void");
     score.addOutType("void *");
 
-    if(score.inScore() <= 2) {
+    if(score.inScore() <= 3) {
         // Genericity propagation ensures that aliased void pointer has more than one intype
         return false;
     }
@@ -438,7 +438,8 @@ bool isSingleUseVoid(CensusKey const &op) {
 }
 
 bool isPotentiallySubtype(CensusKey const &op) {
-    return SummarizedSubtypingScores.at(op).outScore() > 1;
+    return SummarizedSubtypingScores.at(op).outScore() > 1
+        && !isPotentiallyGeneric(op);
 }
 
 bool isReinterpret(CensusKey const &op) {
