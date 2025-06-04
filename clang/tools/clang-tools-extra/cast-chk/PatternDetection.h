@@ -266,8 +266,12 @@ void recordEdgeDom(CensusKey const &from, CensusKey const &to, DominatorData con
 #include <stack>
 
 TypeScore recordLeafScore(TypeSummary const &ts) {
+    auto const &logKey = ts.key();
+    CNS_DEBUG_MSG(logKey, "begin");
+
     std::stack<std::reference_wrapper<const TypeSummary>> stack;
     for(auto const &n: ts.nexts()) {
+        CNS_DEBUG(logKey, "Pushing nexts to stack: {}\n", n.key());
         stack.emplace(std::cref(n));
     }
     TypeScore score(ts.key());
@@ -277,48 +281,53 @@ TypeScore recordLeafScore(TypeSummary const &ts) {
         auto &cs_ = stack.top();
         stack.pop();
         auto const &cs = cs_.get();
-        fmt::print(fOUT, "[recordLeafScore] [{}] stack top: {}\n", ts.key(), cs.key());
+        CNS_DEBUG(logKey, "stack top: {}\n", cs.key());
 
         score.addOutType(cleanType(cs.key())); //ops(cs.key()).type_);      // TODO Check if cleantype is better
         for(auto const &n: cs.nexts()) {
-            fmt::print(fOUT, "[recordLeafScore] [{}] Adding to stack: {}\n", ts.key(), n.key());
+            CNS_DEBUG(logKey, "Pushing to stack: {}\n", n.key());
             stack.emplace(std::cref(n));
         }
 
+        auto const &l2key = cs.key();
+
         if(score.outScore() <= 1
                 && ops(cs.key()).td_.isVoidPointerType_) {
-            fmt::print(fOUT, "[recordLeafScore] [{}] Still probably void; out types so far: {}\n", cs.key(), score.outTypes());
+            CNS_DEBUG(l2key, "Still probably void; out types so far: {}\n", score.outTypes());
+
             auto key = cs.key();
             if(TypeSummaries.find(key) != std::end(TypeSummaries)) {
                 for(auto const &n: TypeSummaries.at(key).nexts()) {
-                    fmt::print(fOUT, "[recordLeafScore] [{}] <> Adding to stack: {}\n", cs.key(), n.key());
+                    CNS_DEBUG(l2key, "Pushing next of next (cs) from TS to stack: {}\n", n.key());
                     stack.emplace(std::cref(n));
                 }
             }
             else {
-                fmt::print(fOUT, "[recordLeafScore] [{}] <> No summary found in TS\n", cs.key());
+                CNS_DEBUG_MSG(l2key, "No summary in TS\n");
             }
         }
 
         if(stack.empty()) {
             if(extracount < 10) {
-                fmt::print(fOUT, "[recordLeafScore] [{}] Empty stack, out types so far: {}\n", cs.key(), score.outTypes());
+                CNS_DEBUG(l2key, "[{}] Empty stack, out types so far: {}\n", extracount, score.outTypes());
+
                 auto key = cs.key();
                 if(TypeSummaries.find(key) != std::end(TypeSummaries)) {
-                    fmt::print(fOUT, "[recordLeafScore] [{}] Getting summary from TS\n", cs.key());
+                    CNS_DEBUG_MSG(l2key, "Extending leaf summary from TS\n");
                     for(auto const &n: TypeSummaries.at(key).nexts()) {
-                        fmt::print(fOUT, "[recordLeafScore] [{}] >> Adding to stack: {}\n", cs.key(), n.key());
+                        CNS_DEBUG(l2key, "Pushing to stack: {}\n", n.key());
                         stack.emplace(std::cref(n));
                     }
                 }
                 else {
-                    fmt::print(fOUT, "[recordLeafScore] [{}] No summary found in TS\n", cs.key());
+                    CNS_DEBUG_MSG(l2key, "No summary found in TS\n");
                 }
                 extracount++;
             }
         }
     }
 
+    CNS_DEBUG_MSG(logKey, "end");
     return score;
 }
 
@@ -357,11 +366,11 @@ void scoreSummary(TypeSummary const &ts) {
         }
 
         if(ops(to.key()).td_.isVoidPointerType_) {
-            fmt::print(fOUT, "[scoreSummary] [{}] TO is voidptr, checking till leaves; current out types: [{}]\n", to.key(), SummarizedGenericScores.at(to.key()).outTypes());
+            CNS_DEBUG(logKey, "TO({}) is voidptr, checking till leaves; current out types: [{}]\n", to.key(), SummarizedGenericScores.at(to.key()).outTypes());
             auto leafScores = recordLeafScore(to);
-            fmt::print(fOUT, "[scoreSummary] [{}] Adding out types: {}\n", to.key(), leafScores.outTypes());
+            CNS_DEBUG(logKey,"TO({}) Adding out types: {}\n", to.key(), leafScores.outTypes());
             SummarizedGenericScores.at(to.key()).addOutTypes(leafScores);
-            fmt::print(fOUT, "[scoreSummary] [{}] Updated out types: {}\n", to.key(), SummarizedGenericScores.at(to.key()).outTypes());
+            CNS_DEBUG(logKey, "TO({}) Updated out types: {}\n", to.key(), SummarizedGenericScores.at(to.key()).outTypes());
         }
 
         // reinterpret
