@@ -758,6 +758,25 @@ OpData buildOpData<CastSourceType::UnaryOp>(
     CNS_DEBUG(String(context, op), "type: {}", Typename(context, op));
     // Cannot fail since unary op must have a subexpr
     auto const * sube_ = getSubExpr_(op);
+    if(!sube_) {
+        CNS_ERROR_MSG(String(context, op), "Unary op without a subexpr");
+        return {};
+        /*
+        return {
+            cnsHash(context, op),
+            String(context, op),
+            Typename(context, op),
+            TypeCategory(context, op),
+            "(TODO param_check)",
+            getContainerFunction(context, op),
+            getLinkedRecord(op),
+            linkedTypeCategory(op),
+            castExpr.getExprLoc().printToString(sm),
+            qualifiedName(context, op), //String(context, op)
+            makeTypeDataExtra(context, sm, op)
+        };
+        */
+    }
     auto const & sube = *sube_;
 
     return {

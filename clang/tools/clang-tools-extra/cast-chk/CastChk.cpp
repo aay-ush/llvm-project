@@ -465,6 +465,7 @@ void processVar(MatchFinder::MatchResult const &result) {
              << "\n";
         */
         CNS_INFO_MSG(logKey, "Skipping VarDecl init with a literal");
+        CNS_DEBUG_MSG(logKey, "end");
         return;
     }
     auto const *rhsinit = result.Nodes.getNodeAs<clang::Expr>("declex");
@@ -472,6 +473,8 @@ void processVar(MatchFinder::MatchResult const &result) {
         auto rhsData = buildOpData(*context, *result.SourceManager, *rhs);
         census.insert(makeCensusSourceNode(rhsData));
         CNS_INFO_MSG(logKey, "Skipping VarDecl with missing initializer.");
+        CNS_DEBUG_MSG(logKey, "end");
+        return;
     }
 
     assert(lhsRef);
@@ -1603,7 +1606,7 @@ public:
 
         auto fcsv = fopen("census-func-stats.csv", "w");
         if(fcsv == nullptr) {
-            fmt::print(stderr, "Error opening census-func-stats.csv\n");
+            CNS_ERROR_MSG(logKey, "Error opening census-func-stats.csv\n");
             return;
         }
 

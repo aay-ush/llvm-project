@@ -270,61 +270,50 @@ TypeScore recordLeafScore(TypeSummary const &ts) {
     CNS_DEBUG_MSG(logKey, "begin");
 
     std::stack<std::reference_wrapper<const TypeSummary>> stack;
-    for(auto const &n: ts.nexts()) {
-        CNS_DEBUG(logKey, "Pushing nexts to stack: {}\n", n.key());
-        stack.emplace(std::cref(n));
-    }
-    TypeScore score(ts.key());
-
-    auto extracount = 0;
-    while(!stack.empty()) {
-        auto &cs_ = stack.top();
-        stack.pop();
-        auto const &cs = cs_.get();
-        CNS_DEBUG(logKey, "stack top: {}\n", cs.key());
-
-        score.addOutType(cleanType(cs.key())); //ops(cs.key()).type_);      // TODO Check if cleantype is better
-        for(auto const &n: cs.nexts()) {
-            CNS_DEBUG(logKey, "Pushing to stack: {}\n", n.key());
-            stack.emplace(std::cref(n));
-        }
-
-        auto const &l2key = cs.key();
-
-        if(score.outScore() <= 1
-                && ops(cs.key()).td_.isVoidPointerType_) {
-            CNS_DEBUG(l2key, "Still probably void; out types so far: {}\n", score.outTypes());
-
-            auto key = cs.key();
-            if(TypeSummaries.find(key) != std::end(TypeSummaries)) {
-                for(auto const &n: TypeSummaries.at(key).nexts()) {
-                    CNS_DEBUG(l2key, "Pushing next of next (cs) from TS to stack: {}\n", n.key());
-                    stack.emplace(std::cref(n));
-                }
+    std::unordered_map<CensusKey, bool> seen;
+    auto pushNexts = [&](auto const &t) {
+        for(auto const &n: t.nexts()) {
+            if(seen.find(n.key()) == std::end(seen)) {
+                CNS_DEBUG(logKey, "Pushing nexts to stack: {}", n.key());
+                stack.emplace(std::cref(n));
             }
             else {
-                CNS_DEBUG_MSG(l2key, "No summary in TS\n");
+                CNS_DEBUG(logKey, "Skipping seen node: {}", n.key());
             }
         }
+    };
 
-        if(stack.empty()) {
-            if(extracount < 10) {
-                CNS_DEBUG(l2key, "[{}] Empty stack, out types so far: {}\n", extracount, score.outTypes());
+    TypeScore score(ts.key());
+    pushNexts(ts);
 
-                auto key = cs.key();
-                if(TypeSummaries.find(key) != std::end(TypeSummaries)) {
-                    CNS_DEBUG_MSG(l2key, "Extending leaf summary from TS\n");
-                    for(auto const &n: TypeSummaries.at(key).nexts()) {
-                        CNS_DEBUG(l2key, "Pushing to stack: {}\n", n.key());
-                        stack.emplace(std::cref(n));
-                    }
-                }
-                else {
-                    CNS_DEBUG_MSG(l2key, "No summary found in TS\n");
-                }
-                extracount++;
+    //auto extracount = 0;
+    while(!stack.empty()) {
+        auto const &top = stack.top().get();
+        auto const &topk = top.key();
+        CNS_DEBUG(logKey, "stack top: {}\n", topk);
+        seen[topk] = true;
+        stack.pop();
+
+        score.addOutType(cleanType(top.key())); //ops(top.key()).type_);
+
+        // We need to reach the leaf regardless of type score.
+        // To reach the leaf:
+        //  - push nexts of top to stack
+        pushNexts(top);
+        auto isVoidLeaf = top.nexts().empty() && ops(topk).td_.isVoidPointerType_;
+
+        //  - if nexts is empty => leaf
+        //     - if leaf is void*, fetch top's history from TS and push on stack
+        if(isVoidLeaf) {
+            if(TypeSummaries.find(topk) != std::end(TypeSummaries)) {
+                CNS_DEBUG_MSG(topk, "Pushing summary for void* leaf from TypeSummaries\n");
+                pushNexts(TypeSummaries.at(topk));
+            }
+            else {
+                CNS_DEBUG_MSG(topk, "No summary found for void* leaf in TypeSummaries\n");
             }
         }
+        //     - else, noop
     }
 
     CNS_DEBUG_MSG(logKey, "end");
