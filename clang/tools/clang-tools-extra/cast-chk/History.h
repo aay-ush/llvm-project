@@ -1510,8 +1510,8 @@ std::string TypeSummary::summarize(CastStat &cst, std::optional<unsigned> level,
     }
 
     ssr.append(" <" + linkInfo_.linkType() + ">");
-    if(!linkInfo_.parentCondition().condition_.empty()
-            && linkInfo_.parentCondition().condition_ != "NoCond") {
+    if(!linkInfo_.parentCondition().condition().empty()
+            && linkInfo_.parentCondition().condition() != "NoCond") {
         ssr.append(" {" + String(linkInfo_.parentCondition()) + "}");
     }
 

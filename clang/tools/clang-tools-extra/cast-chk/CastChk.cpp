@@ -1086,10 +1086,13 @@ public:
 
                 auto const * fpt = pointee->getAs<clang::FunctionProtoType>();
                 if(!fpt) {
-                    CNS_ERROR("statfp", "Cannot get function type for fptr: {}", key);
+                    CNS_DEBUG("statfp", "Cannot get function type for fptr: {}", key);
+                    // TODO: add to functionPointers_?
                 }
                 else {
-                    CNS_ERROR("statfp", "Found function proto type for fptr: {}", key);
+                    CNS_DEBUG("statfp", "Found function proto type for fptr: {}", key);
+                    functionPointers_.emplace(key, idPattern);
+
                     unsigned pos = 0;
                     std::for_each(fpt->param_type_begin(), fpt->param_type_end(),
                         [&](auto const &parmType) {
@@ -1103,6 +1106,7 @@ public:
                             }
 
                             // If non-function pointers, update pointers
+                                // TODO: add to functionPointers_ otherwise?
                             if(parmType->isPointerType() && !parmType->isFunctionPointerType()) {
                                 pointers_.emplace(pkey, pPattern);
                             }
@@ -1165,7 +1169,7 @@ public:
         };
         auto generics = countPattern(voidPointers_, Pattern::generic);
         auto singles = countPattern(voidPointers_, Pattern::singleVoid);
-        auto subtypes = countPattern(voidPointers_, Pattern::subtyping);
+        //auto subtypes = countPattern(voidPointers_, Pattern::subtyping);
         auto reinterprets = countPattern(voidPointers_, Pattern::reinterpret);
         auto unused = countPattern(voidPointers_, Pattern::noSource);
         auto sinks = countPattern(voidPointers_, Pattern::sink);
@@ -1173,9 +1177,12 @@ public:
         auto uncasts = countPattern(voidPointers_, Pattern::noCast);
         auto ignored = countPattern(voidPointers_, Pattern::unchecked);
         auto fptrs = countPattern(voidPointers_, Pattern::fptr);
-        auto totaltyped = singles + generics + subtypes + reinterprets + fptrs;
+        //auto totaltyped = singles + generics + subtypes + reinterprets + fptrs;
+        auto totaltyped = singles + generics + reinterprets + fptrs;
         //auto fptrWilds = countPattern(voidPointersFptr_, Pattern::wild);
         auto allUncasts = countPattern(pointers_, Pattern::noCast);
+
+        auto subtypes = countPattern(pointers_, Pattern::subtyping);
 
         fmt::print(fOUT, "[{}] Wild\t\t| Sinks\t\t| Unused\t| Total Wild\n", logKey);
         fmt::print(fOUT, "[{}] {}\n", logKey, std::string(60, '-'));
@@ -1257,6 +1264,8 @@ public:
         filterPrintWithScore(voidPointers_, "[IGNORED] Not used in any cast " + std::to_string(uncasts), Pattern::noCast);
         filterPrintWithScore(voidPointers_, "[WILD] Wild list " + std::to_string(wilds), Pattern::wild);
         //filterPrintWithScore(voidPointersFptr_, "[WILD] Wild list from fptrs", Pattern::wild);
+
+        filterPrintWithScore(pointers_, "[SUBTYPING] Subtypes list " + std::to_string(subtypes), Pattern::subtyping);
 
         fmt::print(fcsv, "Pattern,CensusKey,Parent ptrs\n");
         std::for_each(begin(fromVoidP), end(fromVoidP),
@@ -1342,6 +1351,19 @@ public:
         fmt::print(stdout, "[StatCompleteCSV] {}\n", completeCSV);
     }
 
+    /*
+     * Two incomplete statemetnts inside a complete block break compiler errors
+    void collectEnumData(CensusKey const &k) {
+        if(!isVariant(k)) {
+            return;
+        }
+
+        VariantData vd;
+        auto vdName = 
+        if(enums_.find(
+    }
+    */
+
 public:
     enum class Pattern {
         generic = 0,
@@ -1394,7 +1416,7 @@ private:
     Stat pointers_;
     Stat voidPointers_;
     Stat voidPointersFptr_;
-
+    Stat functionPointers_;
 };
 
 // TODO function with parameters
@@ -1606,7 +1628,7 @@ public:
 
         auto fcsv = fopen("census-func-stats.csv", "w");
         if(fcsv == nullptr) {
-            CNS_ERROR_MSG(logKey, "Error opening census-func-stats.csv\n");
+            CNS_ERROR_MSG(logKey, "Error opening census-func-stats.csv");
             return;
         }
 
@@ -1716,6 +1738,38 @@ struct fmt::formatter<StatFunctionMatchCallback::FunctionIntent>: formatter<stri
         return formatter<string_view>::format(ret, ctx);
     }
 };
+
+void printVariantsCSV() {
+    auto fcsv = fopen("census-variants.csv", "w");
+    if(fcsv == nullptr) {
+        CNS_ERROR_MSG("csvVariants", "Error opening census-variants.csv");
+        return;
+    }
+
+    fmt::print(fcsv, "Enum,Field,Value\n");
+    for(auto const &[name, v]: Variants) {
+        for(auto const &[attr, val]: v.attrs_) {
+            fmt::print(fcsv, "{},{},\"{}\"\n",
+                    name, attr, val);
+        }
+    }
+
+    fclose(fcsv);
+}
+
+void printVariants() {
+    printVariantsCSV();
+    auto constexpr logKey = "Variants";
+    fmt::print(fOUT, "[{}] (begin) Variants found: {}\n", logKey, Variants.size());
+    for(auto const &[name, v]: Variants) {
+        fmt::print(fOUT, "[{}] {} {{\n", logKey, name);
+        for(auto const &[attr, val]: v.attrs_) {
+            fmt::print(fOUT, "[{}]\t{} = {},\n", logKey, attr, val);
+        }
+        fmt::print(fOUT, "[{}] }}\n", logKey);
+    }
+    fmt::print(fOUT, "[{}] (end)   Variants found: {}\n", logKey, Variants.size());
+}
 
 //---
 unsigned SUMMARY_DEPTH = 0;
@@ -1961,6 +2015,8 @@ int main(int argc, const char **argv) {
     }
     statPtrs.csvGenerics(fgcsv);
     fclose(fgcsv);
+
+    printVariants();
 
     fclose(fOUT);
     return rc;

@@ -5,12 +5,20 @@
 
 //--
 struct CNSCondition {
-    std::string condition_;
+    bool isSwitch_ = false;
+    std::string lhs_;
+    std::string rhs_;
+    std::optional<std::string> typeLhs_;
+    std::optional<std::string> typeRhs_;
     std::string location_;
+
+    std::string condition() const {
+        return lhs_ + " == " + rhs_;
+    }
 };
 
 std::string String(CNSCondition const &c) {
-    return c.condition_;
+    return c.condition();
 }
 
 CNSCondition buildSwitchCaseCondition(ASTContext &context, clang::SwitchCase const& sct) {
@@ -42,6 +50,7 @@ CNSCondition buildSwitchCaseCondition(ASTContext &context, clang::SwitchCase con
     auto rhs = get_case(context, &sct);
     CNS_DEBUG(logKey, "Case so far: {}", rhs);
 
+    // Add matching cascading cases
     auto parents = context.getParents(sct);
     while(parents.size() != 0
             && parents[0].template get<clang::SwitchStmt>() == nullptr) {
@@ -62,11 +71,32 @@ CNSCondition buildSwitchCaseCondition(ASTContext &context, clang::SwitchCase con
 
     CNS_DEBUG_MSG(logKey, "Found parent switch statement");
     lhs = String(context, *(swtch->getCond()));
-    CNS_DEBUG(logKey, "Switch condition: {}", lhs);
-    CNS_DEBUG_MSG(logKey, "end");
+    auto swtchType = Typename(context, *(swtch->getCond()));
+    CNS_DEBUG(logKey, "Switch condition: {} ({})", lhs, swtchType);
 
-    return {
-        lhs + " == " + rhs,
+    auto ldre = getDREChild(context, swtch->getCond());
+    if(ldre) {
+        CNS_DEBUG(logKey, "Found LHS dre: {}", String(context, *ldre));
+        auto lqt = getPointedAtType(context, ldre->getType()).first.getUnqualifiedType();
+        CNS_DEBUG_MSG(logKey, "end");
+        return CNSCondition {
+            true,
+            lhs,
+            rhs,
+            Typename(context, lqt),
+            swtchType,
+            get_loc(context, &sct)
+        };
+    }
+
+    // No lhs dre
+    CNS_DEBUG_MSG(logKey, "end");
+    return CNSCondition {
+        true,
+        lhs,
+        rhs,
+        {},
+        swtchType,
         get_loc(context, &sct)
     };
 }
@@ -75,11 +105,14 @@ template<typename T>
 CNSCondition getOriginCondition(ASTContext &context, T const &node) {
     auto const logKey = String(context, node) + " <T>";
     CNS_DEBUG_MSG(logKey, "begin");
+
+    auto badCondition = CNSCondition {false, "NoCond", "NoCond", {}, {}, "N/A"};
+
     auto parents = context.getParents(node);
     if (parents.size() == 0) {
         CNS_INFO_MSG(logKey, "No parents found on node => no Origin Condition");
         CNS_DEBUG_MSG(logKey, "end");
-        return {"NoCond", "N/A"};
+        return badCondition;
     }
 
     CNS_DEBUG_MSG(logKey, "Found parents");
@@ -96,8 +129,11 @@ CNSCondition getOriginCondition(ASTContext &context, T const &node) {
             CNS_DEBUG(logKey, "Condition: {}", condition);
 
             CNS_DEBUG_MSG(logKey, "end");
-            return {
+            return CNSCondition {
+                false,
                 condition,
+                {},
+                {},{},
                 ifstmt->getIfLoc().printToString(context.getSourceManager())
             };
         }
@@ -108,7 +144,7 @@ CNSCondition getOriginCondition(ASTContext &context, T const &node) {
 
     CNS_INFO_MSG(logKey, "Could not find origin condition");
     CNS_DEBUG_MSG(logKey, "end");
-    return {"NoCond", "N/A"};
+    return badCondition;
 }
 //
 //
@@ -177,7 +213,7 @@ private:
     std::string expr_;
     std::string exprType_ {};
     std::string castKind_ {};
-    CNSCondition originCondition_ {"NoCond", "N/A"};
+    CNSCondition originCondition_ {false, "NoCond", {}, {}, {}, "N/A"};
     //std::optional<std::string> callee_;
 };
 
@@ -214,7 +250,7 @@ DominatorData makeDominatorData(clang::ASTContext &context, OpData from, clang::
         String(context, var),
         "VarDecl (No init)",
         "N/A",
-        {"N/A", "N/A"}
+        {}//"N/A", "N/A"}
     };
 }
 

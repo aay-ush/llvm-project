@@ -105,6 +105,12 @@ void initScores() {
         });
 }
 
+struct VariantData {
+    std::string name_;
+    std::unordered_map<std::string, std::string> attrs_;
+};
+std::unordered_map<std::string, VariantData> Variants;
+
 std::string cleanType(CensusKey const &opKey) {
     auto const &op = ops(opKey);
     auto const &typeInfo = op.td_;
@@ -158,7 +164,7 @@ void recordEdgeScore(std::string const& label, CensusKey const &from, CensusKey 
 
 inline bool isTransformConditional(DominatorData const &linkInfo) {
     if(!String(linkInfo.parentCondition()).empty()
-            && linkInfo.parentCondition().condition_ != "NoCond") {
+            && linkInfo.parentCondition().condition() != "NoCond") {
         return true;
     }
     return false;
@@ -169,6 +175,10 @@ inline bool isTransformThroughMember(DominatorData const &linkInfo) {
         return true;
     }
     return false;
+}
+
+inline bool isVariantLikeTransform(DominatorData const &linkInfo) {
+    return linkInfo.parentCondition().isSwitch_;
 }
 
 inline bool isSubtypingTransform(DominatorData const &linkInfo) {
@@ -340,6 +350,47 @@ void scoreSummary(TypeSummary const &ts) {
                 continue;
             }
             recordEdgeScore("Subtyping score", ts.key(), to.key(), SummarizedSubtypingScores);
+        }
+
+        if(isVariantLikeTransform(linkInfo)) {
+            //recordEdgeScore("Variant score", ts.key(), to.key(), SummarizedVariantScores);
+
+        //  - Is variant?
+        //     - if no, skip
+        //     - if yes, get the condition from dominfo:
+        //        - enum name = ptr type from lhs (non-switch condition is ignored)
+        //        - enum attr = type of ptr
+        //        - attr literal value = rhs value collected from variant.
+        //        e.g. given:
+        //        *ps: Shape*
+        //        *pr: Rectangle*
+        //        *pc: Circle*
+        //        switch(ps->type) { case "RECT": ...; case "CIRC": ...;}
+        //
+        //        yields
+        //          enum Shape { "RECT"(Rectangle*), "CIRC"(Circle*)} 
+        //
+
+            auto condition = linkInfo.parentCondition();
+            auto name = condition.typeLhs_.value();
+            auto topd = ops(to.key());
+            std::string attr;
+            if(topd.td_.isPointerType_) {
+                attr = topd.td_.elementType_.value();
+            }
+            else {
+                attr = topd.td_.uqType_;
+            }
+            auto val = condition.rhs_;
+
+            auto vd = VariantData{name, {}};
+            if(Variants.find(name) != std::end(Variants)) {
+                vd = Variants[name];
+            }
+
+            vd.attrs_[attr] = val;
+            // Update variant data;
+            Variants[name] = vd;
         }
 
         if(!isTransformThroughMember(linkInfo)) {
