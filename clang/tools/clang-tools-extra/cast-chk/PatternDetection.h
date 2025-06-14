@@ -372,25 +372,27 @@ void scoreSummary(TypeSummary const &ts) {
         //
 
             auto condition = linkInfo.parentCondition();
-            auto name = condition.typeLhs_.value();
+            auto vdname = condition.type_.value_or(condition.lhs_ + ": " + condition.location_); // Condition + location to help with diagnostic
             auto topd = ops(to.key());
-            std::string attr;
+            std::string vdattr;
             if(topd.td_.isPointerType_) {
-                attr = topd.td_.elementType_.value();
+                vdattr = topd.td_.elementType_.value_or("BadPtrElement_t for " + condition.rhs_ + "<" + condition.location_ + ">");
             }
             else {
-                attr = topd.td_.uqType_;
+                vdattr = topd.td_.uqType_;
             }
-            auto val = condition.rhs_;
+            auto vdval = condition.rhs_;
 
-            auto vd = VariantData{name, {}};
-            if(Variants.find(name) != std::end(Variants)) {
-                vd = Variants[name];
+            // Add or update variant data
+            auto vd = VariantData{vdname, {}};
+            if(Variants.find(vdname) != std::end(Variants)) {
+                vd = Variants[vdname];
             }
 
-            vd.attrs_[attr] = val;
+            // update this attr
+            vd.attrs_[vdattr] = vdval;
             // Update variant data;
-            Variants[name] = vd;
+            Variants[vdname] = vd;
         }
 
         if(!isTransformThroughMember(linkInfo)) {
