@@ -1749,8 +1749,12 @@ void printVariantsCSV() {
     fmt::print(fcsv, "Enum,Field,Value\n");
     for(auto const &[name, v]: Variants) {
         for(auto const &[attr, val]: v.attrs_) {
-            fmt::print(fcsv, "{},{},\"{}\"\n",
-                    name, attr, val);
+            std::string ca = attr;
+            std::replace(begin(ca), end(ca), ',', ';');
+            std::string cval = val;
+            std::replace(begin(cval), end(cval), ',', ';');
+            fmt::print(fcsv, "\"{}\",\"{}\",\"{}\"\n",
+                    name, ca, cval);
         }
     }
 
