@@ -1773,15 +1773,15 @@ void printVariantsCSV() {
         return;
     }
 
-    fmt::print(fcsv, "Enum,Field,Value\n");
+    fmt::print(fcsv, "Enum,Location,Field,Value\n");
     for(auto const &[name, v]: Variants) {
         for(auto const &[attr, val]: v.attrs_) {
             std::string ca = attr;
             std::replace(begin(ca), end(ca), ',', ';');
             std::string cval = val;
             std::replace(begin(cval), end(cval), ',', ';');
-            fmt::print(fcsv, "\"{}\",\"{}\",\"{}\"\n",
-                    name, ca, cval);
+            fmt::print(fcsv, "\"{}\",\"{}\",\"{}\",\"{}\"\n",
+                    v.location_, name, ca, cval);
         }
     }
 
@@ -1793,6 +1793,7 @@ void printVariants() {
     auto constexpr logKey = "Variants";
     fmt::print(fOUT, "[{}] (begin) Variants found: {}\n", logKey, Variants.size());
     for(auto const &[name, v]: Variants) {
+        fmt::print(fOUT, "[{}] {}:\n", logKey, v.location_);
         fmt::print(fOUT, "[{}] {} {{\n", logKey, name);
         for(auto const &[attr, val]: v.attrs_) {
             fmt::print(fOUT, "[{}]\t{} = {},\n", logKey, attr, val);

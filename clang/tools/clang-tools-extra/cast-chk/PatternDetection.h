@@ -107,6 +107,7 @@ void initScores() {
 
 struct VariantData {
     std::string name_;
+    std::string location_;
     std::unordered_map<std::string, std::string> attrs_;
 };
 std::unordered_map<std::string, VariantData> Variants;
@@ -384,7 +385,7 @@ void scoreSummary(TypeSummary const &ts) {
             auto vdval = condition.rhs_;
 
             // Add or update variant data
-            auto vd = VariantData{vdname, {}};
+            auto vd = VariantData{vdname, condition.location_, {}};
             if(Variants.find(vdname) != std::end(Variants)) {
                 vd = Variants[vdname];
             }
