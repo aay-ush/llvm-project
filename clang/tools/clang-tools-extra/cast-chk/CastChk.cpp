@@ -367,7 +367,7 @@ void processCast(MatchFinder::MatchResult const &result) {
     // Source
     auto const *s_unaryCastee = result.Nodes.getNodeAs<DeclRefExpr>("unaryCastee");
 
-    auto const *binOp = result.Nodes.getNodeAs<BinaryOperator>("binOp");
+    auto const *binOp = result.Nodes.getNodeAs<BinaryOperator>("binAss");
 
     // Target
     auto const *unaryOp = result.Nodes.getNodeAs<UnaryOperator>("unaryOp");
@@ -378,8 +378,8 @@ void processCast(MatchFinder::MatchResult const &result) {
     }
     else if(!!binOp) {
         CNS_DEBUG_MSG(logKey, "Processing cast: Binary operation");
-        auto const *bl = result.Nodes.getNodeAs<DeclRefExpr>("lhsref");
-        auto const *br = result.Nodes.getNodeAs<DeclRefExpr>("rhsref");
+        auto const *bl = result.Nodes.getNodeAs<DeclRefExpr>("lhs");
+        auto const *br = result.Nodes.getNodeAs<DeclRefExpr>("rhs");
         if(!bl) {
             CNS_ERROR_MSG(logKey, "binop lHS == nullptr.");
             CNS_DEBUG_MSG(logKey, "end");
@@ -1023,17 +1023,30 @@ auto CallMatcher = callExpr().bind("ce");
             //        hasDescendant(declRefExpr().bind("ceFnArg"))
             //        ))).bind("ce");
 
+auto BinAssMatcher = binaryOperator(
+        isAssignmentOperator(),
+        hasLHS(expr(anyOf(
+                    declRefExpr().bind("lhs"),
+                    hasDescendant(declRefExpr().bind("lhs"))))),
+        hasRHS(expr(anyOf(
+                    declRefExpr().bind("rhs"),
+                    hasDescendant(castExpr(
+                            has(declRefExpr().bind("rhs"))
+                            ).bind("cast")))))
+        ).bind("binAss");
+
 StatementMatcher CastMatcher =
     castExpr(
-            anyOf(
+            //anyOf(
                 hasDescendant(
                     unaryOperator(
                         hasDescendant(declRefExpr().bind("unaryCastee"))
-                        ).bind("unaryOp")),
+                        ).bind("unaryOp"))
 
                 // lhs: declrefexpr or expr(hasDescendant(declrefexpr))
                 // rhs: declrefexpr or expr(hasDescendant(declrefexpr)) or literal
                 // Assignment involves ltor cast unless a literal is used.
+                /*
                 hasParent(
                     binaryOperator(
                         isAssignmentOperator(),
@@ -1047,8 +1060,22 @@ StatementMatcher CastMatcher =
                                     declRefExpr().bind("rhsref"),
                                     hasDescendant(declRefExpr().bind("rhsref"))
                                 )).bind("binRhs"))
-                    ).bind("binOp")))
-
+                    ).bind("binOp")),
+                hasAncestor( // parent vs ancestor => different binary operators
+                    binaryOperator(
+                        isAssignmentOperator(),
+                        hasLHS(expr(
+                                anyOf(
+                                    declRefExpr().bind("lhsref"),
+                                    hasDescendant(declRefExpr().bind("lhsref"))
+                                )).bind("binLhs")),
+                        hasRHS(expr(
+                                anyOf(
+                                    declRefExpr().bind("rhsref"),
+                                    hasDescendant(declRefExpr().bind("rhsref"))
+                                )).bind("binRhs"))
+                    ).bind("binOp2")))
+                    */
     ).bind("cast");
 
 auto StatCastMatcher = castExpr(hasCastKind(CK_BitCast)).bind("statCast");
@@ -1980,6 +2007,7 @@ int main(int argc, const char **argv) {
     Finder.addMatcher(AssignMatcher, &historian);
     Finder.addMatcher(CallMatcher, &historian);
     Finder.addMatcher(CastMatcher, &historian);
+    Finder.addMatcher(BinAssMatcher, &historian);
 
     buildIgnoreList();
     //return Tool.run(newFrontendActionFactory<clang::SyntaxOnlyAction>().get());
