@@ -1717,6 +1717,79 @@ private:
     Stat unknownFunctions_;
 };
 
+auto StatUnionMatcher = tagDecl(isUnion()).bind("statUnion");
+
+// Check if an union is found as a variant or not
+class StatUnionMatchCallback: public MatchFinder::MatchCallback {
+public:
+    void run(MatchFinder::MatchResult const &result) override {
+        auto const *ud = result.Nodes.getNodeAs<clang::TagDecl>("statUnion");
+        auto *context = result.Context;
+        if(!ud) {
+            return;
+        }
+
+        auto const uname = Typename(*context, QualType(ud->getTypeForDecl(), 0));
+
+        // Add union to collection
+        Unions_[uname] = {uname, ud->getLocation().printToString(context->getSourceManager())};
+
+        // If union is covered by census, add its intent
+        auto it = Variants.find(uname);
+        if(it == std::end(Variants)) {
+            unknownUnions_[uname] = UnionIntent::unknown;
+        }
+        else {
+            subtypeUnions_[uname] = UnionIntent::subtype;
+        }
+    }
+
+    void print() {
+        constexpr auto logKey = "StatUnions";
+
+        auto fcsv = fopen("census-union-stats.csv", "w");
+        if(fcsv == nullptr) {
+            CNS_ERROR_MSG(logKey, "Error opening census-union-stats.csv");
+            return;
+        }
+
+        fmt::print(fOUT, "[{}] Subtype()\t| Unknown()\n", logKey);
+        fmt::print(fOUT, "[{}] {:<8}\t| {:<8}\n", logKey,
+                subtypeUnions_.size(), unknownUnions_.size());
+
+        fmt::print(fcsv, "Location,Union,Intent\n");
+        auto csvOut = [&fcsv, this](auto const &ustat) {
+            std::for_each(begin(ustat), end(ustat),
+                    [&](auto const &ui) {
+                        auto const & name = ui.first;
+                        auto const & intent = ui.second;
+                        auto const & loc = Unions_[name].second;
+                        fmt::print(fcsv, "\"{}\",\"{}\",{}\n",
+                                loc, name, intent);
+                    });
+        };
+
+        csvOut(subtypeUnions_);
+        csvOut(unknownUnions_);
+
+        fclose(fcsv);
+    }
+
+public:
+    enum class UnionIntent {
+        subtype,
+        unknown
+    };
+
+private:
+    using UnionData = std::pair<std::string, std::string>;
+    std::unordered_map<std::string, UnionData> Unions_;
+
+    using Stat = std::unordered_map<std::string, UnionIntent>;
+    Stat subtypeUnions_;
+    Stat unknownUnions_;
+};
+
 template<>
 struct fmt::formatter<StatMatchCallback::Pattern>: formatter<string_view> {
     format_context::iterator format(StatMatchCallback::Pattern s, format_context& ctx) const {
@@ -1760,6 +1833,20 @@ struct fmt::formatter<StatFunctionMatchCallback::FunctionIntent>: formatter<stri
             case StatFunctionMatchCallback::FunctionIntent::ignored:
                 ret = "Ignored"; break;
             case StatFunctionMatchCallback::FunctionIntent::unknown:
+                ret = "Unknown"; break;
+        }
+        return formatter<string_view>::format(ret, ctx);
+    }
+};
+
+template<>
+struct fmt::formatter<StatUnionMatchCallback::UnionIntent>: formatter<string_view> {
+    format_context::iterator format(StatUnionMatchCallback::UnionIntent s, format_context& ctx) const {
+        string_view ret = "Unknown";
+        switch(s) {
+            case StatUnionMatchCallback::UnionIntent::subtype:
+                ret = "Subtype"; break;
+            case StatUnionMatchCallback::UnionIntent::unknown:
                 ret = "Unknown"; break;
         }
         return formatter<string_view>::format(ret, ctx);
@@ -2030,14 +2117,17 @@ int main(int argc, const char **argv) {
 
     StatMatchCallback statPtrs;
     StatFunctionMatchCallback statFuncs;
+    StatUnionMatchCallback statUnions;
     MatchFinder statistician;
     statistician.addMatcher(StatCastMatcher, &statPtrs);
     statistician.addMatcher(StatPointerMatcher, &statPtrs);
     statistician.addMatcher(StatFunctionMatcher, &statFuncs);
+    statistician.addMatcher(StatUnionMatcher, &statUnions);
 
     rc = Tool.run(newFrontendActionFactory(&statistician).get());
     statPtrs.printCombinedReport(tcst);
     statFuncs.print();
+    statUnions.print();
 
 
     // Generic pointer export (Bristol)
