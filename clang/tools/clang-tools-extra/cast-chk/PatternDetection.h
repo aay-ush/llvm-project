@@ -108,7 +108,7 @@ void initScores() {
 struct VariantData {
     std::string name_;
     std::string location_;
-    std::unordered_map<std::string, std::string> attrs_;
+    std::unordered_map<std::string, std::string> attrs_;    // attr: <enum field> = <enum field's value>
 };
 std::unordered_map<std::string, VariantData> Variants;
 
@@ -376,12 +376,15 @@ void scoreSummary(TypeSummary const &ts) {
             auto vdname = condition.type_.value_or(condition.lhs_ + ": " + condition.location_); // Condition + location to help with diagnostic
             auto topd = ops(to.key());
             std::string vdattr;
+            vdattr = topd.td_.uqType_;
+            /*
             if(topd.td_.isPointerType_) {
                 vdattr = topd.td_.elementType_.value_or("BadPtrElement_t for " + condition.rhs_ + "<" + condition.location_ + ">");
             }
             else {
                 vdattr = topd.td_.uqType_;
             }
+            */
             auto vdval = condition.rhs_;
 
             // Add or update variant data
