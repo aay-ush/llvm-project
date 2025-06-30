@@ -1725,22 +1725,30 @@ public:
     void run(MatchFinder::MatchResult const &result) override {
         auto const *ud = result.Nodes.getNodeAs<clang::TagDecl>("statUnion");
         auto *context = result.Context;
-        if(!ud) {
+        if(!ud || !context) {
             return;
         }
+        auto & sm = context->getSourceManager();
 
         auto const uname = Typename(*context, QualType(ud->getTypeForDecl(), 0));
 
         // Add union to collection
-        Unions_[uname] = {uname, ud->getLocation().printToString(context->getSourceManager())};
+        auto const & ulocation = ud->getLocation();
+        Unions_[uname] = {uname, ulocation.printToString(sm)};
+
+
+        if(isFromSystemHeader(sm, ulocation)) {
+            IgnoredStdUnions_[uname] = UnionIntent::ignoredStd;
+            return;
+        }
 
         // If union is covered by census, add its intent
         auto it = Variants.find(uname);
         if(it == std::end(Variants)) {
-            unknownUnions_[uname] = UnionIntent::unknown;
+            UnknownUnions_[uname] = UnionIntent::unknown;
         }
         else {
-            subtypeUnions_[uname] = UnionIntent::subtype;
+            SubtypeUnions_[uname] = UnionIntent::subtype;
         }
     }
 
@@ -1753,9 +1761,9 @@ public:
             return;
         }
 
-        fmt::print(fOUT, "[{}] Subtype()\t| Unknown()\n", logKey);
-        fmt::print(fOUT, "[{}] {:<8}\t| {:<8}\n", logKey,
-                subtypeUnions_.size(), unknownUnions_.size());
+        fmt::print(fOUT, "[{}] Subtype()\t| IgnoredStd()\t| Unknown()\n", logKey);
+        fmt::print(fOUT, "[{}] {:<8}\t| {:<8}\t| {:<8}\n", logKey,
+                SubtypeUnions_.size(), IgnoredStdUnions_.size(), UnknownUnions_.size());
 
         fmt::print(fcsv, "Location,Union,Intent\n");
         auto csvOut = [&fcsv, this](auto const &ustat) {
@@ -1769,8 +1777,9 @@ public:
                     });
         };
 
-        csvOut(subtypeUnions_);
-        csvOut(unknownUnions_);
+        csvOut(SubtypeUnions_);
+        csvOut(IgnoredStdUnions_);
+        csvOut(UnknownUnions_);
 
         fclose(fcsv);
     }
@@ -1778,6 +1787,7 @@ public:
 public:
     enum class UnionIntent {
         subtype,
+        ignoredStd,
         unknown
     };
 
@@ -1786,8 +1796,9 @@ private:
     std::unordered_map<std::string, UnionData> Unions_;
 
     using Stat = std::unordered_map<std::string, UnionIntent>;
-    Stat subtypeUnions_;
-    Stat unknownUnions_;
+    Stat SubtypeUnions_;
+    Stat IgnoredStdUnions_;
+    Stat UnknownUnions_;
 };
 
 template<>
@@ -1846,6 +1857,8 @@ struct fmt::formatter<StatUnionMatchCallback::UnionIntent>: formatter<string_vie
         switch(s) {
             case StatUnionMatchCallback::UnionIntent::subtype:
                 ret = "Subtype"; break;
+            case StatUnionMatchCallback::UnionIntent::ignoredStd:
+                ret = "Ignore(std)"; break;
             case StatUnionMatchCallback::UnionIntent::unknown:
                 ret = "Unknown"; break;
         }

@@ -1718,5 +1718,33 @@ clang::ValueDecl const* getArgDecl(clang::ASTContext &context, clang::Expr const
 }
 
 //--
+bool isFromSystemHeader(const clang::SourceManager &sm, clang::SourceLocation const &loc) {
+    if (loc.isInvalid()) {
+        return false;
+    }
+
+    // Check if the location is in a system header.
+    if (sm.isInSystemHeader(loc)
+            || sm.isInExternCSystemHeader(loc)
+            || sm.isInSystemMacro(loc)) {
+        return true;
+    }
+
+    /*
+    // Check the filename for specific paths.
+    clang::PresumedLoc presumedLoc = sm.getPresumedLoc(loc);
+    if (!presumedLoc.isValid()) {
+        return false;
+    }
+
+    llvm::StringRef filename = presumedLoc.getFilename();
+    return filename.starts_with("/usr/include/") || 
+           filename.starts_with("/usr/local/include/") ||
+           filename.starts_with("/usr/lib/") ||
+           filename.contains("x86_64-linux-gnu/bits/") ||
+           filename.starts_with("/usr/include/linux/");
+    */
+    return false;
+}
 
 #endif // UTILS_H
