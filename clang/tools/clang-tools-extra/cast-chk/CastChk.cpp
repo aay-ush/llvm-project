@@ -1873,7 +1873,7 @@ void printVariantsCSV() {
         return;
     }
 
-    fmt::print(fcsv, "Enum,Location,Field,Value\n");
+    fmt::print(fcsv, "Location,Enum,Field,Value\n");
     for(auto const &[name, v]: Variants) {
         for(auto const &[attr, val]: v.attrs_) {
             std::string ca = attr;
