@@ -376,15 +376,14 @@ void scoreSummary(TypeSummary const &ts) {
             auto vdname = condition.type_.value_or(condition.lhs_ + ": " + condition.location_); // Condition + location to help with diagnostic
             auto topd = ops(to.key());
             std::string vdattr;
-            vdattr = topd.td_.uqType_;
-            /*
+            //vdattr = topd.td_.uqType_;
             if(topd.td_.isPointerType_) {
-                vdattr = topd.td_.elementType_.value_or("BadPtrElement_t for " + condition.rhs_ + "<" + condition.location_ + ">");
+                vdattr = topd.td_.pointeeType_.value_or("BadPointee_t for " + condition.rhs_ + "<" + condition.location_ + ">");
+                //vdattr = topd.td_.elementType_.value_or("BadPtrElement_t for " + condition.rhs_ + "<" + condition.location_ + ">");
             }
             else {
                 vdattr = topd.td_.uqType_;
             }
-            */
             auto vdval = condition.rhs_;
 
             // Add or update variant data
