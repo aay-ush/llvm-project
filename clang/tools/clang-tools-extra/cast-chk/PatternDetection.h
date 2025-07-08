@@ -105,10 +105,16 @@ void initScores() {
         });
 }
 
+struct VariantField {
+    std::string name_;
+    std::string value_;
+    std::string location_;
+};
+
 struct VariantData {
     std::string name_;
     std::string location_;
-    std::unordered_map<std::string, std::string> attrs_;    // attr: <enum field> = <enum field's value>
+    std::unordered_map<std::string, VariantField> attrs_;    // attr: <enum field> = <enum field's value>
 };
 std::unordered_map<std::string, VariantData> Variants;
 
@@ -385,6 +391,7 @@ void scoreSummary(TypeSummary const &ts) {
                 vdattr = topd.td_.uqType_;
             }
             auto vdval = condition.rhs_;
+            auto vdloc = topd.location_;
 
             // Add or update variant data
             auto vd = VariantData{vdname, condition.location_, {}};
@@ -393,7 +400,7 @@ void scoreSummary(TypeSummary const &ts) {
             }
 
             // update this attr
-            vd.attrs_[vdattr] = vdval;
+            vd.attrs_[vdattr] = {vdattr, vdval, vdloc};
             // Update variant data;
             Variants[vdname] = vd;
         }

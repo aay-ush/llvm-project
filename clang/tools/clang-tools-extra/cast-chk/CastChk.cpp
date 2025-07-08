@@ -1875,13 +1875,15 @@ void printVariantsCSV() {
 
     fmt::print(fcsv, "Location,Enum,Field,Value\n");
     for(auto const &[name, v]: Variants) {
-        for(auto const &[attr, val]: v.attrs_) {
-            std::string ca = attr;
-            std::replace(begin(ca), end(ca), ',', ';');
-            std::string cval = val;
-            std::replace(begin(cval), end(cval), ',', ';');
+        fmt::print(fcsv, "\"{}\",\"{}\",,\n",
+                v.location_, name);
+        for(auto [k, data]: v.attrs_) {
+            std::string key = k;
+            std::replace(begin(key), end(key), ',', ';');
+            std::replace(begin(data.value_), end(data.value_), ',', ';');
+            std::replace(begin(data.location_), end(data.location_), ',', ';');
             fmt::print(fcsv, "\"{}\",\"{}\",\"{}\",\"{}\"\n",
-                    v.location_, name, ca, cval);
+                    data.location_, name, key, data.value_);
         }
     }
 
@@ -1895,8 +1897,8 @@ void printVariants() {
     for(auto const &[name, v]: Variants) {
         fmt::print(fOUT, "[{}] {}:\n", logKey, v.location_);
         fmt::print(fOUT, "[{}] {} {{\n", logKey, name);
-        for(auto const &[attr, val]: v.attrs_) {
-            fmt::print(fOUT, "[{}]\t{} = {},\n", logKey, attr, val);
+        for(auto const &[key, data]: v.attrs_) {
+            fmt::print(fOUT, "[{}]\t{} = {} [{}],\n", logKey, key, data.value_, data.location_);
         }
         fmt::print(fOUT, "[{}] }}\n", logKey);
     }
