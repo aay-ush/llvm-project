@@ -8,6 +8,7 @@ struct CNSCondition {
     bool isSwitch_ = false;
     std::string lhs_;
     std::string rhs_;
+    std::optional<std::string> lhsqn_;
     std::optional<std::string> type_;
     std::string location_;
 
@@ -73,11 +74,13 @@ CNSCondition buildSwitchCaseCondition(ASTContext &context, clang::SwitchCase con
     auto swtchType = Typename(context, *(swtch->getCond()));
     CNS_DEBUG(logKey, "Switch condition: {} ({})", lhs, swtchType);
     QualType lqt;
+    std::optional<std::string> lqn;
 
-    auto ldre = getDREChild(context, swtch->getCond());
+    auto const *ldre = getDREChild(context, swtch->getCond());
     if(ldre) {
         CNS_DEBUG(logKey, "Found LHS dre: {}", String(context, *ldre));
         lqt = getPointedAtType(context, ldre->getType()).first.getUnqualifiedType();
+        lqn = qualifiedName(context, *ldre);
     }
     else {
         // No lhs dre
@@ -90,6 +93,7 @@ CNSCondition buildSwitchCaseCondition(ASTContext &context, clang::SwitchCase con
         true,
         lhs,
         rhs,
+        lqn,
         Typename(context, lqt),
         get_loc(context, &sct)
     };
@@ -100,7 +104,7 @@ CNSCondition getOriginCondition(ASTContext &context, T const &node) {
     auto const logKey = String(context, node) + " <T>";
     CNS_DEBUG_MSG(logKey, "begin");
 
-    auto badCondition = CNSCondition {false, "NoCond", "NoCond", {}, "N/A"};
+    auto badCondition = CNSCondition {false, "NoCond", "NoCond", {}, {}, "N/A"};
 
     auto parents = context.getParents(node);
     if (parents.size() == 0) {
@@ -126,6 +130,7 @@ CNSCondition getOriginCondition(ASTContext &context, T const &node) {
             return CNSCondition {
                 false,
                 condition,
+                {},
                 {},
                 {},
                 ifstmt->getIfLoc().printToString(context.getSourceManager())
@@ -207,7 +212,7 @@ private:
     std::string expr_;
     std::string exprType_ {};
     std::string castKind_ {};
-    CNSCondition originCondition_ {false, "NoCond", {}, {}, "N/A"};
+    CNSCondition originCondition_;// {false, "NoCond", {}, {}, "N/A"};
     //std::optional<std::string> callee_;
 };
 

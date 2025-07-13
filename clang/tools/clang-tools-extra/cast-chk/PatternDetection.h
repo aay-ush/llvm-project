@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <numeric>
+#include <stack>
 
 class TypeScore {
 private:
@@ -184,8 +185,37 @@ inline bool isTransformThroughMember(DominatorData const &linkInfo) {
     return false;
 }
 
-inline bool isVariantLikeTransform(DominatorData const &linkInfo) {
-    return linkInfo.parentCondition().isSwitch_;
+inline bool isVariantLikeTransform(DominatorData const &linkInfo, OpData const &to) {
+    auto const &condition = linkInfo.parentCondition();
+    auto isSwitchCondtion = isTransformConditional(linkInfo) && condition.isSwitch_;
+
+    if(!condition.lhsqn_) {
+        return false;
+    }
+
+    // TODO: Check doms and ancestors for match
+    std::vector<CensusKey> domchain;
+    std::stack<std::string> tochk;
+    tochk.push(condition.lhsqn_.value());
+    while(!tochk.empty()) {
+        auto top = tochk.top();
+        tochk.pop();
+        if(auto const &[_, d] = census[top]; d.has_value() && !d->empty()) {
+            for(auto const &dd: d.value()) {
+                auto dk = dd.op().qn_;
+                if(std::find(begin(domchain), end(domchain), dk) == std::end(domchain)) {
+                    tochk.push(dk);
+                }
+            }
+        }
+        domchain.push_back(top);
+    }
+
+    auto isFromSwitchPointer = (std::find(begin(domchain), end(domchain),
+                linkInfo.op().qn_) != std::end(domchain));
+    auto isToKnownType = !(to.type_.empty() || to.type_ == "T");
+
+    return isSwitchCondtion && isFromSwitchPointer && isToKnownType;
 }
 
 inline bool isSubtypingTransform(DominatorData const &linkInfo) {
@@ -280,8 +310,6 @@ void recordEdgeDom(CensusKey const &from, CensusKey const &to, DominatorData con
     }
 }
 
-#include <stack>
-
 TypeScore recordLeafScore(TypeSummary const &ts) {
     auto const &logKey = ts.key();
     CNS_DEBUG_MSG(logKey, "begin");
@@ -359,7 +387,7 @@ void scoreSummary(TypeSummary const &ts) {
             recordEdgeScore("Subtyping score", ts.key(), to.key(), SummarizedSubtypingScores);
         }
 
-        if(isVariantLikeTransform(linkInfo)) {
+        if(isVariantLikeTransform(linkInfo, ops(to.key()))) {
             //recordEdgeScore("Variant score", ts.key(), to.key(), SummarizedVariantScores);
 
         //  - Is variant?
@@ -377,6 +405,9 @@ void scoreSummary(TypeSummary const &ts) {
         //        yields
         //          enum Shape { "RECT"(Rectangle*), "CIRC"(Circle*)} 
         //
+        // TODO
+        //  - Store dre of condition (e.g. op(ps) in ps->type) with the variant/condition (TBD)
+        //    so that variant fields can be filtered. If the cast is not from ps, then we can avoid adding the rhs as a field.
 
             auto condition = linkInfo.parentCondition();
             auto vdname = condition.type_.value_or(condition.lhs_ + ": " + condition.location_); // Condition + location to help with diagnostic
