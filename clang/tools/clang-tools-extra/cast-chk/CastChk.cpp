@@ -570,7 +570,13 @@ OpData buildArgOp(clang::ASTContext &context,
 
     if(vd) {
         CNS_DEBUG(logKey, "Found decl for arg '{}'", String(context, arg));
-        to = {
+        auto const * var = dyn_cast<VarDecl>(vd);
+        if(!var) {
+            CNS_DEBUG(logKey, "Cannot get var decl from valuedecl for arg '{}'", String(context, arg));
+            to = buildLimitedArgOp(context, sm, call, arg);
+        }
+        else {
+            to = {
                 cnsHash(context, *vd),
                 String(context, *vd),
                 Typename(context, *vd),
@@ -580,9 +586,10 @@ OpData buildArgOp(clang::ASTContext &context,
                 getLinkedRecord(*vd),
                 linkedTypeCategory(*vd),
                 call.getExprLoc().printToString(sm),
-                qualifiedName(context, *vd, vd->getDeclName()),
+                qualifiedName(context, *var),//*vd, vd->getDeclName()),
                 makeTypeDataExtra(context, sm, *vd)
             };
+        }
     }
     else {
         CNS_DEBUG(logKey, "Decl not found for arg '{}'; building OpData from arg expr", String(context, arg));

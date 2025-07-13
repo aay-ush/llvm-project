@@ -1630,7 +1630,7 @@ TypeSummary makeTypeSummary(History const &h) {
 
     //CNS_DEBUG("Adding Summary for {{{}}}: {{{}}}", h_.first, TypeSummaries.at(h_.first).summary({4}));
     //TypeSummaries.insert({h_.first, ts});
-    //OverflowGuard::reset();
+    OverflowGuard::reset(); // Reset after summary creation complete; TODO should be passed to LH
     CNS_DEBUG_MSG(sumkey, "end");
     return ts;
 }
