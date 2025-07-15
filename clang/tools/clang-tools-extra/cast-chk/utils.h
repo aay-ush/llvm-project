@@ -232,6 +232,10 @@ namespace {
         return dyn_cast<clang::UnaryOperator>(e);
     }
 
+    inline clang::BinaryOperator const* binaryExpr_(clang::Expr const *e) {
+        return dyn_cast<clang::BinaryOperator>(e);
+    }
+
     inline clang::MemberExpr const* memberExpr_(clang::Expr const *e) {
         return dyn_cast<clang::MemberExpr>(e);
     }

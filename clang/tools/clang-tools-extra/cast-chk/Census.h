@@ -13,6 +13,13 @@ struct CNSCondition {
     std::string location_;
 
     std::string condition() const {
+        if(lhs_.empty() && rhs_.empty()) {
+            return "NoCond";
+        }
+        if(lhs_.empty() || rhs_.empty()) {
+            return "BadCond";
+        }
+
         return lhs_ + " == " + rhs_;
     }
 };
@@ -104,7 +111,7 @@ CNSCondition getOriginCondition(ASTContext &context, T const &node) {
     auto const logKey = String(context, node) + " <T>";
     CNS_DEBUG_MSG(logKey, "begin");
 
-    auto badCondition = CNSCondition {false, "NoCond", "NoCond", {}, {}, "N/A"};
+    auto badCondition = CNSCondition {false, "", "", {}, {}, "N/A"};
 
     auto parents = context.getParents(node);
     if (parents.size() == 0) {
@@ -126,13 +133,67 @@ CNSCondition getOriginCondition(ASTContext &context, T const &node) {
             auto condition = String(context, *(ifstmt->getCond()));
             CNS_DEBUG(logKey, "Condition: {}", condition);
 
+            // auto const *Else = ifstmt->getElse();
+            //if (Else && !isa<IfStmt>(Else)) {}
+
+            std::string lhs = condition;
+            std::string rhs;
+            std::string lqt;
+            std::optional<std::string> lqn;
+
+            if(auto const *binop = binaryExpr_(ifstmt->getCond())) {
+                // (lhs == rhs)
+                lhs = String(context, *(binop->getLHS()));
+                CNS_DEBUG(logKey, "LHS: {}", lhs);
+                rhs = String(context, *(binop->getRHS()));
+                CNS_DEBUG(logKey, "RHS: {}", rhs);
+                if(auto const *ldre = getDREChild(context, binop->getLHS())) {
+                    CNS_DEBUG(logKey, "Found LHS dre: {}", String(context, *ldre));
+                    auto lqty = getPointedAtType(context, ldre->getType()).first.getUnqualifiedType();
+                    lqt = Typename(context, lqty);
+                    lqn = qualifiedName(context, *ldre);
+                }
+                else {
+                    // No lhs dre
+                    CNS_DEBUG(logKey, "No LHS dre for: {}", lhs);
+                    auto lqty = getPointedAtType(context, ifstmt->getCond()->getType()).first.getUnqualifiedType();
+                    lqt = Typename(context, lqty);
+                }
+            }
+            else if(auto const *uop = unaryExpr_(ifstmt->getCond())) {
+                // (!lhs) or ([&*-++--~()etc]lhs) true check
+                rhs = "true";
+            }
+            else {
+                // (condition) => true check
+                rhs = "true";
+            }
+
+            if(!lqn) {
+                // Condition did not have a binary operator
+                if(auto const *ldre = getDREChild(context, ifstmt->getCond())) {
+                    CNS_DEBUG(logKey, "(non-binop cond) Found LHS dre: {}", String(context, *ldre));
+                    auto lqty = getPointedAtType(context, ldre->getType()).first.getUnqualifiedType();
+                    lqt = Typename(context, lqty);
+                    lqn = qualifiedName(context, *ldre);
+                }
+                else {
+                    // No lhs dre
+                    CNS_DEBUG(logKey, "(non-binop cond) No LHS dre for: {}", lhs);
+                    auto lqty = getPointedAtType(context, ifstmt->getCond()->getType()).first.getUnqualifiedType();
+                    lqt = Typename(context, lqty);
+                }
+            }
+
+            CNS_DEBUG(logKey, "LHS: {}", lhs);
+            CNS_DEBUG(logKey, "RHS: {}", rhs);
             CNS_DEBUG_MSG(logKey, "end");
             return CNSCondition {
                 false,
-                condition,
-                {},
-                {},
-                {},
+                lhs,
+                rhs,
+                lqn,
+                lqt,
                 ifstmt->getIfLoc().printToString(context.getSourceManager())
             };
         }
