@@ -1009,6 +1009,81 @@ void processFunctionCall(MatchFinder::MatchResult const &result) {
     CNS_DEBUG_MSG(logKey, "end");
 }
 
+void processReturn(MatchFinder::MatchResult const &result) {
+    constexpr auto logKey = "<Return>";
+    CNS_DEBUG_MSG(logKey, "begin");
+
+    assert(result);
+    assert(result.context);
+    assert(result.SourceManager);
+    auto & context = *result.Context;
+    auto & sm = *result.SourceManager;
+
+    auto const *ret_ = result.Nodes.getNodeAs<ReturnStmt>("ret");
+    assert(ret);
+    auto const &ret = *ret_;
+
+    CNS_DEBUG(logKey, "Match at: '{}'", ret.getReturnLoc().printToString(sm));
+    CNS_DEBUG(logKey, "Stmt : '{}'", String(context, ret));
+
+    auto const *func_ = getContainerFunctionDecl(context, ret);
+    if(!func_) {
+        CNS_DEBUG_MSG(logKey, "Ignoring return; cannot find containing function");
+        CNS_DEBUG_MSG(logKey, "end");
+        return;
+    }
+    auto const &func = *func_;
+
+    auto expr = ret.getRetValue();
+    if(!expr) {
+        CNS_DEBUG_MSG(logKey, "Ignoring return; no return value expr");
+        CNS_DEBUG_MSG(logKey, "end");
+        return;
+    }
+
+    auto const *dre = result.Nodes.getNodeAs<DeclRefExpr>("retref");
+    if(!dre) {
+        CNS_DEBUG_MSG(logKey, "Ignoring return; no reference to alias");
+        CNS_DEBUG_MSG(logKey, "end");
+        return;
+    }
+
+    auto lhs = buildOpDataNonCastExpr(context, sm, *expr, *dre);
+    auto dom = makeDominatorData(context, lhs, *expr);
+    auto rhs = OpData {
+        cnsHash(context, func),
+        String(context, func),
+        Typename(context, func),
+        TypeCategory(context, func),
+        getLinkedParm(context, func, func.getDeclName()),
+        String(context, func),
+        getLinkedRecord(*expr),
+        linkedTypeCategory(*expr),
+        func.getLocation().printToString(sm),
+        qualifiedName(context, func, func.getDeclName()),
+        makeTypeDataExtra(context, sm, func)
+    };
+
+    // TODO replace with getcontainerfunction
+    /*
+    auto const *calledFn = getCalleeDecl(*context, *call);
+    if(calledFn) {
+        auto const& fn = calledFn->getNameAsString();
+        auto const fcs = result.SourceManager->getFileCharacteristic(call->getExprLoc());
+        if(clang::SrcMgr::isSystem(fcs)) {
+            ignoreFunctions.push_back(fn);
+            CNS_INFO(logKey, "Ignoring system function: {}", fn);
+            CNS_DEBUG_MSG(logKey, "end");
+            return; // ignore
+        }
+    }
+    */
+
+    // update census
+    updateCensus(lhs, rhs, dom);
+
+    CNS_DEBUG_MSG(logKey, "end");
+}
 //----------------------------------------------------------------------------
 // MATCHERS
 
@@ -1029,6 +1104,8 @@ auto CallMatcher = callExpr().bind("ce");
             //    unaryOperator(
             //        hasDescendant(declRefExpr().bind("ceFnArg"))
             //        ))).bind("ce");
+
+auto RetMatcher = returnStmt(hasDescendant(declRefExpr().bind("retref"))).bind("ret");
 
 auto BinAssMatcher = binaryOperator(
         isAssignmentOperator(),
@@ -1926,6 +2003,8 @@ public:
         auto const *varDecl = result.Nodes.getNodeAs<clang::VarDecl>("varDecl");
         // Calls for fn calls
         auto const *ce = result.Nodes.getNodeAs<clang::CallExpr>("ce");
+        // Return statement aliasing (cast/operation is taken care of by other matchers)
+        auto const *ret = result.Nodes.getNodeAs<clang::ReturnStmt>("ret");
 
         if(castExpr) {
             processCast(result);
@@ -1937,6 +2016,10 @@ public:
 
         if(ce) {
             processFunctionCall(result);
+        }
+
+        if(ret) {
+            processReturn(result);
         }
 
         /* Dumps the whole AST!
@@ -2116,6 +2199,7 @@ int main(int argc, const char **argv) {
     MatchFinder Finder;
     Finder.addMatcher(AssignMatcher, &historian);
     Finder.addMatcher(CallMatcher, &historian);
+    Finder.addMatcher(RetMatcher, &historian);
     Finder.addMatcher(CastMatcher, &historian);
     Finder.addMatcher(BinAssMatcher, &historian);
 

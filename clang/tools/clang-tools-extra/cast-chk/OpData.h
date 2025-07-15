@@ -669,7 +669,7 @@ OpData buildOpData(
 }
 
 // Build OpData for Function Call Arg. (Difference in getLnkedParmqn, no cast expression involved.)
-OpData buildOpDataArg(
+OpData buildOpDataNonCastExpr(
         clang::ASTContext &context,
         clang::SourceManager const &sm,
         clang::Expr const &arg,
