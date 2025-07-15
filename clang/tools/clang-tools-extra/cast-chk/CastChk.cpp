@@ -303,7 +303,7 @@ void logCensusUpdate(
         OpData const &rhs,
         DominatorData const &dom) {
 
-    fmt::print(fOUT, "Match site: {}\n", rhs.location_);
+    fmt::print(fOUT, "Match site: {}\n", dom.exprLoc());
     fmt::print(fOUT, "   Linking: [{}]{}{{{}}} -> [{}]{}{{{}}}\n",
             lhs.qn_, lhs.expr_, lhs.linkedParm_,
             rhs.qn_, rhs.expr_, rhs.linkedParm_);

@@ -181,6 +181,10 @@ public:
         return exprType_;
     }
 
+    std::string exprLoc() const {
+        return exprLoc_;
+    }
+
     std::string castKind() const {
         return castKind_;
     }
@@ -193,10 +197,11 @@ public:
         return originCondition_;
     }
 
-    DominatorData(OpData from, std::string expr, std::string exprType, std::string castKind, CNSCondition originCondition):
+    DominatorData(OpData from, std::string expr, std::string exprType, std::string exprLoc, std::string castKind, CNSCondition originCondition):
         from_(from),
         expr_(expr),
         exprType_(exprType),
+        exprLoc_(exprLoc),
         castKind_(castKind),
         originCondition_(originCondition) {}
 
@@ -211,6 +216,7 @@ private:
     OpData from_;
     std::string expr_;
     std::string exprType_ {};
+    std::string exprLoc_;
     std::string castKind_ {};
     CNSCondition originCondition_;// {false, "NoCond", {}, {}, "N/A"};
     //std::optional<std::string> callee_;
@@ -221,6 +227,7 @@ DominatorData makeDominatorData(clang::ASTContext &context, OpData from, clang::
         from,
         String(context, expr),
         getDomExprType(context, expr),
+        expr.getExprLoc().printToString(context.getSourceManager()),
         getCastKind(context, expr),
         getOriginCondition(context, expr)
         //getLinkedFunction(context, castExpr, dest)
@@ -237,6 +244,7 @@ DominatorData makeDominatorData(clang::ASTContext &context, OpData from, clang::
             from,
             String(context, *initEx),
             "InitVarDecl " + getDomExprType(context, *initEx),
+            initEx->getExprLoc().printToString(context.getSourceManager()),
             getCastKind(context, *initEx),
             getOriginCondition(context, *initEx)
         };
@@ -248,6 +256,7 @@ DominatorData makeDominatorData(clang::ASTContext &context, OpData from, clang::
         from,
         String(context, var),
         "VarDecl (No init)",
+        var.getLocation().printToString(context.getSourceManager()),
         "N/A",
         {}//"N/A", "N/A"}
     };
