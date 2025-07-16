@@ -187,35 +187,82 @@ inline bool isTransformThroughMember(DominatorData const &linkInfo) {
 
 inline bool isVariantLikeTransform(DominatorData const &linkInfo, OpData const &to) {
     auto const &condition = linkInfo.parentCondition();
-    auto isSwitchCondtion = isTransformConditional(linkInfo) && condition.isSwitch_;
+    auto isSwitchCondition = isTransformConditional(linkInfo) && condition.isSwitch_;
+
+    auto const logKey = "`" + linkInfo.linkExpr() + "` o-> " + to.qn_;
+    CNS_INFO_MSG(logKey, "begin");
 
     if(!condition.lhsqn_) {
+        CNS_INFO_MSG(logKey, "Condition has no lhs qn => not a variant");
+        CNS_INFO_MSG(logKey, "end");
         return false;
     }
 
-    // TODO: Check doms and ancestors for match
+    auto isToKnownType = !(to.type_.empty() || to.type_ == "T");
+    CNS_INFO(logKey, "To has known type == {}", isToKnownType);
+    if(!isToKnownType) {
+        CNS_INFO_MSG(logKey, "To unknown type => not a variant");
+        CNS_INFO_MSG(logKey, "end");
+        return false;
+    }
+
+    if(to.td_.uqType_ == linkInfo.op().td_.uqType_) {
+        CNS_INFO(logKey, "Type(to) == Type(from) == {} => not a variant", to.td_.uqType_);
+        CNS_INFO_MSG(logKey, "end");
+        return false;
+    }
+
+    // Check doms and ancestors for match
     std::vector<CensusKey> domchain;
-    std::stack<std::string> tochk;
-    tochk.push(condition.lhsqn_.value());
-    while(!tochk.empty()) {
-        auto top = tochk.top();
-        tochk.pop();
-        if(auto const &[_, d] = census[top]; d.has_value() && !d->empty()) {
-            for(auto const &dd: d.value()) {
-                auto dk = dd.op().qn_;
-                if(std::find(begin(domchain), end(domchain), dk) == std::end(domchain)) {
-                    tochk.push(dk);
-                }
+    std::stack<std::string> unvisited;
+
+    auto doms = [](CensusKey const &qn) -> Dominators {
+        auto const &[_, dominators] = census[qn];
+        //return dominators.value_or({});
+        if(!dominators) {
+            return {};
+        }
+        return dominators.value();
+    };
+
+    if(doms(to.qn_).empty()) {
+        CNS_INFO_MSG(logKey, "No doms for `to` => not a variant");
+        CNS_INFO_MSG(logKey, "end");
+        return false;
+    }
+
+    for(auto const &dom: doms(to.qn_)) {
+        unvisited.push(dom.op().qn_);
+    }
+
+    while(!unvisited.empty()) {
+        auto top = unvisited.top();
+        unvisited.pop();
+        // doms of dom
+        for(auto const &dom: doms(top)) {
+            auto key = dom.op().qn_;
+            if(std::find(begin(domchain), end(domchain), key) == std::end(domchain)) {
+                unvisited.push(key);
             }
         }
         domchain.push_back(top);
     }
 
-    auto isFromSwitchPointer = (std::find(begin(domchain), end(domchain),
-                linkInfo.op().qn_) != std::end(domchain));
-    auto isToKnownType = !(to.type_.empty() || to.type_ == "T");
+    std::string alldoms = std::accumulate(next(begin(domchain)), end(domchain),
+            domchain[0], [](std::string a, std::string b) {
+                return std::move(a) + " " + std::move(b);
+            });
 
-    return isSwitchCondtion && isFromSwitchPointer && isToKnownType;
+    CNS_INFO(logKey, "Doms[{}]: {}", domchain.size(), alldoms);
+
+    auto isFromSwitchPointer = (std::find(begin(domchain), end(domchain),
+                condition.lhsqn_.value()) != std::end(domchain));
+    CNS_INFO(logKey, "Base ptr({}) in doms == {}", condition.lhsqn_.value(), isFromSwitchPointer);
+
+    auto isVariant = isSwitchCondition && isToKnownType && isFromSwitchPointer;
+    CNS_INFO(logKey, "Is Variant == {}", isVariant);
+    CNS_INFO_MSG(logKey, "end");
+    return isVariant;
 }
 
 inline bool isSubtypingTransform(DominatorData const &linkInfo) {
@@ -411,18 +458,18 @@ void scoreSummary(TypeSummary const &ts) {
 
             auto condition = linkInfo.parentCondition();
             auto vdname = condition.type_.value_or(condition.lhs_ + ": " + condition.location_); // Condition + location to help with diagnostic
-            auto topd = ops(to.key());
+            auto toOp = ops(to.key());
             std::string vdattr;
-            //vdattr = topd.td_.uqType_;
-            if(topd.td_.isPointerType_) {
-                vdattr = topd.td_.pointeeType_.value_or("BadPointee_t for " + condition.rhs_ + "<" + condition.location_ + ">");
-                //vdattr = topd.td_.elementType_.value_or("BadPtrElement_t for " + condition.rhs_ + "<" + condition.location_ + ">");
+            //vdattr = toOp.td_.uqType_;
+            if(toOp.td_.isPointerType_) {
+                vdattr = toOp.td_.pointeeType_.value_or("BadPointee_t for " + condition.rhs_ + "<" + condition.location_ + ">");
+                //vdattr = toOp.td_.elementType_.value_or("BadPtrElement_t for " + condition.rhs_ + "<" + condition.location_ + ">");
             }
             else {
-                vdattr = topd.td_.uqType_;
+                vdattr = toOp.td_.uqType_;
             }
             auto vdval = condition.rhs_;
-            auto vdloc = topd.location_;
+            auto vdloc = toOp.location_;
 
             // Add or update variant data
             auto vd = VariantData{vdname, condition.location_, {}};
