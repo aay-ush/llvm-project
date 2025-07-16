@@ -185,6 +185,7 @@ inline bool isTransformThroughMember(DominatorData const &linkInfo) {
     return false;
 }
 
+bool STRICT_VARIANT_CHECK = true;
 inline bool isVariantLikeTransform(DominatorData const &linkInfo, OpData const &to) {
     auto const &condition = linkInfo.parentCondition();
     auto isSwitchCondition = isTransformConditional(linkInfo) && condition.isSwitch_;
@@ -259,7 +260,9 @@ inline bool isVariantLikeTransform(DominatorData const &linkInfo, OpData const &
                 condition.lhsqn_.value()) != std::end(domchain));
     CNS_INFO(logKey, "Base ptr({}) in doms == {}", condition.lhsqn_.value(), isFromSwitchPointer);
 
-    auto isVariant = isSwitchCondition && isToKnownType && isFromSwitchPointer;
+    auto isVariantNoStrict = isSwitchCondition && isToKnownType;
+    auto isVariantStrict = isSwitchCondition && isFromSwitchPointer && isToKnownType;
+    auto isVariant = (STRICT_VARIANT_CHECK) ? (isVariantStrict) : (isVariantNoStrict);
     CNS_INFO(logKey, "Is Variant == {}", isVariant);
     CNS_INFO_MSG(logKey, "end");
     return isVariant;

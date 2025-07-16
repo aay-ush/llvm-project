@@ -2114,17 +2114,22 @@ static cl::opt<bool> optIgnoreCDB(
 static cl::opt<bool> optDumpJSON(
         "json",
         cl::desc("Dump summary to a json file"),
-        cl::init(false), cl::cat(tccCategory));
+        cl::cat(tccCategory));
 
 static cl::opt<bool> optTimeTrace(
         "time-trace",
         cl::desc("Enable time traces"),
-        cl::init(false), cl::cat(tccCategory));
+        cl::cat(tccCategory));
 
 static cl::opt<bool> optIntentDiscovery(
         "hlid",
         cl::desc("Enable high-level intent or pattern detection for pointers"),
         cl::init(true), cl::cat(tccCategory));
+
+static cl::opt<bool> optNoStrictVariant(
+        "no-strict-variant",
+        cl::desc("Relaxed variant reporting; allows cast history outside switch to participate in variant definition"),
+        cl::cat(tccCategory));
 
 // CommonOptionsParser declares HelpMessage with a description of the common cli options
 // related to the compilation db and input files. (Nice to have help)
@@ -2157,6 +2162,7 @@ int main(int argc, const char **argv) {
 
     CommonOptionsParser &OptionsParser = ExpectedParser.get();
 
+    STRICT_VARIANT_CHECK = !optNoStrictVariant;
     SUMMARY_DEPTH = optSummaryDepth;
     switch(optVerbosity) {
         case 0: // None
