@@ -207,48 +207,27 @@ inline bool isVariantLikeTransform(DominatorData const &linkInfo, OpData const &
         return false;
     }
 
-    if(to.td_.uqType_ == linkInfo.op().td_.uqType_) {
-        CNS_INFO(logKey, "Type(to) == Type(from) == {} => not a variant", to.td_.uqType_);
+    auto baseType = condition.type_;
+    if(to.td_.uqType_ == baseType || to.td_.elementType_ == baseType) {
+        CNS_INFO(logKey, "Type(to) ~ Type(base) == {} => not a variant", to.td_.uqType_);
         CNS_INFO_MSG(logKey, "end");
         return false;
     }
 
-    // Check doms and ancestors for match
-    std::vector<CensusKey> domchain;
-    std::stack<std::string> unvisited;
-
-    auto doms = [](CensusKey const &qn) -> Dominators {
-        auto const &[_, dominators] = census[qn];
-        //return dominators.value_or({});
-        if(!dominators) {
-            return {};
-        }
-        return dominators.value();
-    };
-
-    if(doms(to.qn_).empty()) {
-        CNS_INFO_MSG(logKey, "No doms for `to` => not a variant");
+    if(auto const &[_, doms] = census[to.qn_]; !doms || doms->empty()) {
+        CNS_INFO(logKey, "`to`({}) has no doms => not a variant", to.qn_);
         CNS_INFO_MSG(logKey, "end");
         return false;
     }
 
-    for(auto const &dom: doms(to.qn_)) {
-        unvisited.push(dom.op().qn_);
+    auto isVariantNoStrict = isSwitchCondition && isToKnownType;
+    if(!STRICT_VARIANT_CHECK) {
+        CNS_INFO(logKey, "Is Variant == {}", isVariantNoStrict);
+        CNS_INFO_MSG(logKey, "end");
+        return isVariantNoStrict;
     }
 
-    while(!unvisited.empty()) {
-        auto top = unvisited.top();
-        unvisited.pop();
-        // doms of dom
-        for(auto const &dom: doms(top)) {
-            auto key = dom.op().qn_;
-            if(std::find(begin(domchain), end(domchain), key) == std::end(domchain)) {
-                unvisited.push(key);
-            }
-        }
-        domchain.push_back(top);
-    }
-
+    auto domchain = ancestors(to.qn_);
     std::string alldoms = std::accumulate(next(begin(domchain)), end(domchain),
             domchain[0], [](std::string a, std::string b) {
                 return std::move(a) + " " + std::move(b);
@@ -260,12 +239,10 @@ inline bool isVariantLikeTransform(DominatorData const &linkInfo, OpData const &
                 condition.lhsqn_.value()) != std::end(domchain));
     CNS_INFO(logKey, "Base ptr({}) in doms == {}", condition.lhsqn_.value(), isFromSwitchPointer);
 
-    auto isVariantNoStrict = isSwitchCondition && isToKnownType;
     auto isVariantStrict = isSwitchCondition && isFromSwitchPointer && isToKnownType;
-    auto isVariant = (STRICT_VARIANT_CHECK) ? (isVariantStrict) : (isVariantNoStrict);
-    CNS_INFO(logKey, "Is Variant == {}", isVariant);
+    CNS_INFO(logKey, "Is Variant == {}", isVariantStrict);
     CNS_INFO_MSG(logKey, "end");
-    return isVariant;
+    return isVariantStrict;
 }
 
 inline bool isSubtypingTransform(DominatorData const &linkInfo) {

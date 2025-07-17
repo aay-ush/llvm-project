@@ -2,6 +2,7 @@
 #define CENSUS_H
 
 #include "OpData.h"
+#include <stack>
 
 //--
 struct CNSCondition {
@@ -579,6 +580,33 @@ CensusKey const& opKey(CensusNode const& n) {
     CNS_DEBUG(n.first, "Returning key: {}", op.qn_);
     CNS_DEBUG_MSG(n.first, "end");
     return op.qn_;
+}
+
+std::vector<CensusKey> ancestors(CensusKey const &key) {
+    auto nodeDoms = [](CensusKey const &qn) -> Dominators {
+        auto const &[_, dominators] = census[qn];
+        return dominators.value_or(Dominators{});
+    };
+
+    std::stack<CensusKey> unvisited;
+    for(auto const &dom: nodeDoms(key)) {
+        unvisited.push(dom.op().qn_);
+    }
+
+    std::vector<CensusKey> domchain;
+    while(!unvisited.empty()) {
+        auto top = unvisited.top();
+        unvisited.pop();
+        for(auto const &dom: nodeDoms(top)) {
+            auto dqn = dom.op().qn_;
+            if(std::find(begin(domchain), end(domchain), dqn) == std::end(domchain)) {
+                unvisited.push(dqn);
+            }
+        }
+        domchain.push_back(top);
+    }
+
+    return domchain;
 }
 
 std::vector<CensusKey> UseChain(OpData const &op) {
