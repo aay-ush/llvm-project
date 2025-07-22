@@ -386,43 +386,11 @@ public:
         name_(name),
         returnType_(returnType) {}
 
-    NullableFunctionData(std::string name):
-        name_(name) {}
-
 private:
     std::string name_;
     std::string returnType_;
 };
-
-namespace std {
-    template<>
-    struct hash<NullableFunctionData> {
-        size_t operator()(NullableFunctionData const &fd) const {
-            return hash<std::string>()(fd.key());
-        }
-    };
-}
-
-bool operator==(NullableFunctionData const &a, NullableFunctionData const &b) {
-    return a.key() == b.key();
-}
-bool operator!=(NullableFunctionData const &a, NullableFunctionData const &b) {
-    return !(a.key() == b.key());
-}
-bool operator==(std::string const &a, NullableFunctionData const &b) {
-    return a == b.key();
-}
-bool operator!=(std::string const &a, NullableFunctionData const &b) {
-    return !(a == b.key());
-}
-bool operator==(NullableFunctionData const &a, std::string const &b) {
-    return (b == a);
-}
-bool operator!=(NullableFunctionData const &a, std::string const &b) {
-    return !(b == a);
-}
-
-std::unordered_set<NullableFunctionData> NullableFunctions;
+std::unordered_map<std::string, NullableFunctionData> NullableFunctions;
 
 /*
 enum class CastExprType{

@@ -1588,7 +1588,7 @@ auto NullableFunctionMatcher = returnStmt(
                 integerLiteral(equals(0))))
         );
 
-class NullableFunctionCallback: public MatchFinder::MatchCallback {
+class NullableFunctionMatchCallback: public MatchFinder::MatchCallback {
 public:
     void run(MatchFinder::MatchResult const &result) override {
         auto const *fd = result.Nodes.getNodeAs<clang::FunctionDecl>("nullRetFn");
@@ -1598,8 +1598,10 @@ public:
         }
 
         auto const *context = result.Context;
-        NullableFunctions.insert({String(*context, *fd),
-                Typename(*context, fd->getReturnType())});
+        auto funcdata = NullableFunctionData(String(*context, *fd),
+                Typename(*context, fd->getReturnType()));
+        auto key = funcdata.key();
+        NullableFunctions.insert({std::move(key), std::move(funcdata)});
     }
 };
 
@@ -1609,7 +1611,7 @@ public:
 // TODO Filter for parameters of fptr and pointer type
 auto StatFunctionMatcher = functionDecl(
         hasAnyParameter(hasType(pointerType())))
-            .bind("statFunction");
+    .bind("statFunction");
 
 struct ParameterScores {
     unsigned generic_ = 0;
@@ -2276,7 +2278,7 @@ int main(int argc, const char **argv) {
 
     CastMatchCallback historian;
     // Nullable function list
-    NullableFunctionCallback optionulls;
+    NullableFunctionMatchCallback optionulls;
     MatchFinder Finder;
     Finder.addMatcher(AssignMatcher, &historian);
     Finder.addMatcher(CallMatcher, &historian);
