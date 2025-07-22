@@ -1295,6 +1295,24 @@ public:
 
         auto subtypes = countPattern(pointers_, Pattern::subtyping);
 
+        // Nullable is not a pattern type because a generic or subtype can be nullable too.
+        // Patterns need to be changed to be able to store more than one type and define
+        // exclusive types.
+        auto nullablePtrs = std::count_if(std::execution::par, begin(pointers_), end(pointers_),
+                [](auto const &node) {
+                    if(TypeSummaries.find(node.first) == std::end(TypeSummaries)) {
+                        return false;
+                    }
+                    return maybeNullable(node.first);
+                });
+        auto nullableVoidPtrs = std::count_if(std::execution::par, begin(voidPointers_), end(voidPointers_),
+                [](auto const &node) {
+                    if(TypeSummaries.find(node.first) == std::end(TypeSummaries)) {
+                        return false;
+                    }
+                    return maybeNullable(node.first);
+                });
+
         fmt::print(fOUT, "[{}] Wild\t\t| Sinks\t\t| Unused\t| Total Wild\n", logKey);
         fmt::print(fOUT, "[{}] {}\n", logKey, std::string(60, '-'));
         fmt::print(fOUT, "[{}] {:<8}\t| {:<8}\t| {:<8}\t| {:<8}\n", logKey,
@@ -1312,6 +1330,9 @@ public:
         fmt::print(fOUT, "[{}] {:<8}\t| {:<8}\t| {:<8}\t| {:<12}\t| {:<17}\t| {:<8}\n", logKey,
                 singles, generics, subtypes, reinterprets, fptrs, totaltyped);
         fmt::print(fOUT, "[{}]\n", logKey);
+
+        fmt::print(fOUT, "[{}] NullablePtrs\t| Nullable VoidPtrs\n", logKey);
+        fmt::print(fOUT, "[{}] {:<8}\t| {:<8}\n", logKey, nullablePtrs, nullableVoidPtrs);
 
         fmt::print(fOUT, "[{}] Total pointers (all) without any cast: {}\n", logKey, allUncasts);
         fmt::print(fOUT, "[{}]\n", logKey);
@@ -1365,6 +1386,30 @@ public:
             fmt::print(fOUT, ">---END\n");
         };
 
+        auto filterPrintWithScoreNullable = [&fcsv](Stat const &collection, auto const &label) {
+            fmt::print(fOUT, "---< {}:\n", label);
+            fmt::print(fcsv, "{} start,,,,\n", label);
+            fmt::print(fcsv, "Pattern,CensusKey,Location,NullableIn,NullableOut\n");
+            std::for_each(begin(collection), end(collection),
+                    [&](auto const &node) {
+                        if(TypeSummaries.find(node.first) == std::end(TypeSummaries)) {
+                            return;
+                        }
+                        if(maybeNullable(node.first)) {
+                            fmt::print(fOUT, "{} [{}]: Optional({}/{})\n",
+                                    node.first, ops(node.first).location_, SummarizedOptionalScores.at(node.first).inTypes(), SummarizedOptionalScores.at(node.first).outTypes());
+
+                            fmt::print(fcsv, "\"Optional\",\"{}\",\"{}\",\"{}\",\"{}\"\n",
+                                    node.first, ops(node.first).location_,
+                                    SummarizedOptionalScores.at(node.first).inTypes(),
+                                    SummarizedOptionalScores.at(node.first).outTypes());
+                        }
+                    });
+            fmt::print(fcsv, "{} end,,,,\n", label);
+            fmt::print(fOUT, "{}:\n", label);
+            fmt::print(fOUT, ">---END\n");
+        };
+
         filterPrintWithScore(voidPointers_, "Generics found " + std::to_string(generics), Pattern::generic);
         filterPrint(voidPointers_, "Fptrs found " + std::to_string(fptrs), Pattern::fptr);
         filterPrint(voidPointers_, "Ignored list " + std::to_string(ignored), Pattern::unchecked);
@@ -1377,6 +1422,9 @@ public:
         //filterPrintWithScore(voidPointersFptr_, "[WILD] Wild list from fptrs", Pattern::wild);
 
         filterPrintWithScore(pointers_, "[SUBTYPING] Subtypes list " + std::to_string(subtypes), Pattern::subtyping);
+
+        filterPrintWithScoreNullable(pointers_, "[Nullable] Optional ptrs list " + std::to_string(nullablePtrs));
+        filterPrintWithScoreNullable(voidPointers_, "[Nullable] Optional void ptrs list " + std::to_string(nullableVoidPtrs));
 
         fmt::print(fcsv, "Pattern,CensusKey,Parent ptrs\n");
         std::for_each(begin(fromVoidP), end(fromVoidP),
@@ -1396,10 +1444,11 @@ public:
 
         fclose(fcsv);
 
-        return fmt::format("{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
+        return fmt::format("{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
                 wilds, sinks, unused, uncasts, ignored,
                 singles, generics, subtypes, reinterprets, fptrs,
-                allUncasts, fromVoidP.size(), fromCastP.size(), fromCVP.size());
+                allUncasts, fromVoidP.size(), fromCastP.size(), fromCVP.size(),
+                nullablePtrs, nullableVoidPtrs);
     }
 
     void csvGenerics(FILE *fcsv) {
@@ -1454,11 +1503,11 @@ public:
         completeCSV.append(statCSV);
 
         fmt::print(fOUT, "[StatPrint] Complete CSV stat:\n");
-        fmt::print(fOUT, "[StatCompleteCSV] TS-Bitcasts,TS-FromVoid,TS-Singles,TS-Generic,TS-Subtype,TS-Reinterpret,TS-Fptr,Bitcasts,Pointers,void pointers,void pointers fptr param,wild,sinks,unused,nocasts,ignored,singles,generic,subtyping,reinterpret,fptr,total no casts, from voidptr\n");
+        fmt::print(fOUT, "[StatCompleteCSV] TS-Bitcasts,TS-FromVoid,TS-Singles,TS-Generic,TS-Subtype,TS-Reinterpret,TS-Fptr,Bitcasts,Pointers,void pointers,void pointers fptr param,wild,sinks,unused,nocasts,ignored,singles,generic,subtyping,reinterpret,fptr,total no casts, from voidptr, from bitcast, from voidorcast, nullableptrs, nullable voidptrs\n");
         fmt::print(fOUT, "[StatCompleteCSV] {}\n", completeCSV);
         fmt::print(fOUT, "[StatPrint]\n");
 
-        fmt::print(stdout, "[StatCompleteCSV] TS-Bitcasts,TS-FromVoid,TS-Singles,TS-Generic,TS-Subtype,TS-Reinterpret,TS-Fptr,Bitcasts,Pointers,void pointers,void pointers fptr param,wild,sinks,unused,nocasts,ignored,singles,generic,subtyping,reinterpret,fptr,total no casts, from voidptr, from bitcast\n");
+        fmt::print(stdout, "[StatCompleteCSV] TS-Bitcasts,TS-FromVoid,TS-Singles,TS-Generic,TS-Subtype,TS-Reinterpret,TS-Fptr,Bitcasts,Pointers,void pointers,void pointers fptr param,wild,sinks,unused,nocasts,ignored,singles,generic,subtyping,reinterpret,fptr,total no casts, from voidptr, from bitcast, from voidorcast, nullableptrs, nullable voidptrs\n");
         fmt::print(stdout, "[StatCompleteCSV] {}\n", completeCSV);
     }
 
@@ -1528,6 +1577,30 @@ private:
     Stat voidPointers_;
     Stat voidPointersFptr_;
     Stat functionPointers_;
+};
+
+// Find functions that can return null
+auto NullableFunctionMatcher = returnStmt(
+        forFunction(
+            functionDecl(returns(pointerType()))
+            .bind("nullRetFn")),
+        hasReturnValue(ignoringParenCasts(
+                integerLiteral(equals(0))))
+        );
+
+class NullableFunctionCallback: public MatchFinder::MatchCallback {
+public:
+    void run(MatchFinder::MatchResult const &result) override {
+        auto const *fd = result.Nodes.getNodeAs<clang::FunctionDecl>("nullRetFn");
+        if(!fd) {
+            CNS_INFO_MSG("nullfn", "Cannot get FunctionDecl from match result");
+            return;
+        }
+
+        auto const *context = result.Context;
+        NullableFunctions.insert({String(*context, *fd),
+                Typename(*context, fd->getReturnType())});
+    }
 };
 
 // TODO function with parameters
@@ -1812,7 +1885,7 @@ public:
         if(!ud || !context) {
             return;
         }
-        auto & sm = context->getSourceManager();
+        auto &sm = context->getSourceManager();
 
         auto const uname = Typename(*context, QualType(ud->getTypeForDecl(), 0));
 
@@ -2202,12 +2275,15 @@ int main(int argc, const char **argv) {
                    cfiles);
 
     CastMatchCallback historian;
+    // Nullable function list
+    NullableFunctionCallback optionulls;
     MatchFinder Finder;
     Finder.addMatcher(AssignMatcher, &historian);
     Finder.addMatcher(CallMatcher, &historian);
     Finder.addMatcher(RetMatcher, &historian);
     Finder.addMatcher(CastMatcher, &historian);
     Finder.addMatcher(BinAssMatcher, &historian);
+    Finder.addMatcher(NullableFunctionMatcher, &optionulls);
 
     buildIgnoreList();
     //return Tool.run(newFrontendActionFactory<clang::SyntaxOnlyAction>().get());

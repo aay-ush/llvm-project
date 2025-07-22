@@ -91,6 +91,7 @@ std::unordered_map<CensusKey, TypeScore> SummarizedFunctionPointerScores;
 std::unordered_map<CensusKey, TypeScore> SummarizedVoidProvenance;
 std::unordered_map<CensusKey, TypeScore> SummarizedCastProvenance;
 std::unordered_map<CensusKey, TypeScore> SummarizedCVProvenance;
+std::unordered_map<CensusKey, TypeScore> SummarizedOptionalScores;
 
 void initScores() {
     std::for_each(begin(TypeSummaries), end(TypeSummaries),
@@ -103,6 +104,7 @@ void initScores() {
             SummarizedVoidProvenance.emplace(node.first, node.first);
             SummarizedCastProvenance.emplace(node.first, node.first);
             SummarizedCVProvenance.emplace(node.first, node.first);
+            SummarizedOptionalScores.emplace(node.first, node.first);
         });
 }
 
@@ -186,7 +188,7 @@ inline bool isTransformThroughMember(DominatorData const &linkInfo) {
 }
 
 bool STRICT_VARIANT_CHECK = true;
-inline bool isVariantLikeTransform(DominatorData const &linkInfo, OpData const &to) {
+bool isVariantLikeTransform(DominatorData const &linkInfo, OpData const &to) {
     auto const &condition = linkInfo.parentCondition();
     auto isSwitchCondition = isTransformConditional(linkInfo) && condition.isSwitch_;
 
@@ -258,6 +260,16 @@ inline bool isNumeric(CensusKey const &op) {
 
 inline bool isCharacter(CensusKey const &op) {
     return ops(op).td_.charType_.has_value();
+}
+
+inline bool isFromOptionalType(DominatorData const &linkInfo) {
+    auto const &from = linkInfo.op();
+    auto isFromOptional = TypeSummaries.find(from.qn_) != std::end(TypeSummaries)
+        && SummarizedOptionalScores.at(from.qn_).inScore() > 0;
+    auto isFromNullableFunction = from.td_.fptrType_
+        && NullableFunctions.find(from.qn_) != std::end(NullableFunctions);
+
+    return isFromOptional || isFromNullableFunction;
 }
 
 inline void propagateScore(TypeScore const &from, TypeScore &to) {
@@ -493,6 +505,11 @@ void scoreSummary(TypeSummary const &ts) {
             recordEdgeScore("FunctionPointer score", ts.key(), to.key(), SummarizedFunctionPointerScores, false);
         }
 
+        // Optional type
+        if(isFromOptionalType(linkInfo)) {
+            recordEdgeScore("OptionalType score", ts.key(), to.key(), SummarizedOptionalScores, false);
+        }
+
         scoreSummary(to);
 
     }
@@ -596,6 +613,10 @@ bool isCastDescendant(CensusKey const &op) {
 
 bool isCVDescendant(CensusKey const &op) {
     return SummarizedCVProvenance.at(op).inScore() > 0;
+}
+
+bool maybeNullable(CensusKey const &op) {
+    return SummarizedOptionalScores.at(op).inScore() > 0;
 }
 
 #endif // PATTERNDETECTION_H
