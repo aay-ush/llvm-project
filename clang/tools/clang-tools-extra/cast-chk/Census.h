@@ -11,7 +11,7 @@ struct CNSCondition {
     std::string rhs_;
     std::optional<std::string> lhsqn_;
     std::optional<std::string> type_;
-    std::string location_;
+    OpLocation location_;
 
     std::string condition() const {
         if(lhs_.empty() && rhs_.empty()) {
@@ -45,14 +45,18 @@ CNSCondition buildSwitchCaseCondition(ASTContext &context, clang::SwitchCase con
         };
 
     auto get_loc = [](clang::ASTContext &context, clang::SwitchCase const* sc)
-        -> std::string {
+        -> OpLocation {
             if(auto const* scc = dyn_cast<clang::CaseStmt>(sc)) {
-                return scc->getCaseLoc().printToString(context.getSourceManager());
+                auto loc = scc->getCaseLoc();
+                auto const &sm = context.getSourceManager();
+                return {sm.getFilename(loc), loc.printToString(sm)};
             }
             else if(auto const* scd = dyn_cast<clang::DefaultStmt>(sc)) {
-                return scd->getDefaultLoc().printToString(context.getSourceManager());
+                auto loc = scd->getDefaultLoc();
+                auto const &sm = context.getSourceManager();
+                return {sm.getFilename(loc), loc.printToString(sm)};
             }
-            return "";
+            return {};
         };
 
     auto rhs = get_case(context, &sct);
@@ -112,7 +116,7 @@ CNSCondition getOriginCondition(ASTContext &context, T const &node) {
     auto const logKey = String(context, node) + " <T>";
     CNS_DEBUG_MSG(logKey, "begin");
 
-    auto badCondition = CNSCondition {false, "", "", {}, {}, "N/A"};
+    auto badCondition = CNSCondition {false, "", "", {}, {}, {}};
 
     auto parents = context.getParents(node);
     if (parents.size() == 0) {
@@ -189,13 +193,16 @@ CNSCondition getOriginCondition(ASTContext &context, T const &node) {
             CNS_DEBUG(logKey, "LHS: {}", lhs);
             CNS_DEBUG(logKey, "RHS: {}", rhs);
             CNS_DEBUG_MSG(logKey, "end");
+
+            auto const &sm = context.getSourceManager();
+            auto loc = ifstmt->getIfLoc();
             return CNSCondition {
                 false,
                 lhs,
                 rhs,
                 lqn,
                 lqt,
-                ifstmt->getIfLoc().printToString(context.getSourceManager())
+                {sm.getFilename(loc), loc.printToString(sm)}
             };
         }
 
@@ -244,7 +251,7 @@ public:
     }
 
     std::string exprLoc() const {
-        return exprLoc_;
+        return exprLoc_.full_;
     }
 
     std::string castKind() const {
@@ -259,7 +266,7 @@ public:
         return originCondition_;
     }
 
-    DominatorData(OpData from, std::string expr, std::string exprType, std::string exprLoc, std::string castKind, CNSCondition originCondition):
+    DominatorData(OpData from, std::string expr, std::string exprType, OpLocation const &exprLoc, std::string castKind, CNSCondition originCondition):
         from_(from),
         expr_(expr),
         exprType_(exprType),
@@ -278,18 +285,19 @@ private:
     OpData from_;
     std::string expr_;
     std::string exprType_ {};
-    std::string exprLoc_;
+    OpLocation exprLoc_;
     std::string castKind_ {};
     CNSCondition originCondition_;// {false, "NoCond", {}, {}, "N/A"};
     //std::optional<std::string> callee_;
 };
 
 DominatorData makeDominatorData(clang::ASTContext &context, OpData from, clang::Expr const &expr) {
+    auto const &sm = context.getSourceManager();
     return {
         from,
         String(context, expr),
         getDomExprType(context, expr),
-        expr.getExprLoc().printToString(context.getSourceManager()),
+        {sm.getFilename(expr.getExprLoc()), expr.getExprLoc().printToString(sm)},
         getCastKind(context, expr),
         getOriginCondition(context, expr)
         //getLinkedFunction(context, castExpr, dest)
@@ -302,11 +310,12 @@ DominatorData makeDominatorData(clang::ASTContext &context, OpData from, clang::
     if(auto const *initEx = var.getInit(); initEx) {
         CNS_DEBUG(logKey, "Found init expr: '{}'", String(context, *initEx));
         CNS_DEBUG_MSG(logKey, "end");
+        auto const &sm = context.getSourceManager();
         return {
             from,
             String(context, *initEx),
             "InitVarDecl " + getDomExprType(context, *initEx),
-            initEx->getExprLoc().printToString(context.getSourceManager()),
+            {sm.getFilename(initEx->getExprLoc()), initEx->getExprLoc().printToString(sm)},
             getCastKind(context, *initEx),
             getOriginCondition(context, *initEx)
         };
@@ -314,11 +323,12 @@ DominatorData makeDominatorData(clang::ASTContext &context, OpData from, clang::
 
     CNS_DEBUG_MSG(logKey, "No init expr found for vardecl");
     CNS_DEBUG_MSG(logKey, "end");
+    auto const &sm = context.getSourceManager();
     return {
         from,
         String(context, var),
         "VarDecl (No init)",
-        var.getLocation().printToString(context.getSourceManager()),
+        {sm.getFilename(var.getLocation()), var.getLocation().printToString(sm)},
         "N/A",
         {}//"N/A", "N/A"}
     };
@@ -439,7 +449,7 @@ std::string OpDebugSummary(OpData const &data) {
         + " (cat: " + data.category_ + ")"
         + " (expr: " + data.expr_ + ")"
         + " (lp: " + data.linkedParm_ + ") in " + data.container_ + "()"
-        + " at " + data.location_.substr(data.location_.find_last_of('/') + 1);
+        + " at " + data.location_.full_.substr(data.location_.full_.find_last_of('/') + 1);
 
     return sopds;
 }
@@ -449,7 +459,7 @@ std::string OpSummary(OpData const &data) {
     sops.reserve(1024);
     sops = "[" + data.category_ + "]" + data.expr_ + ": '" + data.type_ + "'"
         + " " + data.linkedParm_ + " at "
-        + data.location_.substr(data.location_.find_last_of('/') + 1);
+        + data.location_.full_.substr(data.location_.full_.find_last_of('/') + 1);
 
     return sops;
 }
@@ -756,7 +766,7 @@ std::string dump(OpData const &info) {
         + "', containerFunction: '" + info.container_
         + "', recordType: '" + info.linkedRecord_
         + "', recordCategory: '" + info.linkedRecordCategory_
-        + "', location: '" + info.location_
+        + "', location: '" + info.location_.full_
         //+ "', castkind: '" + info.castKind_
         + "'}\n";
     return sod;

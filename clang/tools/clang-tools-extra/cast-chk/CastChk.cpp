@@ -496,7 +496,7 @@ inline OpData buildLimitedArgOp(clang::ASTContext &context,
             getContainerFunction(context, arg),
             getLinkedRecord(arg),
             linkedTypeCategory(arg),
-            call.getExprLoc().printToString(sm),
+            {sm.getFilename(call.getExprLoc()), call.getExprLoc().printToString(sm)},
             qualifiedName(context, arg), //qualifiedName(context, call, arg)
             makeTypeDataExtra(context, sm, arg)
         };
@@ -585,7 +585,7 @@ OpData buildArgOp(clang::ASTContext &context,
                 getContainerFunction(context, *vd),
                 getLinkedRecord(*vd),
                 linkedTypeCategory(*vd),
-                call.getExprLoc().printToString(sm),
+                {sm.getFilename(call.getExprLoc()), call.getExprLoc().printToString(sm)},
                 qualifiedName(context, *var),//*vd, vd->getDeclName()),
                 makeTypeDataExtra(context, sm, *vd)
             };
@@ -603,7 +603,7 @@ OpData buildArgOp(clang::ASTContext &context,
                 getContainerFunction(context, arg),
                 getLinkedRecord(arg),
                 linkedTypeCategory(arg),
-                call.getExprLoc().printToString(sm),
+                {sm.getFilename(call.getExprLoc()), call.getExprLoc().printToString(sm)},
                 //String(context, arg), //
                 qualifiedName(context, arg), //qualifiedName(context, call, arg)
                 makeTypeDataExtra(context, sm, arg)
@@ -654,7 +654,7 @@ void buildOpDatas(clang::ASTContext &context,
                     getContainerFunction(context, *arg),
                     getLinkedRecord(*arg),
                     linkedTypeCategory(*arg),
-                    call.getExprLoc().printToString(sm),
+                    {sm.getFilename(call.getExprLoc()), call.getExprLoc().printToString(sm)},
                     (call.getDirectCallee() != nullptr)
                         ? (call.getDirectCallee()->getQualifiedNameAsString() + ".$" + std::to_string(pos))
                         : ("NullCallee"),
@@ -744,7 +744,7 @@ void buildOpDatas(clang::ASTContext &context,
                         getContainerFunction(context, *arg),
                         getLinkedRecord(*arg),
                         linkedTypeCategory(*arg),
-                        call.getExprLoc().printToString(sm),
+                        {sm.getFilename(call.getExprLoc()), call.getExprLoc().printToString(sm)},
                         qns,
                         makeTypeDataExtra(context, sm, *arg)
                     };
@@ -760,7 +760,7 @@ void buildOpDatas(clang::ASTContext &context,
                         getContainerFunction(context, *arg),
                         getLinkedRecord(*arg),
                         linkedTypeCategory(*arg),
-                        call.getExprLoc().printToString(sm),
+                        {sm.getFilename(call.getExprLoc()), call.getExprLoc().printToString(sm)},
                         "Resolve Func from callexpr_.$" + std::to_string(pos),
                         makeTypeDataExtra(context, sm, *arg)
                     };
@@ -1059,7 +1059,7 @@ void processReturn(MatchFinder::MatchResult const &result) {
         String(context, func),
         getLinkedRecord(*expr),
         linkedTypeCategory(*expr),
-        func.getLocation().printToString(sm),
+        {sm.getFilename(func.getLocation()), func.getLocation().printToString(sm)},
         qualifiedName(context, func, func.getDeclName()),
         makeTypeDataExtra(context, sm, func)
     };
@@ -1359,7 +1359,7 @@ public:
                         if(node.second == pattern) {
                             fmt::print(fOUT, "{} [{}]: Casts({}/{}), Generic({}/{}), Subtype({}/{}), Reinterpret({}/{})\n",
                                     node.first,
-                                    ops(node.first).location_,
+                                    ops(node.first).location_.full_,
                                     SummarizedCastScores.at(node.first).inTypes(),
                                     SummarizedCastScores.at(node.first).outTypes(),
                                     SummarizedGenericScores.at(node.first).inTypes(),
@@ -1370,7 +1370,7 @@ public:
                                     SummarizedReinterpretScores.at(node.first).outTypes());
 
                             fmt::print(fcsv, "\"{}\",\"{}\",\"{}\",\"{}\",\"{}\",\"{}\",\"{}\",\"{}\",\"{}\",\"{}\",\"{}\"\n",
-                                    pattern, node.first, ops(node.first).location_,
+                                    pattern, node.first, ops(node.first).location_.full_,
                                     SummarizedCastScores.at(node.first).inTypes(),
                                     SummarizedCastScores.at(node.first).outTypes(),
                                     SummarizedGenericScores.at(node.first).inTypes(),
@@ -1397,10 +1397,10 @@ public:
                         }
                         if(maybeNullable(node.first)) {
                             fmt::print(fOUT, "{} [{}]: Optional({}/{})\n",
-                                    node.first, ops(node.first).location_, SummarizedOptionalScores.at(node.first).inTypes(), SummarizedOptionalScores.at(node.first).outTypes());
+                                    node.first, ops(node.first).location_.full_, SummarizedOptionalScores.at(node.first).inTypes(), SummarizedOptionalScores.at(node.first).outTypes());
 
                             fmt::print(fcsv, "\"Optional\",\"{}\",\"{}\",\"{}\",\"{}\"\n",
-                                    node.first, ops(node.first).location_,
+                                    node.first, ops(node.first).location_.full_,
                                     SummarizedOptionalScores.at(node.first).inTypes(),
                                     SummarizedOptionalScores.at(node.first).outTypes());
                         }
@@ -1457,7 +1457,7 @@ public:
             [&](auto const &node) {
                 if(node.second == Pattern::generic) {
                     fmt::print(fcsv, "\"{}\",\"{}\",\"{}\",\"{}\",\"{}\"\n",
-                            "Generic", node.first, ops(node.first).location_,
+                            "Generic", node.first, ops(node.first).location_.full_,
                             SummarizedCastScores.at(node.first).inTypes(),
                             SummarizedCastScores.at(node.first).outTypes());
                     }
@@ -1677,7 +1677,7 @@ void scoreParameters(FunctionData &function) {
             fptr = true;
             CNS_DEBUG(p.qn_, "{} is fptr type", p.qn_);
 
-            auto key = p.location_ + p.qn_;
+            auto key = p.location_.full_ + p.qn_;
             if(auto it = FunctionSummaries.find(key); it != std::end(FunctionSummaries)) {
                 CNS_DEBUG(p.qn_, "Found existing FunctionSummary for {}", p.qn_);
                 auto fps = FunctionSummaries[key].paramScores_;
@@ -1721,7 +1721,7 @@ void scoreParameters(FunctionData &function) {
 
 FunctionData makeFunctionDataFptr(OpData const &fpop) {
     auto name = fpop.qn_;
-    auto location = fpop.location_;
+    auto location = fpop.location_.full_;
 
     std::vector<OpData> params;
     unsigned pos = 0;
@@ -2035,14 +2035,14 @@ void printVariantsCSV() {
     fmt::print(fcsv, "Location,Enum,Field,Value\n");
     for(auto const &[name, v]: Variants) {
         fmt::print(fcsv, "\"{}\",\"{}\",,\n",
-                v.location_, name);
+                v.location_.full_, name);
         for(auto [k, data]: v.attrs_) {
             std::string key = k;
             std::replace(begin(key), end(key), ',', ';');
             std::replace(begin(data.value_), end(data.value_), ',', ';');
-            std::replace(begin(data.location_), end(data.location_), ',', ';');
+            std::replace(begin(data.location_.full_), end(data.location_.full_), ',', ';');
             fmt::print(fcsv, "\"{}\",\"{}\",\"{}\",\"{}\"\n",
-                    data.location_, name, key, data.value_);
+                    data.location_.full_, name, key, data.value_);
         }
     }
 
@@ -2054,10 +2054,10 @@ void printVariants() {
     auto constexpr logKey = "Variants";
     fmt::print(fOUT, "[{}] (begin) Variants found: {}\n", logKey, Variants.size());
     for(auto const &[name, v]: Variants) {
-        fmt::print(fOUT, "[{}] {}:\n", logKey, v.location_);
+        fmt::print(fOUT, "[{}] {}:\n", logKey, v.location_.full_);
         fmt::print(fOUT, "[{}] {} {{\n", logKey, name);
         for(auto const &[key, data]: v.attrs_) {
-            fmt::print(fOUT, "[{}]\t{} = {} [{}],\n", logKey, key, data.value_, data.location_);
+            fmt::print(fOUT, "[{}]\t{} = {} [{}],\n", logKey, key, data.value_, data.location_.full_);
         }
         fmt::print(fOUT, "[{}] }}\n", logKey);
     }
@@ -2206,6 +2206,20 @@ static cl::opt<bool> optNoStrictVariant(
         cl::desc("Relaxed variant reporting; allows cast history outside switch to participate in variant definition"),
         cl::cat(tccCategory));
 
+static cl::opt<bool> optAnnotateVariants(
+        "tag-variants",
+        cl::desc("Use this option to update C source with variant annotations; copy is saved in census-out"),
+        cl::init(false), cl::cat(tccCategory));
+
+static cl::alias optTagVariants(
+        "tv", cl::desc("Alias for --tag-variants"),
+        cl::aliasopt(optAnnotateVariants));
+
+static cl::opt<std::string> optAnnotateVariantsOutDir(
+        "tag-variants-out",
+        cl::desc("Use this option to specify output directory for variant annotated C files; default is 'census-out'"),
+        cl::init("census-out"), cl::cat(tccCategory));
+
 // CommonOptionsParser declares HelpMessage with a description of the common cli options
 // related to the compilation db and input files. (Nice to have help)
 static cl::extrahelp CommonHelp(CommonOptionsParser::HelpMessage);
@@ -2290,7 +2304,17 @@ int main(int argc, const char **argv) {
     buildIgnoreList();
     //return Tool.run(newFrontendActionFactory<clang::SyntaxOnlyAction>().get());
     //return Tool.run(newFrontendActionFactory(&Finder).get());
-    auto rc = Tool.run(newFrontendActionFactory(&Finder).get());
+    //auto rc = Tool.run(newFrontendActionFactory(&Finder).get());
+
+    // Persist ASTs so that context, sourcemanager (and thus location) is not lost
+    std::vector<std::unique_ptr<ASTUnit>> ASTs;
+    Tool.buildASTs(ASTs);  // persist ASTs
+
+    // Previously, Tool.run
+    for (auto &ast : ASTs) {
+        Finder.matchAST(ast->getASTContext());
+    }
+
     regularizeCensusTypes();
     elaborateHistories();
     if(optDumpJSON) {
@@ -2305,6 +2329,18 @@ int main(int argc, const char **argv) {
         printScores();
     }
 
+    if(optAnnotateVariants) {
+        std::unordered_map<std::string, std::vector<std::string>> variantsByFile;
+        for(auto const &[variant, vd]: Variants) {
+            variantsByFile[vd.location_.file_].push_back(variant);
+        }
+
+        for(auto &ast: ASTs) {
+            auto &sm = ast->getSourceManager();
+            insertVariantTagsInMatchingSources(sm, variantsByFile, optAnnotateVariantsOutDir);
+        }
+    }
+
     StatMatchCallback statPtrs;
     StatFunctionMatchCallback statFuncs;
     StatUnionMatchCallback statUnions;
@@ -2314,7 +2350,14 @@ int main(int argc, const char **argv) {
     statistician.addMatcher(StatFunctionMatcher, &statFuncs);
     statistician.addMatcher(StatUnionMatcher, &statUnions);
 
-    rc = Tool.run(newFrontendActionFactory(&statistician).get());
+    //rc = Tool.run(newFrontendActionFactory(&statistician).get());
+    for (auto &ast : ASTs) {
+        statistician.matchAST(ast->getASTContext());
+    }
+
+    // Even though context and source manager persist,
+    // each unit has its own manager.
+    // If the location is decoded by wrong SourceManager -> DEAD
     statPtrs.printCombinedReport(tcst);
     statFuncs.print();
     statUnions.print();
@@ -2332,7 +2375,7 @@ int main(int argc, const char **argv) {
     printVariants();
 
     fclose(fOUT);
-    return rc;
+    return 0;
 }
 
 std::vector<std::string> filterC(std::vector<std::string> input) {
@@ -2499,7 +2542,7 @@ void printOpDataToJson(FILE *fp) {
         fmt::print(fp, "\"id\": \"{}\", ", json_escape(op.qn_));
         fmt::print(fp, "\"type\": \"{}\", ", json_escape(op.type_));
         fmt::print(fp, "\"category\": \"{}\", ", json_escape(op.category_));
-        fmt::print(fp, "\"location\": \"{}\"", json_escape(op.location_));
+        fmt::print(fp, "\"location\": \"{}\"", json_escape(op.location_.full_));
         if(delim) {
             fmt::print(fp, "}},\n");
         }
@@ -2600,7 +2643,7 @@ void statCollection(CastStat &tcst) {
     std::for_each(begin(TypeSummaries), end(TypeSummaries),
         [&](auto const &s) {
             CastStat cst("Cast stats for " + s.first);
-            tprint(fmt::format("History of ({}) [{}]:\n", s.first, ops(s.first).location_));
+            tprint(fmt::format("History of ({}) [{}]:\n", s.first, ops(s.first).location_.full_));
             auto tsummary = s.second.summarize(cst, {SUMMARY_DEPTH});
             tcst.extend(cst);
 
@@ -2616,7 +2659,7 @@ void statCollection(CastStat &tcst) {
 }
 
 inline void printScore(CensusKey const &op, unsigned score, std::string const &types) {
-    tprint(fmt::format("{} [{}] <{}>: {}\n", op, ops(op).location_, score, types));
+    tprint(fmt::format("{} [{}] <{}>: {}\n", op, ops(op).location_.full_, score, types));
 }
 
 inline void printInScore(CensusKey const &op, Score_t scores) {

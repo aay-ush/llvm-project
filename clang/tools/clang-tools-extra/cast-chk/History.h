@@ -1447,7 +1447,7 @@ public:
             auto castId = from.qn_ + "->" + op.qn_;
 
             stepUp(castCounts_, castId);
-            stepUp(locationCounts_, op.location_);
+            stepUp(locationCounts_, op.location_.full_);
 
             if(from.td_.isVoidPointerType_) {
                 stepUp(voidCastCounts_, castId);

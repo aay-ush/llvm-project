@@ -110,16 +110,27 @@ using OpID = std::string;
 //    if P(k1, k2) = k2 => K1 is plugged with k2
 //    then H(k1) = H(k2) and {P(k1, k2), H(k1)} is stored locally 
 //
+
+struct OpLocation {
+    std::string file_; // For comparison with current file for clang::Tool
+    std::string full_; // For use in logs
+
+    OpLocation() = default;
+    OpLocation(StringRef const &sr, std::string loc):
+        file_(sr.str()),
+        full_(loc) {}
+};
+
 struct CNSFieldInfo {
     std::string name_;
-    std::string location_;
+    OpLocation location_;
     clang::CharUnits recordSize_;
     bool hasUnion_ = false;
 };
 
 struct CNSTypeInfo {
     std::string name_;
-    std::string location_;
+    OpLocation location_;
     std::vector<CNSFieldInfo> fields_;
     clang::CharUnits recordSize_;
     bool hasUnion_ = false;
@@ -146,7 +157,7 @@ struct OpData {
     std::string container_;
     std::string linkedRecord_;
     std::string linkedRecordCategory_;
-    std::string location_;
+    OpLocation location_;
     std::string qn_;
     TypeDataExtra td_;
 
@@ -332,7 +343,7 @@ CNSFieldInfo makeFieldInfo(
     CNS_DEBUG_MSG(logKey, "end");
     return {
         rd->getNameAsString(),
-        rd->getLocation().printToString(sm),
+        {sm.getFilename(rd->getLocation()), rd->getLocation().printToString(sm)},
         layout.getSize(),
         rd->isOrContainsUnion()
     };
@@ -368,7 +379,7 @@ CNSTypeInfo makeTypeInfo(
     CNS_DEBUG_MSG(logKey, "end");
     return {
         rd->getNameAsString(),
-        rd->getLocation().printToString(sm),
+        {sm.getFilename(rd->getLocation()), rd->getLocation().printToString(sm)},
         std::move(fields),
         layout.getSize(),
         rd->isOrContainsUnion()
@@ -444,7 +455,7 @@ OpData buildOpData(
         getContainerFunction(context, parm),
         getLinkedRecord(parm),
         linkedTypeCategory(parm),
-        parm.getLocation().printToString(sm),
+        {sm.getFilename(parm.getLocation()), parm.getLocation().printToString(sm)},
         qualifiedName(context, parm),
         makeTypeDataExtra(context, sm, parm)
     };
@@ -470,7 +481,7 @@ OpData buildOpData(
         getContainerFunction(context, arg),
         getLinkedRecord(arg),
         linkedTypeCategory(arg),
-        arg.getExprLoc().printToString(sm),
+        {sm.getFilename(arg.getExprLoc()), arg.getExprLoc().printToString(sm)},
         qualifiedName(context, arg),
         //String(context, arg)
         makeTypeDataExtra(context, sm, arg)
@@ -495,7 +506,7 @@ OpData buildOpData(
         getContainerFunction(context, var),
         getLinkedRecord(var),
         linkedTypeCategory(var),
-        var.getLocation().printToString(sm),
+        {sm.getFilename(var.getLocation()), var.getLocation().printToString(sm)},
         qualifiedName(context, var),
         makeTypeDataExtra(context, sm, var)
     };
@@ -520,7 +531,7 @@ OpData buildOpData(
         getContainerFunction(context, e),
         getLinkedRecord(e),
         linkedTypeCategory(e),
-        decl.getLocation().printToString(sm),
+        {sm.getFilename(decl.getLocation()), decl.getLocation().printToString(sm)},
         qualifiedName(context, e), //, decl.getDeclName())
         makeTypeDataExtra(context, sm, e)
     };
@@ -545,7 +556,7 @@ OpData buildOpData(
         getContainerFunction(context, castExpr),
         getLinkedRecord(castExpr),
         linkedTypeCategory(castExpr),
-        decl.getLocation().printToString(sm),
+        {sm.getFilename(decl.getLocation()), decl.getLocation().printToString(sm)},
         qualifiedName(context, decl, decl.getDeclName()),
         makeTypeDataExtra(context, sm, decl)
     };
@@ -570,7 +581,7 @@ OpData buildOpData(
         getContainerFunction(context, castExpr),
         getLinkedRecord(castExpr),
         linkedTypeCategory(castExpr),
-        castExpr.getExprLoc().printToString(sm),
+        {sm.getFilename(castExpr.getExprLoc()), castExpr.getExprLoc().printToString(sm)},
         String(context, s),//qualifiedName(context, s, e.getNameInfo())
         makeTypeDataExtra(context, sm, e)
     };
@@ -662,7 +673,7 @@ OpData buildOpData(
         getContainerFunction(context, castExpr),
         getLinkedRecord(castExpr),
         linkedTypeCategory(castExpr),
-        castExpr.getExprLoc().printToString(sm),
+        {sm.getFilename(castExpr.getExprLoc()), castExpr.getExprLoc().printToString(sm)},
         qualifiedName(context, e), //String(context, e)
         makeTypeDataExtra(context, sm, e)
     };
@@ -707,7 +718,7 @@ OpData buildOpDataNonCastExpr(
             getContainerFunction(context, arg),
             getLinkedRecord(arg),
             linkedTypeCategory(arg),
-            arg.getExprLoc().printToString(sm),
+            {sm.getFilename(arg.getExprLoc()), arg.getExprLoc().printToString(sm)},
             qualifiedName(context, *decl, e.getNameInfo()),
             makeTypeDataExtra(context, sm, e)
         };
@@ -725,7 +736,7 @@ OpData buildOpDataNonCastExpr(
             getContainerFunction(context, arg),
             getLinkedRecord(arg),
             linkedTypeCategory(arg),
-            arg.getExprLoc().printToString(sm),
+            {sm.getFilename(arg.getExprLoc()), arg.getExprLoc().printToString(sm)},
             String(context, e), //qualifiedName(context, *stmt, e.getNameInfo())
             makeTypeDataExtra(context, sm, e)
         };
@@ -742,7 +753,7 @@ OpData buildOpDataNonCastExpr(
         getContainerFunction(context, arg),
         getLinkedRecord(arg),
         linkedTypeCategory(arg),
-        arg.getExprLoc().printToString(sm),
+        {sm.getFilename(arg.getExprLoc()), arg.getExprLoc().printToString(sm)},
         qualifiedName(context, e), //String(context, e)
         makeTypeDataExtra(context, sm, e)
     };
@@ -788,7 +799,7 @@ OpData buildOpData<CastSourceType::UnaryOp>(
         getContainerFunction(context, sube),
         getLinkedRecord(sube),
         linkedTypeCategory(sube),
-        castExpr.getExprLoc().printToString(sm),
+        {sm.getFilename(castExpr.getExprLoc()), castExpr.getExprLoc().printToString(sm)},
         qualifiedName(context, sube), //String(context, op)
         makeTypeDataExtra(context, sm, sube)
     };

@@ -1,6 +1,7 @@
 #ifndef PATTERNDETECTION_H
 #define PATTERNDETECTION_H
 
+#include "VariantData.h"
 #include "Census.h"
 #include "History.h"
 #include "utils.h"
@@ -8,6 +9,8 @@
 #include <algorithm>
 #include <numeric>
 #include <stack>
+
+bool STRICT_VARIANT_CHECK = true;
 
 class TypeScore {
 private:
@@ -108,19 +111,6 @@ void initScores() {
         });
 }
 
-struct VariantField {
-    std::string name_;
-    std::string value_;
-    std::string location_;
-};
-
-struct VariantData {
-    std::string name_;
-    std::string location_;
-    std::unordered_map<std::string, VariantField> attrs_;    // attr: <enum field> = <enum field's value>
-};
-std::unordered_map<std::string, VariantData> Variants;
-
 std::string cleanType(CensusKey const &opKey) {
     auto const &op = ops(opKey);
     auto const &typeInfo = op.td_;
@@ -187,7 +177,6 @@ inline bool isTransformThroughMember(DominatorData const &linkInfo) {
     return false;
 }
 
-bool STRICT_VARIANT_CHECK = true;
 bool isVariantLikeTransform(DominatorData const &linkInfo, OpData const &to) {
     auto const &condition = linkInfo.parentCondition();
     auto isSwitchCondition = isTransformConditional(linkInfo) && condition.isSwitch_;
@@ -449,12 +438,12 @@ void scoreSummary(TypeSummary const &ts) {
         //    so that variant fields can be filtered. If the cast is not from ps, then we can avoid adding the rhs as a field.
 
             auto condition = linkInfo.parentCondition();
-            auto vdname = condition.type_.value_or(condition.lhs_ + ": " + condition.location_); // Condition + location to help with diagnostic
+            auto vdname = condition.type_.value_or(condition.lhs_ + ": " + condition.location_.full_); // Condition + location to help with diagnostic
             auto toOp = ops(to.key());
             std::string vdattr;
             //vdattr = toOp.td_.uqType_;
             if(toOp.td_.isPointerType_) {
-                vdattr = toOp.td_.pointeeType_.value_or("BadPointee_t for " + condition.rhs_ + "<" + condition.location_ + ">");
+                vdattr = toOp.td_.pointeeType_.value_or("BadPointee_t for " + condition.rhs_ + "<" + condition.location_.full_ + ">");
                 //vdattr = toOp.td_.elementType_.value_or("BadPtrElement_t for " + condition.rhs_ + "<" + condition.location_ + ">");
             }
             else {
@@ -462,6 +451,7 @@ void scoreSummary(TypeSummary const &ts) {
             }
             auto vdval = condition.rhs_;
             auto vdloc = toOp.location_;
+            bool isFptr = toOp.td_.fptrType_.has_value();
 
             // Add or update variant data
             auto vd = VariantData{vdname, condition.location_, {}};
@@ -470,7 +460,7 @@ void scoreSummary(TypeSummary const &ts) {
             }
 
             // update this attr
-            vd.attrs_[vdattr] = {vdattr, vdval, vdloc};
+            vd.attrs_[vdattr] = {isFptr, vdattr, vdval, vdloc};
             // Update variant data;
             Variants[vdname] = vd;
         }
