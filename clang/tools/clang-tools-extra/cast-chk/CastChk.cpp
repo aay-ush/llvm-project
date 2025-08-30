@@ -496,7 +496,7 @@ inline OpData buildLimitedArgOp(clang::ASTContext &context,
             getContainerFunction(context, arg),
             getLinkedRecord(arg),
             linkedTypeCategory(arg),
-            {sm.getFilename(call.getExprLoc()), call.getExprLoc().printToString(sm)},
+            {realPath(sm, call.getExprLoc()), call.getExprLoc().printToString(sm)},
             qualifiedName(context, arg), //qualifiedName(context, call, arg)
             makeTypeDataExtra(context, sm, arg)
         };
@@ -585,7 +585,7 @@ OpData buildArgOp(clang::ASTContext &context,
                 getContainerFunction(context, *vd),
                 getLinkedRecord(*vd),
                 linkedTypeCategory(*vd),
-                {sm.getFilename(call.getExprLoc()), call.getExprLoc().printToString(sm)},
+                {realPath(sm, call.getExprLoc()), call.getExprLoc().printToString(sm)},
                 qualifiedName(context, *var),//*vd, vd->getDeclName()),
                 makeTypeDataExtra(context, sm, *vd)
             };
@@ -603,7 +603,7 @@ OpData buildArgOp(clang::ASTContext &context,
                 getContainerFunction(context, arg),
                 getLinkedRecord(arg),
                 linkedTypeCategory(arg),
-                {sm.getFilename(call.getExprLoc()), call.getExprLoc().printToString(sm)},
+                {realPath(sm, call.getExprLoc()), call.getExprLoc().printToString(sm)},
                 //String(context, arg), //
                 qualifiedName(context, arg), //qualifiedName(context, call, arg)
                 makeTypeDataExtra(context, sm, arg)
@@ -654,7 +654,7 @@ void buildOpDatas(clang::ASTContext &context,
                     getContainerFunction(context, *arg),
                     getLinkedRecord(*arg),
                     linkedTypeCategory(*arg),
-                    {sm.getFilename(call.getExprLoc()), call.getExprLoc().printToString(sm)},
+                    {realPath(sm, call.getExprLoc()), call.getExprLoc().printToString(sm)},
                     (call.getDirectCallee() != nullptr)
                         ? (call.getDirectCallee()->getQualifiedNameAsString() + ".$" + std::to_string(pos))
                         : ("NullCallee"),
@@ -744,7 +744,7 @@ void buildOpDatas(clang::ASTContext &context,
                         getContainerFunction(context, *arg),
                         getLinkedRecord(*arg),
                         linkedTypeCategory(*arg),
-                        {sm.getFilename(call.getExprLoc()), call.getExprLoc().printToString(sm)},
+                        {realPath(sm, call.getExprLoc()), call.getExprLoc().printToString(sm)},
                         qns,
                         makeTypeDataExtra(context, sm, *arg)
                     };
@@ -760,7 +760,7 @@ void buildOpDatas(clang::ASTContext &context,
                         getContainerFunction(context, *arg),
                         getLinkedRecord(*arg),
                         linkedTypeCategory(*arg),
-                        {sm.getFilename(call.getExprLoc()), call.getExprLoc().printToString(sm)},
+                        {realPath(sm, call.getExprLoc()), call.getExprLoc().printToString(sm)},
                         "Resolve Func from callexpr_.$" + std::to_string(pos),
                         makeTypeDataExtra(context, sm, *arg)
                     };
@@ -1059,7 +1059,7 @@ void processReturn(MatchFinder::MatchResult const &result) {
         String(context, func),
         getLinkedRecord(*expr),
         linkedTypeCategory(*expr),
-        {sm.getFilename(func.getLocation()), func.getLocation().printToString(sm)},
+        {realPath(sm, func.getLocation()), func.getLocation().printToString(sm)},
         qualifiedName(context, func, func.getDeclName()),
         makeTypeDataExtra(context, sm, func)
     };
@@ -2335,6 +2335,16 @@ int main(int argc, const char **argv) {
             variantsByFile[vd.location_.file_].push_back(variant);
         }
 
+        CNS_ERROR_MSG("VariantsByFile", "begin");
+        for(auto const &[fp, variants]: variantsByFile) {
+            CNS_ERROR("VariantsByFile", "{}: ", fp);
+            for(auto const &vname: variants) {
+                fmt::print(fOUT, "{} ", vname);
+            }
+            fmt::print(fOUT, "\n");
+        }
+        CNS_ERROR_MSG("VariantsByFile", "end");
+
         for(auto &ast: ASTs) {
             auto &sm = ast->getSourceManager();
             insertVariantTagsInMatchingSources(sm, variantsByFile, optAnnotateVariantsOutDir);
@@ -2382,12 +2392,25 @@ std::vector<std::string> filterC(std::vector<std::string> input) {
     std::vector<std::string> verified_sources;
     for(auto const& s: input) {
         // Check that source has a valid path
-        SmallString<255> AbsPath;
+        SmallString<256> AbsPath;
         if(s.substr(s.size()-2) == ".c") {
             if(!(llvm::sys::fs::real_path(s, AbsPath))) {
                 verified_sources.push_back(s);
             }
         }
+
+        /*
+        SmallString<256> ap(s);
+        if(s.substr(s.size()-2) == ".c") {
+            if(!llvm::sys::path::is_absolute(ap)) {
+                llvm::sys::fs::make_absolute(ap);
+            }
+            llvm::sys::path::remove_dots(ap, true);
+            if(!(llvm::sys::fs::real_path(s, ap))) {
+                verified_sources.push_back(ap.c_str());
+            }
+        }
+        */
     }
     return verified_sources;
 }

@@ -49,12 +49,12 @@ CNSCondition buildSwitchCaseCondition(ASTContext &context, clang::SwitchCase con
             if(auto const* scc = dyn_cast<clang::CaseStmt>(sc)) {
                 auto loc = scc->getCaseLoc();
                 auto const &sm = context.getSourceManager();
-                return {sm.getFilename(loc), loc.printToString(sm)};
+                return {realPath(sm, loc), loc.printToString(sm)};
             }
             else if(auto const* scd = dyn_cast<clang::DefaultStmt>(sc)) {
                 auto loc = scd->getDefaultLoc();
                 auto const &sm = context.getSourceManager();
-                return {sm.getFilename(loc), loc.printToString(sm)};
+                return {realPath(sm, loc), loc.printToString(sm)};
             }
             return {};
         };
@@ -101,6 +101,17 @@ CNSCondition buildSwitchCaseCondition(ASTContext &context, clang::SwitchCase con
     }
 
     CNS_DEBUG_MSG(logKey, "end");
+
+    //
+        auto fp = get_loc(context, &sct);
+        auto fb = llvm::MemoryBuffer::getFile(fp.file_);
+        if(!fb) {
+            CNS_ERROR("InsertTagTest", "getBuffer failed for {}: {}", fp.file_, fb.getError().message());
+        }
+        else {
+            CNS_ERROR("InsertTagTest", "getBuffer succeeded for {}", fp.file_);
+        }
+    //
     return CNSCondition {
         true,
         lhs,
@@ -202,7 +213,7 @@ CNSCondition getOriginCondition(ASTContext &context, T const &node) {
                 rhs,
                 lqn,
                 lqt,
-                {sm.getFilename(loc), loc.printToString(sm)}
+                {realPath(sm, loc), loc.printToString(sm)}
             };
         }
 
@@ -297,7 +308,7 @@ DominatorData makeDominatorData(clang::ASTContext &context, OpData from, clang::
         from,
         String(context, expr),
         getDomExprType(context, expr),
-        {sm.getFilename(expr.getExprLoc()), expr.getExprLoc().printToString(sm)},
+        {realPath(sm, expr.getExprLoc()), expr.getExprLoc().printToString(sm)},
         getCastKind(context, expr),
         getOriginCondition(context, expr)
         //getLinkedFunction(context, castExpr, dest)
@@ -315,7 +326,7 @@ DominatorData makeDominatorData(clang::ASTContext &context, OpData from, clang::
             from,
             String(context, *initEx),
             "InitVarDecl " + getDomExprType(context, *initEx),
-            {sm.getFilename(initEx->getExprLoc()), initEx->getExprLoc().printToString(sm)},
+            {realPath(sm, initEx->getExprLoc()), initEx->getExprLoc().printToString(sm)},
             getCastKind(context, *initEx),
             getOriginCondition(context, *initEx)
         };
@@ -328,7 +339,7 @@ DominatorData makeDominatorData(clang::ASTContext &context, OpData from, clang::
         from,
         String(context, var),
         "VarDecl (No init)",
-        {sm.getFilename(var.getLocation()), var.getLocation().printToString(sm)},
+        {realPath(sm, var.getLocation()), var.getLocation().printToString(sm)},
         "N/A",
         {}//"N/A", "N/A"}
     };

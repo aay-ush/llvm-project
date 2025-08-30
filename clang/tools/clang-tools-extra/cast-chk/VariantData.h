@@ -103,6 +103,7 @@ llvm::Expected<Replacements> eofVariantBlockAnnotation(clang::SourceManager cons
 
 llvm::Expected<std::string> addVariantTagsToSourceBuffer(clang::SourceManager const &sm,
         FileID fid,
+        FileEntryRef fr,
         std::string const &fp,
         std::vector<VariantKey> const &variants) {
 
@@ -121,6 +122,29 @@ llvm::Expected<std::string> addVariantTagsToSourceBuffer(clang::SourceManager co
         return llvm::errorCodeToError(fb.getError());
     }
 
+    /*
+    SmallVectorImpl<char> fpp;
+    fpp.append(std::begin(fr.getName().str()), std::end(fr.getName().str()));
+    auto fixed = sm.getFileManager().FixupRelativePath(fpp);
+    if(fixed) {
+        auto fb = sm.getFileManager().getBufferForFile(fpp);
+        if(!fb) {
+            CNS_ERROR(logKey, "getBuffer failed for {}: {}", fp, fb.getError().message());
+            return llvm::errorCodeToError(fb.getError());
+        }
+        std::string old = fb.get()->getBuffer().str();
+        return applyAllReplacements(old, *replacements);
+    }
+    */
+
+    /*
+    auto fb = sm.getFileManager().getBufferForFile(fr);
+    if(!fb) {
+        CNS_ERROR(logKey, "getBuffer failed for {}: {}", fp, fb.getError().message());
+        return llvm::errorCodeToError(fb.getError());
+    }
+    */
+
     std::string old = fb.get()->getBuffer().str();
     return applyAllReplacements(old, *replacements);
 }
@@ -128,7 +152,7 @@ llvm::Expected<std::string> addVariantTagsToSourceBuffer(clang::SourceManager co
 llvm::ErrorOr<std::string> variantTaggedRelativeOutPath(std::string const &fp, std::string const &outdir) {
     constexpr auto logKey = "VariantTaggedOutfile";
 
-    llvm::SmallString<128> current;
+    llvm::SmallString<256> current;
     auto err = llvm::sys::fs::current_path(current);
     if(err) {
         CNS_ERROR(logKey, "Failed to get current path: {}", err.message());
@@ -208,22 +232,21 @@ void insertVariantTagsInMatchingSources(
     constexpr auto logKey = "InsertTag";
     for(auto it = sm.fileinfo_begin(); it != sm.fileinfo_end(); ++it) {
         auto const feref = it->first;
-        auto const fp = feref.getName().str();
-        if(variantsByFile.find(fp) == std::end(variantsByFile)) {
+        auto const fname = realPathFromFileEntryRef(sm, feref);
+
+        if(variantsByFile.find(fname) == std::end(variantsByFile)) {
+            CNS_ERROR(logKey, "No variants found for filename {}", fname);
             continue;
         }
 
         auto fid = sm.getOrCreateFileID(feref, clang::SrcMgr::C_User);
-        if(variantsByFile.find(fp) == std::end(variantsByFile)) {
-            continue;
-        }
 
-        auto updatedCode = addVariantTagsToSourceBuffer(sm, fid, fp, variantsByFile.at(fp));
+        auto updatedCode = addVariantTagsToSourceBuffer(sm, fid, feref, fname, variantsByFile.at(fname));
         if(!updatedCode) {
-            CNS_ERROR(logKey, "Variants annotation in source buffer failed for {}: {}", fp, llvm::toString(updatedCode.takeError()));
+            CNS_ERROR(logKey, "Variants annotation in source buffer failed for {}: {}", fname, llvm::toString(updatedCode.takeError()));
             continue;
         }
-        createVariantAnnotatedVersion(fp, outDir, *updatedCode);
+        createVariantAnnotatedVersion(fname, outDir, *updatedCode);
     }
 }
 

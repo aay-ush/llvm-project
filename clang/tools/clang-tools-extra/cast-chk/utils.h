@@ -1830,4 +1830,37 @@ bool isFromSystemHeader(const clang::SourceManager &sm, clang::SourceLocation co
     return false;
 }
 
+std::string realPathFromFileEntryRef(clang::SourceManager const & sm, FileEntryRef const &ref) {
+    auto const &fe = ref.getFileEntry();
+    if(auto real = fe.tryGetRealPathName(); !real.empty()) {
+        return std::string(real);
+    }
+
+    //SmallString<256> dbloc = ref->getName();
+    SmallString<256> dbloc = sm.getFileManager().getCanonicalName(ref);
+
+    if(!sys::path::is_absolute(dbloc)) {
+        if(auto cwd = sm.getFileManager().getVirtualFileSystem().getCurrentWorkingDirectory()) {
+            llvm::sys::fs::make_absolute(*cwd, dbloc);
+        }
+        else {
+            llvm::sys::fs::make_absolute(dbloc);
+        }
+    }
+    llvm::sys::path::remove_dots(dbloc, true);
+    return std::string(dbloc.str());
+}
+
+std::string realPath(clang::SourceManager const &sm, clang::SourceLocation loc) {
+    auto spelling = sm.getSpellingLoc(loc);
+    auto fid = sm.getFileID(spelling);
+
+    auto ref = sm.getFileEntryRefForID(fid);
+    if(!ref) {
+        return {};
+    }
+
+    return realPathFromFileEntryRef(sm, *ref);
+}
+
 #endif // UTILS_H
