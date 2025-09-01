@@ -236,6 +236,11 @@ void insertVariantTagsInMatchingSources(
         auto const feref = it->first;
         auto const fname = realPathFromFileEntryRef(sm, feref);
 
+        if(fname.empty() || fname.substr(fname.size() - 2) != ".c") {
+            CNS_ERROR(logKey, "Skipping non .c file {}", fname);
+            continue;
+        }
+
         if(variantsByFile.find(fname) == std::end(variantsByFile)) {
             CNS_ERROR(logKey, "No variants found for filename {}", fname);
             continue;
