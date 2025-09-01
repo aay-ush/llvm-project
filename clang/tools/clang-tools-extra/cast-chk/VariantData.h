@@ -45,6 +45,8 @@ std::vector<std::string> makeVariantAnnotations(VariantData const &vd) {
     if(auto pos = fn.find(toDelete); pos != std::string::npos) {
         fn.replace(pos, toDelete.size(), "");
     }
+    std::replace(begin(fn), end(fn), ' ', '_');
+
     std::string prefix = "int __ENUM_" + fn + "_";
     std::string base = "(" + vd.name_ + " base, ";
     std::string suffix = " { return 0; }\n";
