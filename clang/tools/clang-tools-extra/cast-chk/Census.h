@@ -88,14 +88,27 @@ CNSCondition buildSwitchCaseCondition(ASTContext &context, clang::SwitchCase con
     QualType lqt;
     std::optional<std::string> lqn;
 
-    auto const *ldre = getDREChild(context, swtch->getCond());
-    if(ldre) {
-        CNS_DEBUG(logKey, "Found LHS dre: {}", String(context, *ldre));
+    /*
+    if(auto const *membex = getMemberExpr(context, swtch->getCond())) {
+        CNS_DEBUG(logKey, "Condition has memberexpr: {}", String(context, *membex));
+        auto memqn = String(context, *membex);
+        if(auto pos = memqn.find("->"); pos != std::string::npos) {
+            memqn.replace(pos, 2, "::");
+        }
+        if(auto pos = memqn.find("."); pos != std::string::npos) {
+            memqn.replace(pos, 1, "::");
+        }
+        lqt = getPointedAtType(context, swtch->getCond()->getType()).first.getUnqualifiedType();
+        lqn = memqn;
+    }
+
+    else*/ if(auto const *ldre = getDREChild(context, swtch->getCond())) {
+        CNS_DEBUG(logKey, "No memberexpr but found LHS dre: {}", String(context, *ldre));
         lqt = getPointedAtType(context, ldre->getType()).first.getUnqualifiedType();
         lqn = qualifiedName(context, *ldre);
     }
     else {
-        // No lhs dre
+        // No lhs dre or memberexpr
         CNS_DEBUG(logKey, "No LHS dre for: {}", lhs);
         lqt = getPointedAtType(context, swtch->getCond()->getType()).first.getUnqualifiedType();
     }
@@ -112,6 +125,9 @@ CNSCondition buildSwitchCaseCondition(ASTContext &context, clang::SwitchCase con
             CNS_ERROR("InsertTagTest", "getBuffer succeeded for {}", fp.file_);
         }
     //
+    CNS_DEBUG("OriginConditionSwitch", "isSwitch(true), l({}), r({}), lq({}), ty({}), loc({})",
+            lhs, rhs, lqn.value_or("no lqn"), Typename(context, lqt), get_loc(context, &sct).full_);
+
     return CNSCondition {
         true,
         lhs,
@@ -228,13 +244,12 @@ CNSCondition getOriginCondition(ASTContext &context, T const &node) {
 //
 //
 
+/*
 std::string getDomExprType(clang::ASTContext &context, clang::Expr const &e) {
     std::string exprType;
-    /*
-    if(auto const * ce = castExpr_(&e); ce) {
-        exprType.append("`Cast` ");
-    }
-    */
+    //if(auto const * ce = castExpr_(&e); ce) {
+    //    exprType.append("`Cast` ");
+    //}
 
     if(auto const *memex = getMemberExpr(context, &e); memex) {
         // TODO CHK: Maybe get record type::member name/type
@@ -244,20 +259,37 @@ std::string getDomExprType(clang::ASTContext &context, clang::Expr const &e) {
     return exprType;
     // TODO check for decl
 }
+*/
+
+enum class DominatorExprType {
+    MemberExpr,
+    VarDeclInit,
+    VarDeclNoInit,
+    UnknownDomExprType
+};
+
+std::string String(DominatorExprType dt) {
+    switch(dt) {
+        case DominatorExprType::MemberExpr: return "MemberExpr";
+        case DominatorExprType::VarDeclInit: return "VarDeclInit";
+        case DominatorExprType::VarDeclNoInit: return "VarDeclNoInit";
+        case DominatorExprType::UnknownDomExprType: return "UnknownDomExprType";
+    }
+    return "";
+}
 
 // Dominator info.
 class DominatorData {
 public:
-
     OpData op() const {
         return from_;
     }
 
     std::string linkType() const {
-        return exprType_ + "(" + castKind_ + ")";
+        return String(exprType_) + "(" + castKind_ + ")";
     }
 
-    std::string exprType() const {
+    DominatorExprType exprType() const {
         return exprType_;
     }
 
@@ -277,7 +309,7 @@ public:
         return originCondition_;
     }
 
-    DominatorData(OpData from, std::string expr, std::string exprType, OpLocation const &exprLoc, std::string castKind, CNSCondition originCondition):
+    DominatorData(OpData from, std::string expr, DominatorExprType exprType, OpLocation const &exprLoc, std::string castKind, CNSCondition originCondition):
         from_(from),
         expr_(expr),
         exprType_(exprType),
@@ -295,12 +327,26 @@ public:
 private:
     OpData from_;
     std::string expr_;
-    std::string exprType_ {};
+    DominatorExprType exprType_ = DominatorExprType::UnknownDomExprType;
     OpLocation exprLoc_;
     std::string castKind_ {};
     CNSCondition originCondition_;// {false, "NoCond", {}, {}, "N/A"};
     //std::optional<std::string> callee_;
 };
+
+DominatorExprType getDomExprType(clang::ASTContext &context, clang::Expr const &e) {
+    auto const logKey = String(context, e);
+    CNS_DEBUG_MSG(logKey, "begin");
+    if(auto const *memex = getMemberExpr(context, &e)) {
+        CNS_DEBUG(logKey, "Found member expr: {}", String(context, *memex));
+        CNS_DEBUG_MSG(logKey, "end");
+        return DominatorExprType::MemberExpr;
+    }
+
+    CNS_DEBUG_MSG(logKey, "DomExpr did not match any relevant type");
+    CNS_DEBUG_MSG(logKey, "end");
+    return DominatorExprType::UnknownDomExprType;
+}
 
 DominatorData makeDominatorData(clang::ASTContext &context, OpData from, clang::Expr const &expr) {
     auto const &sm = context.getSourceManager();
@@ -325,7 +371,7 @@ DominatorData makeDominatorData(clang::ASTContext &context, OpData from, clang::
         return {
             from,
             String(context, *initEx),
-            "InitVarDecl " + getDomExprType(context, *initEx),
+            DominatorExprType::VarDeclInit, //"InitVarDecl " + getDomExprType(context, *initEx),
             {realPath(sm, initEx->getExprLoc()), initEx->getExprLoc().printToString(sm)},
             getCastKind(context, *initEx),
             getOriginCondition(context, *initEx)
@@ -338,7 +384,7 @@ DominatorData makeDominatorData(clang::ASTContext &context, OpData from, clang::
     return {
         from,
         String(context, var),
-        "VarDecl (No init)",
+        DominatorExprType::VarDeclNoInit, //"VarDecl (No init)",
         {realPath(sm, var.getLocation()), var.getLocation().printToString(sm)},
         "N/A",
         {}//"N/A", "N/A"}
@@ -741,7 +787,7 @@ std::ostream& dump(std::ostream &os, DominatorData const &domInfo) {
     os << "{from: ";
     dump(os, domInfo.from_);
     os << "', LinkingExpr: '" << domInfo.expr_
-       << "', ExprType: '" << domInfo.castType_
+       << "', DominatorExprType: '" << domInfo.castType_
        //<< "', CalledFunction: '" << domInfo.callee_.value_or("(N/A)")
        << "}\n";
 

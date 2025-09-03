@@ -805,6 +805,49 @@ OpData buildOpData<CastSourceType::UnaryOp>(
     };
 }
 
+OpData buildBinaryOpRHSData(
+        clang::ASTContext &context,
+        clang::SourceManager const &sm,
+        clang::CastExpr const &castExpr,
+        clang::Expr const &rhs) {
+
+    CNS_DEBUG(String(context, rhs), "type: {}", Typename(context, rhs));
+    auto const *rdre = getDREChild(context, &rhs);
+    if(!rdre) {
+        CNS_DEBUG_MSG(String(context, rhs), "Binary op rhs has no dre");
+        return {};
+    }
+
+    std::string qn = qualifiedName(context, rhs);
+
+    if(auto const *membex = getMemberExpr(context, &rhs)) {
+        CNS_ERROR_MSG(String(context, rhs), "Binary op rhs has memberexpr");
+        auto memqn = String(context, *membex);
+        //std::replace(begin(memqn), end(memqn), "->", "::");
+        if(auto pos = memqn.find("->"); pos != std::string::npos) {
+            memqn.replace(pos, 2, "::");
+        }
+        if(auto pos = memqn.find("."); pos != std::string::npos) {
+            memqn.replace(pos, 1, "::");
+        }
+        qn = memqn;
+    }
+
+    return {
+        cnsHash(context, rhs),
+        String(context, rhs),
+        Typename(context, rhs),
+        TypeCategory(context, rhs),
+        "(TODO param_check)",   //getLinkedParm(context, *rdre),
+        getContainerFunction(context, rhs),
+        getLinkedRecord(rhs),
+        linkedTypeCategory(rhs),
+        {realPath(sm, castExpr.getExprLoc()), castExpr.getExprLoc().printToString(sm)},
+        qn,
+        makeTypeDataExtra(context, sm, rhs)
+    };
+}
+
 
 /*
 template<>

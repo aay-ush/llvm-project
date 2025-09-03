@@ -171,7 +171,7 @@ inline bool isTransformConditional(DominatorData const &linkInfo) {
 }
 
 inline bool isTransformThroughMember(DominatorData const &linkInfo) {
-    if(linkInfo.exprType().find("Member") != std::string::npos) {
+    if(linkInfo.exprType() == DominatorExprType::MemberExpr) {
         return true;
     }
     return false;
@@ -179,13 +179,25 @@ inline bool isTransformThroughMember(DominatorData const &linkInfo) {
 
 bool isVariantLikeTransform(DominatorData const &linkInfo, OpData const &to) {
     auto const &condition = linkInfo.parentCondition();
-    auto isSwitchCondition = isTransformConditional(linkInfo) && condition.isSwitch_;
 
     auto const logKey = "`" + linkInfo.linkExpr() + "` o-> " + to.qn_;
     CNS_INFO_MSG(logKey, "begin");
 
+    CNS_INFO(logKey, "condition: {}", condition.condition());
+
+    // isvariantlike transform from value_from_binn.$0 is missing
+    // because no lhs qn
+    // TODO chk if skipping requires member expr history first
+    /*
+    if(isTransformThroughMember(linkInfo)) {
+        CNS_INFO_MSG(logKey, "Skipping member expr");
+        CNS_INFO_MSG(logKey, "end");
+        return false;
+    }
+    */
+
     if(!condition.lhsqn_) {
-        CNS_INFO_MSG(logKey, "Condition has no lhs qn => not a variant");
+        CNS_INFO(logKey, "Condition has no lhs qn => not a variant: {}", condition.condition());
         CNS_INFO_MSG(logKey, "end");
         return false;
     }
@@ -210,6 +222,9 @@ bool isVariantLikeTransform(DominatorData const &linkInfo, OpData const &to) {
         CNS_INFO_MSG(logKey, "end");
         return false;
     }
+
+    auto isSwitchCondition = isTransformConditional(linkInfo) && condition.isSwitch_;
+    CNS_INFO(logKey, "isSwitchCondition = {}", isSwitchCondition);
 
     auto isVariantNoStrict = isSwitchCondition && isToKnownType;
     if(!STRICT_VARIANT_CHECK) {
@@ -399,6 +414,7 @@ void scoreSummary(TypeSummary const &ts) {
     CNS_DEBUG_MSG(logKey, "begin");
 
     for(auto const &to: ts.nexts()) {
+        CNS_DEBUG(logKey, "to: {}", to.key());
         auto const& linkInfo = to.linkInfo();
 
         recordEdgeDom(ts.key(), to.key(), linkInfo);
@@ -408,11 +424,10 @@ void scoreSummary(TypeSummary const &ts) {
         }
 
         if(isSubtypingTransform(linkInfo)) {
-            if(isNumeric(to.key())) {
-                CNS_DEBUG_MSG(logKey, "Skipping number edge");
-                continue;
+            if(!isNumeric(to.key())) {
+                CNS_DEBUG_MSG(logKey, "Checking subtyping for number edge");
+                recordEdgeScore("Subtyping score", ts.key(), to.key(), SummarizedSubtypingScores);
             }
-            recordEdgeScore("Subtyping score", ts.key(), to.key(), SummarizedSubtypingScores);
         }
 
         if(isVariantLikeTransform(linkInfo, ops(to.key()))) {

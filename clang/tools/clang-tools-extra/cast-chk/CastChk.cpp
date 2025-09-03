@@ -315,12 +315,14 @@ void logCensusUpdate(
 
 }
 
+/*
 template<CastSourceType CS_t, typename T>
 void updateCensus(
         clang::ASTContext &context,
         clang::SourceManager const &sm,
         clang::CastExpr const &castExpr,
-        clang::DeclRefExpr const &castSource,
+        clang::Expr const &castSource,
+        //clang::DeclRefExpr const &castSource,
         T const &dest) {
 
     auto const logKey = String(context, castExpr);
@@ -328,31 +330,49 @@ void updateCensus(
     preprocess(context, dest);
 
     CNS_INFO_MSG(logKey, "<Cast> building lhs data.");
-    auto lhs = buildOpData(context, sm, castExpr, castSource);
+    auto lhs = buildOpData(context, sm, castExpr, *ldre);
     CNS_INFO_MSG(logKey, "<Cast> building rhs data.");
     auto rhs = buildOpData<CS_t>(context, sm, castExpr, dest);
     // Cast kind update
     //rhs.castKind_ = castExpr.getCastKindName();
 
-    auto dom = makeDominatorData(context, lhs, castExpr);
+    auto dom = makeDominatorData(context, lhs, castSource);
 
+    // if lhs has a member expr, update census with:
+    // 1. (lhs, memberexpr, dom)
+    // 2. (memberexpr, rhs, dom2)
+    //if(auto const *membex = getMemberExpr(context, &castExpr)) {
+        // Incorrect
+        //auto midhs = buildOpData(context, sm, *membex, *membex);
+        //auto middom = makeDominatorData(context, lhs, *membex);
+        //updateCensus(lhs, midhs, middom);
+        //auto dom2 = makeDominatorData(context, midhs, castExpr);
+        //updateCensus(midhs, rhs, dom2);
+        //if(SEVERITY_FILTER & cns::logging::severity::Info) {
+        //    logCensusUpdate(lhs, midhs, middom);
+        //    logCensusUpdate(midhs, rhs, dom2);
+        //}
+        // end Incorrect
+    //}
+    //else {
     updateCensus(lhs, rhs, dom);
     if(SEVERITY_FILTER & cns::logging::severity::Info) {
         logCensusUpdate(lhs, rhs, dom);
     }
     CNS_DEBUG_MSG(logKey, "<T> end");
 }
+*/
 
 void processCast(MatchFinder::MatchResult const &result) {
     constexpr auto logKey = "<CastMatch>";
     CNS_DEBUG_MSG(logKey, "begin");
-    auto *context = result.Context;
-    if(!context) {
+    auto *context_ = result.Context;
+    if(!context_) {
         CNS_ERROR_MSG(logKey, "Null context");
         CNS_DEBUG_MSG(logKey, "end.");
         return;
     }
-    assert(context);
+    auto & context = *context_;
     auto const *castExpr = result.Nodes.getNodeAs<CastExpr>("cast");
     if(!castExpr) {
         CNS_ERROR_MSG(logKey, "Null cast expr");
@@ -362,7 +382,7 @@ void processCast(MatchFinder::MatchResult const &result) {
     assert(castExpr);
 
     CNS_DEBUG(logKey, "Cast match at: '{}'", castExpr->getExprLoc().printToString(*result.SourceManager));
-    CNS_DEBUG(logKey, "Cast : '{}'", String(*context, *castExpr));
+    CNS_DEBUG(logKey, "Cast : '{}'", String(context, *castExpr));
 
     // Source
     auto const *s_unaryCastee = result.Nodes.getNodeAs<DeclRefExpr>("unaryCastee");
@@ -371,15 +391,32 @@ void processCast(MatchFinder::MatchResult const &result) {
 
     // Target
     auto const *unaryOp = result.Nodes.getNodeAs<UnaryOperator>("unaryOp");
+    auto const &sm = *result.SourceManager;
 
-    if(!!unaryOp) {
-        CNS_DEBUG_MSG(logKey, "Processing cast: Unary operation");
-        updateCensus<CastSourceType::UnaryOp>(*context, *result.SourceManager, *castExpr, *s_unaryCastee, *unaryOp);
+    if(!!unaryOp && !!s_unaryCastee) {
+        CNS_DEBUG(logKey, "Processing cast: Unary operation: {}", String(context, *unaryOp));
+        auto const *uCastee = getSubExpr_(*unaryOp);
+        if(!uCastee) {
+            CNS_DEBUG(logKey, "Cannot get subexpr from unaryop: {}", String(context, *unaryOp));
+            CNS_DEBUG_MSG(logKey, "end");
+            return;
+        }
+        //updateCensus<CastSourceType::UnaryOp>(*context, *result.SourceManager, *castExpr, *s_unaryCastee, *unaryOp);
+        preprocess(context, *unaryOp);
+        //updateCensus<CastSourceType::UnaryOp>(*context, *result.SourceManager, *castExpr, *uCastee, *unaryOp);
+        auto lhs = buildOpData(context, sm, *castExpr, *s_unaryCastee);
+        auto rhs = buildOpData<CastSourceType::UnaryOp>(context, sm, *castExpr, *unaryOp);
+        auto dom = makeDominatorData(context, lhs, *uCastee);
+        updateCensus(lhs, rhs, dom);
+        if(SEVERITY_FILTER & cns::logging::severity::Info) {
+            logCensusUpdate(lhs, rhs, dom);
+        }
     }
     else if(!!binOp) {
-        CNS_DEBUG_MSG(logKey, "Processing cast: Binary operation");
-        auto const *bl = result.Nodes.getNodeAs<DeclRefExpr>("lhs");
-        auto const *br = result.Nodes.getNodeAs<DeclRefExpr>("rhs");
+        CNS_DEBUG(logKey, "Processing cast: Binary operation: {}", String(context, *binOp));
+        // lhs = rhs => rhs is source; lhs is dest
+        auto const *bl = binOp->getLHS(); //result.Nodes.getNodeAs<DeclRefExpr>("lhs");
+        auto const *br = binOp->getRHS(); //result.Nodes.getNodeAs<DeclRefExpr>("rhs");
         if(!bl) {
             CNS_ERROR_MSG(logKey, "binop lHS == nullptr.");
             CNS_DEBUG_MSG(logKey, "end");
@@ -390,7 +427,47 @@ void processCast(MatchFinder::MatchResult const &result) {
             CNS_DEBUG_MSG(logKey, "end");
             return;
         }
-        updateCensus<CastSourceType::BinaryOp>(*context, *result.SourceManager, *castExpr, *br, *bl);
+
+        auto const *ldre = getDREChild(context, bl);
+        auto const *rdre = getDREChild(context, br);
+        if(!ldre) {
+            CNS_DEBUG(logKey, "Cannot find lhs dre; skipping for binop(lhs({}), rhs({}))",
+                    String(context, *br),
+                    String(context, *bl));
+            return;
+        }
+        if(!rdre) {
+            //CNS_DEBUG(logKey, "Skipping preprocessing; cannot find dre for binop rhs: {}", String(*context, *br));
+            CNS_DEBUG(logKey, "Cannot find rhs dre; skipping for binop(lhs({}), rhs({}))",
+                    String(context, *br),
+                    String(context, *bl));
+            return;
+        }
+
+        CNS_DEBUG(logKey, "Found lhs dre; {}", String(context, *ldre));
+        CNS_DEBUG(logKey, "Found rhs dre; {}", String(context, *rdre));
+
+        preprocess(context, *ldre);
+        //updateCensus<CastSourceType::BinaryOp>(*context, *result.SourceManager, *castExpr, *br, *bl);
+        auto src = buildOpData(context, sm, *castExpr, *rdre);
+        if(auto const *membex = getMemberExpr(context, br)) {
+            // 1. src -> src::member
+            // 2. src::member -> dest
+            auto dest1 = buildBinaryOpRHSData(context, sm, *castExpr, *br);
+            auto middom = makeDominatorData(context, src, *br);
+            updateCensus(src, dest1, middom);
+            if(SEVERITY_FILTER & cns::logging::severity::Info) {
+                logCensusUpdate(src, dest1, middom);
+            }
+            src = dest1;
+        }
+        //auto dest = buildOpData<CastSourceType::BinaryOp>(context, sm, *castExpr, *ldre);
+        auto dest = buildBinaryOpRHSData(context, sm, *castExpr, *bl);
+        auto dom = makeDominatorData(context, src, *br);
+        updateCensus(src, dest, dom);
+        if(SEVERITY_FILTER & cns::logging::severity::Info) {
+            logCensusUpdate(src, dest, dom);
+        }
     }
 
     CNS_DEBUG_MSG(logKey, "end");
@@ -443,14 +520,23 @@ void processVar(MatchFinder::MatchResult const &result) {
     //          LHS   RHS
 
     auto const *rhs = result.Nodes.getNodeAs<clang::VarDecl>("varDecl");
-    assert(rhs);
+    if(!rhs) {
+        CNS_DEBUG_MSG(logKey, "Cannot get VarDecl from CastMatch Result");
+        CNS_DEBUG_MSG(logKey, "end");
+        return;
+    }
 
     CNS_DEBUG(logKey, "VarDecl match at: '{}'", rhs->getLocation().printToString(*result.SourceManager));
     CNS_DEBUG(logKey, "VarDecl : '{}'", String(*context, *rhs));
 
     auto const *lhsRef = result.Nodes.getNodeAs<clang::DeclRefExpr>("assignee");
     auto const *lhsLit = result.Nodes.getNodeAs<clang::Expr>("literal");
-    if(!lhsRef || lhsLit) {
+    if(!lhsRef) {
+        CNS_INFO(logKey, "Skipping VarDecl init with a null declref: {}", String(*context, *rhs));
+        CNS_DEBUG_MSG(logKey, "end");
+        return;
+    }
+    if(lhsLit) {
         auto rhsData = buildOpData(*context, *result.SourceManager, *rhs);
         //auto const &lhsData = buildOpData(*context, *result.SourceManager, *lhsLit);
         census.insert(makeCensusSourceNode(rhsData));
@@ -464,7 +550,9 @@ void processVar(MatchFinder::MatchResult const &result) {
              << "          : inside " << rhsData.container_ << "()\n"
              << "\n";
         */
-        CNS_INFO_MSG(logKey, "Skipping VarDecl init with a literal");
+        CNS_INFO(logKey, "Skipping VarDecl init with a literal: {} = {}",
+                String(*context, *rhs),
+                String(*context, *lhsLit));
         CNS_DEBUG_MSG(logKey, "end");
         return;
     }
@@ -1053,15 +1141,15 @@ void processReturn(MatchFinder::MatchResult const &result) {
     auto rhs = OpData {
         cnsHash(context, func),
         String(context, func),
-        Typename(context, func),
-        TypeCategory(context, func),
+        Typename(context, func.getReturnType()),
+        TypeCategory(func.getReturnType()),
         getLinkedParm(context, func, func.getDeclName()),
         String(context, func),
         getLinkedRecord(*expr),
         linkedTypeCategory(*expr),
         {realPath(sm, func.getLocation()), func.getLocation().printToString(sm)},
         qualifiedName(context, func, func.getDeclName()),
-        makeTypeDataExtra(context, sm, func)
+        makeTypeDataExtra(context, sm, func.getReturnType())
     };
 
     // TODO replace with getcontainerfunction
@@ -2619,7 +2707,7 @@ std::string getSummaryJson(TypeSummary const &ts, unsigned indent = 0) {
     auto const &linkInfo = ts.linkInfo();
     std::string summary = "{\"SummaryID\": \"" + json_escape(ts.key())
         + "\", \"CastKind\": \"" + json_escape(linkInfo.castKind())
-        + "\", \"ExprType\": \"" + json_escape(linkInfo.exprType())
+        + "\", \"ExprType\": \"" + json_escape(String(linkInfo.exprType()))
         + "\", \"Expr\": \"" + json_escape(linkInfo.linkExpr())
         + "\", \"Condition\": \"" + json_escape(String(linkInfo.parentCondition()))
         + "\", \"Nexts\": [" + std::move(vertices) + "]}";
